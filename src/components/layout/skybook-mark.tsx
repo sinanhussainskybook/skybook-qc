@@ -1,0 +1,113 @@
+/**
+ * The Skybook brand mark, drawn as SVG so it stays sharp at any size.
+ *
+ * Placeholder artwork: the official Skybook logo file will replace this
+ * when it is provided. Visual only — no behaviour lives here.
+ */
+export function SkybookMark({
+  className = "h-9 w-9",
+  title = "Skybook",
+}: {
+  className?: string;
+  title?: string;
+}) {
+  return (
+    <svg
+      viewBox="0 0 128 112"
+      className={className}
+      role="img"
+      aria-label={title}
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <defs>
+        <linearGradient id="sb-body" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="#2450A6" />
+          <stop offset="55%" stopColor="#175FAE" />
+          <stop offset="100%" stopColor="#0E74C2" />
+        </linearGradient>
+
+        <linearGradient id="sb-arrow" x1="0%" y1="100%" x2="100%" y2="0%">
+          <stop offset="0%" stopColor="#1B8FD4" />
+          <stop offset="100%" stopColor="#34B8EA" />
+        </linearGradient>
+
+        <clipPath id="sb-clip">
+          <rect x="6" y="22" width="78" height="86" rx="11" />
+        </clipPath>
+
+        <pattern
+          id="sb-hatch"
+          width="8"
+          height="8"
+          patternUnits="userSpaceOnUse"
+          patternTransform="rotate(-36)"
+        >
+          <line
+            x1="0"
+            y1="0"
+            x2="0"
+            y2="8"
+            stroke="#57A6E0"
+            strokeWidth="2.4"
+            opacity="0.5"
+          />
+        </pattern>
+      </defs>
+
+      {/* page-corner tail lifting off the top-left edge */}
+      <path
+        d="M14 24 C15 15 19 9 25 6 C21 12 20 18 21 24 Z"
+        fill="#2E8BD0"
+      />
+
+      <g clipPath="url(#sb-clip)">
+        <rect x="6" y="22" width="78" height="86" fill="url(#sb-body)" />
+
+        {/* hatched field below the sweep */}
+        <path
+          d="M6 110 C36 102 64 78 96 28 L96 110 Z"
+          fill="url(#sb-hatch)"
+        />
+
+        {/* the white sweep, cut by the square */}
+        <path
+          d="M2 104 C32 96 60 72 94 20 L104 28 C70 84 36 106 2 114 Z"
+          fill="#ffffff"
+        />
+      </g>
+
+      {/* the sweep continuing past the square, tapering toward the arrow */}
+      <path
+        d="M78 40 C84 33 89 26 94 20 L104 28 C99 34 94 40 89 46 Z"
+        fill="#ffffff"
+      />
+
+      {/* arrowhead */}
+      <path d="M92 46 L124 8 L110 52 Z" fill="url(#sb-arrow)" />
+      <path d="M92 46 L104 28 L106 44 Z" fill="#15607F" />
+    </svg>
+  );
+}
+
+/** The mark with the SKYBOOK wordmark and a product label underneath. */
+export function SkybookLogo({
+  className = "",
+  sub = "AI QC",
+}: {
+  className?: string;
+  sub?: string;
+}) {
+  return (
+    <span className={`flex items-center gap-2.5 ${className}`}>
+      <SkybookMark className="h-8 w-8 shrink-0" />
+      <span className="flex flex-col leading-none">
+        <span className="text-[15px] font-semibold tracking-[0.16em]">
+          SKYBOOK
+        </span>
+        <span className="mt-1 font-mono text-[9px] tracking-[0.28em] text-muted-foreground">
+          {sub}
+        </span>
+      </span>
+    </span>
+  );
+}

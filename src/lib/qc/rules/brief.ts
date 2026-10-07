@@ -1,0 +1,267 @@
+import {
+  containsText,
+  ctaMatches,
+  datesMatch,
+  emailsMatch,
+  findDates,
+  findEmails,
+  findName,
+  findPercentages,
+  findPhones,
+  findPrices,
+  findTimes,
+  findWebsites,
+  parsePercentage,
+  parsePrice,
+  phonesMatch,
+  pricesMatch,
+  textMatches,
+  websitesMatch,
+} from "@/lib/qc/compare";
+import { allText, type ContentDetections } from "@/lib/qc/detections";
+import type { Finding, Rule, Severity } from "@/lib/qc/findings";
+import type { QcInputRequirement } from "@/lib/qc/qc-input";
+import { requirementTypeLabel } from "@/lib/qc/requirements";
+import { ALL_TYPES, findingFor, NEEDS_ANALYSIS, notApplicable, notVerified, severityFor, type QcContext } from "@/lib/qc/rules/context";
+
+/**
+ * Brief QC (plan 5.10): every CONFIRMED requirement against the content —
+ *   missing    the requirement isn't there at all,
+ *   wrong      something of that kind is there, but a different value,
+ *   mismatched it's there, but written slightly differently (misspelt,
+ *              currency or country code left out),
+ *   unexpected prices, percentages or dates in the content that the brief
+ *              doesn't ask for (an old offer left in, for example).
+ * A mandatory requirement missing or wrong is CRITICAL; optional: wrong is
+ * MAJOR, missing MINOR. Video counts what's said as well as what's shown.
+ * Disclaimers are Legal (5.12); platform and dimensions are Platform / Size (5.11).
+ */
+
+const CATEGORY = "brief" as const;
+const RULE_ID = "brief.requirement";
+
+type Outcome =
+  | { kind: "present"; detected: string; confidence?: number }
+  | { kind: "mismatched"; detected: string; why: string; fix: string; confidence?: number }
+  | { kind: "wrong"; detected: string; confidence?: number }
+  | { kind: "missing" };
+
+/** Free-text requirement: whole words present, else a close misspelling, else missing. */
+function textOutcome(expected: string, text: string): Outcome {
+  if (containsText(text, expected)) return { kind: "present", detected: expected };
+  const name = findName(text, expected);
+  if (name.status === "misspelt") return { kind: "mismatched", detected: name.found, why: "It appears, but written differently.", fix: `Write it exactly as "${expected}".` };
+  return { kind: "missing" };
+}
+
+/** Typed values: find all of that kind; one equal → present; others → wrong; none → missing. */
+function valueOutcome<T>(found: T[], same: (value: T) => boolean, show: (value: T) => string): Outcome {
+  const hit = found.find(same);
+  if (hit !== undefined) return { kind: "present", detected: show(hit) };
+  return found.length ? { kind: "wrong", detected: found.map(show).join(", ") } : { kind: "missing" };
+}
+
+function check(r: QcInputRequirement, d: ContentDetections): Outcome | "unchecked" {
+  const text = allText(d) ?? "";
+  const value = r.expectedValue;
+  switch (r.type) {
+    case "phone":
+    case "whatsapp": {
+      const found = findPhones(text);
+      const results = found.map((p) => ({ p, m: phonesMatch(value, p) }));
+      const exact = results.find((x) => x.m === "match");
+      if (exact) return { kind: "present", detected: exact.p };
+      const local = results.find((x) => x.m === "match_without_country_code");
+      if (local) return { kind: "mismatched", detected: local.p, why: "The number is shown without its country code.", fix: `Show it as ${value}.` };
+      return found.length ? { kind: "wrong", detected: found.join(", ") } : { kind: "missing" };
+    }
+    case "email":
+      return valueOutcome(findEmails(text), (e) => emailsMatch(value, e), (e) => e);
+    case "website":
+      return valueOutcome(findWebsites(text), (w) => websitesMatch(value, w), (w) => w);
+    case "price": {
+      const expected = parsePrice(value);
+      if (!expected) return textOutcome(value, text);
+      const found = findPrices(text);
+      const exact = found.find((p) => pricesMatch(expected, p) === "match");
+      if (exact) return { kind: "present", detected: exact.text };
+      const noCurrency = found.find((p) => pricesMatch(expected, p) === "currency_missing");
+      if (noCurrency) return { kind: "mismatched", detected: noCurrency.text, why: "The amount is right but the currency isn't shown.", fix: `Show the price as ${expected.text}.` };
+      if (found.length) return { kind: "wrong", detected: found.map((p) => p.text).join(", ") };
+      return containsText(text, value) ? { kind: "present", detected: value } : { kind: "missing" };
+    }
+    case "percentage": {
+      const expected = parsePercentage(value);
+      if (expected === null) return textOutcome(value, text);
+      return valueOutcome(findPercentages(text), (p) => p === expected, (p) => `${p}%`);
+    }
+    case "date": {
+      const [expected] = findDates(value);
+      if (!expected) return textOutcome(value, text);
+      const found = findDates(text);
+      const hit = found.find((m) => datesMatch(expected, m));
+      if (hit) return { kind: "present", detected: value };
+      return found.length ? { kind: "wrong", detected: `${found.length} other date${found.length === 1 ? "" : "s"}` } : { kind: "missing" };
+    }
+    case "time": {
+      const [expected] = findTimes(value);
+      if (expected === undefined) return textOutcome(value, text);
+      const clock = (m: number) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+      return valueOutcome(findTimes(text), (t) => t === expected, clock);
+    }
+    case "cta": {
+      const ctas = (d.texts ?? []).filter((t) => t.role === "cta");
+      const hit = ctas.find((t) => ctaMatches(value, t.text));
+      if (hit) return { kind: "present", detected: hit.text, confidence: hit.confidence };
+      if (containsText(text, value)) return { kind: "present", detected: value };
+      return ctas.length ? { kind: "wrong", detected: ctas.map((t) => t.text).join(", ") } : { kind: "missing" };
+    }
+    case "headline": {
+      const headlines = (d.texts ?? []).filter((t) => t.role === "headline");
+      const hit = headlines.find((t) => textMatches(value, t.text));
+      if (hit) return { kind: "present", detected: hit.text, confidence: hit.confidence };
+      const outcome = textOutcome(value, text);
+      if (outcome.kind === "missing" && headlines.length) return { kind: "wrong", detected: headlines.map((t) => t.text).join(" / ") };
+      return outcome;
+    }
+    case "required_text":
+    case "offer":
+    case "product_name":
+    case "service_name":
+    case "location":
+    case "campaign_name":
+      return textOutcome(value, text);
+    default:
+      return "unchecked"; // target audience, special instruction, other, or a new type
+  }
+}
+
+function judge(r: QcInputRequirement, d: ContentDetections | null): Finding {
+  const label = requirementTypeLabel(r.type);
+  const title = r.label ? `${label}: ${r.label}` : label;
+  const id = `${RULE_ID}.${r.type}`;
+  const make = findingFor(id, CATEGORY, title);
+  const notes = r.notes ? ` Note from the brief: ${r.notes}` : "";
+  if (r.type === "platform" || r.type === "dimensions") {
+    return notApplicable(id, CATEGORY, title, "Checked by the Platform / Size check against the platform chosen for this session.");
+  }
+  if (!d?.texts) return notVerified(id, CATEGORY, title, severityFor(r.mandatory), NEEDS_ANALYSIS, r.expectedValue);
+  const outcome = check(r, d);
+  if (outcome === "unchecked") {
+    return notVerified(id, CATEGORY, title, severityFor(r.mandatory, "minor"), `This kind of requirement can't be compared automatically — check it by eye.${notes}`, r.expectedValue);
+  }
+  const mandatoryNote = r.mandatory ? " The brief marks it as mandatory." : "";
+  switch (outcome.kind) {
+    case "present":
+      return make({ severity: severityFor(r.mandatory), status: "passed", expected: r.expectedValue, detected: outcome.detected, explanation: "Present as the brief asks.", confidence: outcome.confidence });
+    case "mismatched":
+      return make({
+        severity: "major" as Severity,
+        status: "failed",
+        expected: r.expectedValue,
+        detected: outcome.detected,
+        explanation: outcome.why,
+        suggestedFix: outcome.fix,
+        confidence: outcome.confidence,
+      });
+    case "wrong":
+      return make({
+        severity: severityFor(r.mandatory, "major"),
+        status: "failed",
+        expected: r.expectedValue,
+        detected: outcome.detected,
+        explanation: `The content shows a different ${label.toLowerCase()} from the brief.${mandatoryNote}`,
+        suggestedFix: `Change it to "${r.expectedValue}".`,
+        confidence: outcome.confidence,
+      });
+    case "missing":
+      return make({
+        severity: severityFor(r.mandatory, "minor"),
+        status: "failed",
+        expected: r.expectedValue,
+        detected: "Not found",
+        explanation: `The brief asks for this, but it isn't in the content.${mandatoryNote}`,
+        suggestedFix: `Add "${r.expectedValue}".${notes}`,
+      });
+  }
+}
+
+const requirementsRule: Rule<QcContext> = {
+  id: RULE_ID,
+  category: CATEGORY,
+  appliesTo: ALL_TYPES,
+  needs: ["confirmed requirements (4.2)", "text read from the content (and speech, for video)"],
+  defaultSeverity: "critical",
+  mandatory: true,
+  run(context) {
+    const list = context.requirements.filter((r) => r.type !== "disclaimer");
+    if (list.length === 0) return [notApplicable(RULE_ID, CATEGORY, "Brief", "No confirmed requirements to check (disclaimers are checked under Legal).")];
+    return list.map((r) => judge(r, context.detections));
+  },
+};
+
+/** Values of these kinds that appear in the content but aren't in the brief. */
+const unexpectedRule: Rule<QcContext> = {
+  id: "brief.unexpected",
+  category: CATEGORY,
+  appliesTo: ALL_TYPES,
+  needs: ["confirmed requirements", "text read from the content"],
+  defaultSeverity: "major",
+  mandatory: false,
+  run(context) {
+    const text = allText(context.detections);
+    if (text === null) return [notVerified(this.id, CATEGORY, "Unexpected offer details", "major", NEEDS_ANALYSIS)];
+    const of = (type: string) => context.requirements.filter((r) => r.type === type).map((r) => r.expectedValue);
+    // One mistake, one finding: when a requirement of this kind already reports the
+    // content's values as WRONG (its finding lists every value of that kind it found),
+    // those values aren't reported a second time here.
+    const detections = context.detections!;
+    const reportedWrong = (type: string) =>
+      context.requirements.some((r) => {
+        if (r.type !== type) return false;
+        const outcome = check(r, detections);
+        return outcome !== "unchecked" && outcome.kind === "wrong";
+      });
+    const make = findingFor(this.id, CATEGORY, "Unexpected offer details");
+    const findings: Finding[] = [];
+    const flag = (kind: string, detected: string, briefHasKind: boolean) =>
+      findings.push(
+        make({
+          severity: briefHasKind ? "major" : "minor",
+          status: "failed",
+          expected: briefHasKind ? `Only the ${kind} in the brief` : `No ${kind} (the brief doesn't give one)`,
+          detected,
+          explanation: briefHasKind
+            ? `This ${kind} isn't the one in the brief — perhaps left over from an earlier version.`
+            : `The content shows a ${kind}, but the brief doesn't mention one. Check it's meant to be there.`,
+          suggestedFix: `Remove it, or confirm it with the client and add it to the requirements.`,
+        })
+      );
+
+    const briefPrices = of("price").map(parsePrice).filter((p) => p !== null);
+    if (!reportedWrong("price")) for (const p of findPrices(text)) {
+      if (!briefPrices.some((b) => pricesMatch(b, p) !== "mismatch")) flag("price", p.text, briefPrices.length > 0);
+    }
+    const briefPercentages = of("percentage").map(parsePercentage).filter((p) => p !== null);
+    if (!reportedWrong("percentage")) for (const p of new Set(findPercentages(text))) {
+      if (!briefPercentages.includes(p)) flag("percentage", `${p}%`, briefPercentages.length > 0);
+    }
+    const briefDates = of("date").flatMap((v) => findDates(v));
+    if (!reportedWrong("date")) for (const mention of findDates(text)) {
+      if (!briefDates.some((b) => datesMatch(b, mention))) {
+        const m = mention[0];
+        flag("date", `${m.day}/${m.month}${m.year ? `/${m.year}` : ""}${mention.length > 1 ? " (or the other way round)" : ""}`, briefDates.length > 0);
+      }
+    }
+    if (findings.length) return findings;
+    // A wrong value of some kind was reported under its requirement and skipped here:
+    // "nothing unexpected" would be untrue, so this check doesn't claim a pass.
+    const covered = (["price", "percentage", "date"] as const).filter(reportedWrong);
+    if (covered.length) {
+      return [notApplicable(this.id, CATEGORY, "Unexpected offer details", `The ${covered.join(", ")} shown differ${covered.length === 1 ? "s" : ""} from the brief — reported under the brief's requirement above, not repeated here.`)];
+    }
+    return [make({ severity: "major", status: "passed", detected: "None", explanation: "No prices, percentages or dates beyond those in the brief." })];
+  },
+};
+
+export const BRIEF_RULES: readonly Rule<QcContext>[] = [requirementsRule, unexpectedRule];

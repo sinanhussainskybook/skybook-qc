@@ -1,0 +1,63 @@
+# Skybook AI QC
+
+# dependencies
+/node_modules
+
+# Next.js build output
+/.next/
+/out/
+/build
+
+# tests
+/coverage
+
+# environment — real values stay on your machine; the example is committed
+.env*
+!.env.example
+
+# keys and credentials (kept outside the project; never committed)
+*.pem
+*.key
+*.p12
+*.pfx
+*-key.json
+*credentials*.json
+service-account*.json
+
+# local AI models (kept outside the project in QC_LOCAL_MODELS_DIR; never committed)
+/models/
+*.onnx
+*.gguf
+*.safetensors
+ggml-*.bin
+
+# TypeScript
+*.tsbuildinfo
+next-env.d.ts
+
+# logs
+*.log
+npm-debug.log*
+logs/
+
+# temporary files and archives
+/tmp/
+*.tmp
+*.temp
+*.bak
+*.swp
+*.rar
+*.zip
+*.7z
+
+# local Claude Code settings (personal; the shared launch.json is kept)
+.claude/settings.local.json
+.claude/worktrees/
+
+# operating system
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# hosting
+.vercel

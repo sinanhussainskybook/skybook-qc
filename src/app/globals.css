@@ -1,0 +1,122 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+/*
+ * Dark mode is not part of this app (the brief asks for a white/light
+ * interface). The variant is still declared, so the `dark:` classes inside
+ * the shared UI components only apply under a `.dark` class that is never
+ * set — rather than following the operating system and half-darkening a
+ * light page.
+ */
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist);
+  --font-mono: var(--font-geist-mono);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+
+  /* QC result colours — usable as bg-pass, text-fail, bg-revision-soft … */
+  --color-pass: var(--pass);
+  --color-pass-soft: var(--pass-soft);
+  --color-revision: var(--revision);
+  --color-revision-soft: var(--revision-soft);
+  --color-fail: var(--fail);
+  --color-fail-soft: var(--fail-soft);
+
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+}
+
+:root {
+  /* Surfaces: white cards on a very light blue-grey page */
+  --background: #f6f8fb;
+  --foreground: #0f1b2d;
+  --card: #ffffff;
+  --card-foreground: #0f1b2d;
+  --popover: #ffffff;
+  --popover-foreground: #0f1b2d;
+
+  /* Skybook blue — taken from the brand mark. White text on it is 5.6:1. */
+  --primary: #1a64b4;
+  --primary-foreground: #ffffff;
+
+  --secondary: #eaf2fb;
+  --secondary-foreground: #123f73;
+  --muted: #eef1f5;
+  --muted-foreground: #5b6778;
+  --accent: #eaf2fb;
+  --accent-foreground: #123f73;
+  --destructive: #c4262e;
+  --border: #dde3ea;
+  --input: #cfd7e1;
+  --ring: #2e8bd0;
+
+  /* QC results. Each strong colour passes 4.5:1 on white and on its soft tint. */
+  --pass: #147a3f;
+  --pass-soft: #e6f5ec;
+  --revision: #9a5b00;
+  --revision-soft: #fdf3e1;
+  --fail: #b3202a;
+  --fail-soft: #fbe9ea;
+
+  --radius: 0.75rem;
+
+  /* Sign-in sky. White text on --sky-top is 5.3:1. */
+  --sky-top: #1b6cbd;
+  --sky-middle: #5aa8ea;
+  --sky-bottom: #d4ebfc;
+  --cloud: rgb(255 255 255 / 0.92);
+}
+
+/* Logo preview: a light checkerboard so white or transparent logos stay visible. */
+.logo-preview {
+  background-color: #ffffff;
+  background-image: conic-gradient(#eef1f5 25%, transparent 0 50%, #eef1f5 0 75%, transparent 0);
+  background-size: 16px 16px;
+}
+
+/*
+ * Sign-in backdrop: a blue sky that fades to white, with soft clouds drawn
+ * from layered radial gradients (no images).
+ */
+.sky-backdrop {
+  background:
+    radial-gradient(55% 28% at 8% 100%, var(--cloud), transparent 70%),
+    radial-gradient(40% 24% at 38% 104%, var(--cloud), transparent 70%),
+    radial-gradient(50% 30% at 92% 98%, var(--cloud), transparent 70%),
+    radial-gradient(28% 12% at 82% 22%, rgb(255 255 255 / 0.35), transparent 70%),
+    radial-gradient(22% 9% at 14% 30%, rgb(255 255 255 / 0.28), transparent 70%),
+    linear-gradient(180deg, var(--sky-top) 0%, var(--sky-middle) 48%, var(--sky-bottom) 100%);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  html {
+    @apply font-sans;
+  }
+}

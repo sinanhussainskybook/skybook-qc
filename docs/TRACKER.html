@@ -1,0 +1,302 @@
+<title>Skybook AI QC Tracker</title>
+<!--
+  The project tracker. Status icons in the steps and phases below are the
+  source of truth; update this file when a task changes, then republish it
+  to the tracker link. Full task list: IMPLEMENTATION-PLAN.md.
+-->
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap">
+<style>
+  /* Layout: one centred column — summary band, "right now" checklist, then phases, decisions, storage, history.
+     Always dark (chosen by the user), whatever the viewer's system theme. */
+  :root {
+    color-scheme: dark;
+    --bg: #0a111b;
+    --surface: #111b29;
+    --fg: #e6edf6;
+    --muted: #93a1b4;
+    --line: #223044;
+    --track: #1b2839;
+    --brand: #1a64b4;
+    --accent: #5aa3ec;
+    --accent-soft: #15283f;
+    --accent-ink: #b9d8f7;
+    --done: #4cc38a;
+    --done-soft: #10291d;
+    --wait: #e5a54b;
+    --wait-soft: #2c2210;
+    --block: #f07178;
+    --block-soft: #331619;
+    --font: "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: "Geist Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+  }
+
+  * { box-sizing: border-box; }
+  body { background: var(--bg); color: var(--fg); font-family: var(--font); font-size: 15px; line-height: 1.5; }
+  .page { max-width: 960px; margin: 0 auto; padding-inline: 20px; padding-block: 32px 56px; display: grid; gap: 28px; }
+  h1, h2, h3 { margin: 0; text-wrap: balance; }
+  h2 { font-size: 13px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+  p { margin: 0; }
+  .num { font-variant-numeric: tabular-nums; }
+
+  /* Header */
+  .top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
+  .brand { display: flex; align-items: center; gap: 12px; }
+  .mark { width: 36px; height: 36px; border-radius: 10px; background: var(--brand); display: grid; place-items: center; }
+  .brand-name { font-weight: 700; letter-spacing: 0.14em; font-size: 15px; }
+  .brand-sub { font-family: var(--mono); font-size: 11px; letter-spacing: 0.22em; color: var(--muted); }
+  .updated { font-size: 13px; color: var(--muted); }
+
+  /* Summary band */
+  .summary { display: grid; grid-template-columns: auto 1fr; gap: 28px; align-items: center; background: var(--surface); border: 1px solid var(--line); border-radius: 20px; padding: 24px 28px; }
+  .ring { position: relative; width: 132px; height: 132px; }
+  .ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+  .ring-label { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; }
+  .ring-pct { font-size: 32px; font-weight: 700; line-height: 1; }
+  .ring-sub { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  .summary h1 { font-size: clamp(22px, 3vw, 28px); font-weight: 650; letter-spacing: -0.01em; }
+  .summary-text { margin-top: 6px; color: var(--muted); max-width: 58ch; }
+  .checks { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+  .check { font-size: 12.5px; font-weight: 500; padding: 4px 10px; border-radius: 999px; background: var(--done-soft); color: var(--done); }
+
+  /* Right now */
+  .now { background: var(--surface); border: 1px solid var(--line); border-radius: 20px; overflow: hidden; }
+  .now-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 8px 16px; padding: 22px 28px 6px; }
+  .now-head h3 { font-size: 19px; font-weight: 650; }
+  .now-count { font-size: 13px; color: var(--muted); }
+  .bar { height: 6px; border-radius: 999px; background: var(--track); overflow: hidden; margin: 10px 28px 8px; }
+  .bar > span { display: block; height: 100%; background: var(--accent); border-radius: inherit; }
+  .steps { list-style: none; margin: 0; padding: 8px 16px 16px; display: grid; gap: 2px; }
+  .step { display: grid; grid-template-columns: 28px 1fr auto; gap: 12px; align-items: center; padding: 11px 12px; border-radius: 12px; }
+  .step .dot { width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--line); display: grid; place-items: center; }
+  .step.done .dot { background: var(--done); border-color: var(--done); }
+  .step.done .dot::after { content: ""; width: 9px; height: 5px; border: 2px solid var(--surface); border-top: 0; border-right: 0; transform: rotate(-45deg) translate(1px, -1px); }
+  .step.done .what { color: var(--muted); }
+  .step.current { background: var(--wait-soft); }
+  .step.current .dot { border-color: var(--wait); }
+  .step.current .dot::after { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--wait); }
+  .what { min-width: 0; }
+  .what code { font-family: var(--mono); font-size: 13px; background: var(--accent-soft); color: var(--accent-ink); padding: 1px 6px; border-radius: 6px; }
+  .who { font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 999px; white-space: nowrap; }
+  .who.you { background: var(--wait-soft); color: var(--wait); }
+  .step.current .who.you { background: var(--wait); color: var(--surface); }
+  .who.claude { background: var(--accent-soft); color: var(--accent-ink); }
+  .turn { margin: 0 28px 24px; padding: 14px 16px; border-radius: 12px; background: var(--wait-soft); color: var(--fg); font-size: 14px; display: flex; gap: 10px; }
+  .turn strong { color: var(--wait); }
+  .turn code { font-family: var(--mono); font-size: 12.5px; word-break: break-all; }
+
+  /* Phases */
+  .section { display: grid; gap: 12px; }
+  .phases { list-style: none; margin: 0; padding: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 20px; }
+  .phase { display: grid; grid-template-columns: 34px minmax(0, 1.6fr) minmax(0, 1fr) minmax(0, 1.1fr); gap: 16px; align-items: center; padding: 14px 22px; border-top: 1px solid var(--line); }
+  .phase:first-child { border-top: 0; }
+  .phase-no { font-family: var(--mono); font-size: 13px; color: var(--muted); }
+  .phase-name { font-weight: 600; min-width: 0; }
+  .phase-note { font-size: 13px; color: var(--muted); font-weight: 400; margin-top: 1px; }
+  .mini { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .mini .bar { flex: 1; margin: 0; height: 5px; }
+  .mini .bar > span.full { background: var(--done); }
+  .mini .n { font-size: 12.5px; color: var(--muted); width: 42px; text-align: right; }
+  .pill { justify-self: start; font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 999px; white-space: nowrap; }
+  .pill.done { background: var(--done-soft); color: var(--done); }
+  .pill.progress { background: var(--wait-soft); color: var(--wait); }
+  .pill.waiting { background: var(--track); color: var(--muted); }
+  .pill.waiting b { color: var(--block); font-weight: 600; }
+
+  /* Two-column cards */
+  .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 20px; padding: 20px 22px; display: grid; gap: 12px; align-content: start; min-width: 0; }
+  .card h3 { font-size: 15px; font-weight: 650; display: flex; align-items: center; gap: 8px; }
+  .tag { width: 8px; height: 8px; border-radius: 50%; }
+  .list { list-style: none; margin: 0; padding: 0; display: grid; gap: 9px; }
+  .list li { display: grid; grid-template-columns: 44px 1fr; gap: 8px; font-size: 14px; }
+  .list .code { font-family: var(--mono); font-size: 12.5px; color: var(--muted); padding-top: 1px; }
+  .plain li { grid-template-columns: 1fr; }
+
+  /* History */
+  .history { list-style: none; margin: 0; padding: 0 0 0 4px; display: grid; gap: 0; }
+  .history li { display: grid; grid-template-columns: 96px 18px 1fr; gap: 10px; font-size: 14px; }
+  .history .date { font-family: var(--mono); font-size: 12.5px; color: var(--muted); padding-top: 1px; }
+  .history .rail { position: relative; }
+  .history .rail::before { content: ""; position: absolute; left: 8px; top: 0; bottom: 0; width: 2px; background: var(--line); }
+  .history li:last-child .rail::before { bottom: auto; height: 10px; }
+  .history .rail::after { content: ""; position: absolute; left: 4px; top: 6px; width: 10px; height: 10px; border-radius: 50%; background: var(--accent); }
+  .history .event { padding-bottom: 14px; }
+
+  footer { font-size: 12.5px; color: var(--muted); }
+
+  @media (max-width: 720px) {
+    .summary { grid-template-columns: 1fr; justify-items: start; padding: 22px; }
+    .phase { grid-template-columns: 26px 1fr auto; padding: 14px 16px; row-gap: 8px; }
+    .phase .mini { grid-column: 2 / 4; grid-row: 2; }
+    .pair { grid-template-columns: 1fr; }
+    .now-head, .bar { margin-inline: 0; }
+    .now-head { padding: 20px 20px 6px; }
+    .now > .bar { margin: 10px 20px 8px; }
+    .steps { padding: 8px 8px 12px; }
+    .turn { margin: 0 20px 20px; }
+    .history li { grid-template-columns: 80px 18px 1fr; }
+  }
+</style>
+
+<main class="page">
+  <header class="top">
+    <div class="brand">
+      <div class="mark" aria-hidden="true">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M3 20c6-1.5 10.5-6 15-15" stroke="#fff" stroke-width="2.6" stroke-linecap="round"/><path d="M13 5h6v6" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </div>
+      <div>
+        <div class="brand-name">SKYBOOK</div>
+        <div class="brand-sub">AI QC · TRACKER</div>
+      </div>
+    </div>
+    <p class="updated">Updated 7 Oct 2026</p>
+  </header>
+
+  <section class="summary" aria-label="Overall progress">
+    <div class="ring">
+      <svg viewBox="0 0 120 120" aria-hidden="true">
+        <circle cx="60" cy="60" r="52" fill="none" stroke="var(--track)" stroke-width="12"/>
+        <circle cx="60" cy="60" r="52" fill="none" stroke="var(--accent)" stroke-width="12" stroke-linecap="round" stroke-dasharray="266.9 326.7"/>
+      </svg>
+      <div class="ring-label"><div class="ring-pct num">82%</div><div class="ring-sub num">85 of 104 tasks</div></div>
+    </div>
+    <div>
+      <h1>Gemini is live: the first real QC check passed.</h1>
+      <p class="summary-text">A synthetic design went through sign-in, requirements, upload, Gemini, the QC rules, the score and the PDF report on the real database — NEEDS REVISION, 94 / 100, nothing left behind. Still to confirm live: a wrong mandatory price becomes “needs a human check”, not FAIL.</p>
+      <div class="checks">
+        <span class="check num">637 / 637 tests</span>
+        <span class="check">Typecheck</span>
+        <span class="check">Lint · 0 warnings</span>
+        <span class="check">Production build</span>
+        <span class="check">Real Supabase: migration 0008 + a live Gemini run</span>
+        <span class="check">0 secrets in the build</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="now" aria-labelledby="now-title">
+    <div class="now-head">
+      <h3 id="now-title">Gemini live testing (7 Oct)</h3>
+      <span class="now-count num">5 of 7 steps done</span>
+    </div>
+    <div class="bar" role="progressbar" aria-valuemin="0" aria-valuemax="7" aria-valuenow="5" aria-label="Steps done"><span style="width:71%"></span></div>
+    <ol class="steps">
+      <li class="step done"><span class="dot"></span><span class="what">Real-key smoke test passed; newer AI Studio keys (with dots) accepted</span><span class="who claude">Claude</span></li>
+      <li class="step done"><span class="dot"></span><span class="what">Gemini’s “invalid argument” fixed; every error now shows the HTTP status and Google’s reason, never the key</span><span class="who claude">Claude</span></li>
+      <li class="step done"><span class="dot"></span><span class="what">First live end-to-end check passed: NEEDS REVISION, 94 / 100; logo, Golden Rule, banned word and wrong date caught; PDF correct</span><span class="who claude">Claude</span></li>
+      <li class="step done"><span class="dot"></span><span class="what">Bad text positions from Gemini no longer fail a check: kept when valid, dropped when clearly wrong, position checks then <code>not verified</code></span><span class="who claude">Claude</span></li>
+      <li class="step done"><span class="dot"></span><span class="what">Secrets found in the build cache inside OneDrive — cache switched off, rebuilt, 0 secrets; never reached a browser</span><span class="who claude">Claude</span></li>
+      <li class="step current"><span class="dot"></span><span class="what">Check OneDrive (and its recycle bin) for <code>skybook-qc/.next</code>; if it was synced, rotate the Supabase service key</span><span class="who you">You</span></li>
+      <li class="step"><span class="dot"></span><span class="what">Live run of the wrong-price design (Version 2) — last try hit Gemini “high demand”</span><span class="who claude">Claude</span></li>
+    </ol>
+    <div class="turn" role="note">
+      <span aria-hidden="true">→</span>
+      <p><strong>Next:</strong> the OneDrive check, then the Version 2 live run, then the page that jumps home during analysis. After that, Phase 9 and choosing a host.</p>
+    </div>
+  </section>
+
+  <section class="section" aria-labelledby="phases-title">
+    <h2 id="phases-title">Phases</h2>
+    <ol class="phases">
+      <li class="phase"><span class="phase-no">01</span><div class="phase-name">Project foundation</div><div class="mini"><div class="bar"><span class="full" style="width:100%"></span></div><span class="n num">13/13</span></div><span class="pill done">Done</span></li>
+      <li class="phase"><span class="phase-no">02</span><div class="phase-name">Sign-in<div class="phase-note">Working on real Supabase; admin created</div></div><div class="mini"><div class="bar"><span class="full" style="width:100%"></span></div><span class="n num">12/12</span></div><span class="pill done">Done</span></li>
+      <li class="phase"><span class="phase-no">03</span><div class="phase-name">Company and logo<div class="phase-note">Verified on real Supabase</div></div><div class="mini"><div class="bar"><span class="full" style="width:100%"></span></div><span class="n num">10/10</span></div><span class="pill done">Done</span></li>
+      <li class="phase"><span class="phase-no">04</span><div class="phase-name">Requirements + Upload<div class="phase-note">Verified on real Supabase · text reading and extracted-item review moved to Phase 6, platform sizes built in Phase 5</div></div><div class="mini"><div class="bar"><span class="full" style="width:100%"></span></div><span class="n num">8/8</span></div><span class="pill done">Done</span></li>
+      <li class="phase"><span class="phase-no">05</span><div class="phase-name">QC rule engine<div class="phase-note">All nine categories on one engine · verified on real Supabase · frozen · real detections come in Phase 6</div></div><div class="mini"><div class="bar"><span class="full" style="width:100%"></span></div><span class="n num">16/16</span></div><span class="pill done">Done</span></li>
+      <li class="phase"><span class="phase-no">06</span><div class="phase-name">AI analysis<div class="phase-note">Gemini API for static designs · first live end-to-end run passed · wrong-price design still to confirm live · Local AI and video paused</div></div><div class="mini"><div class="bar"><span style="width:80%"></span></div><span class="n num">12/15</span></div><span class="pill progress">In progress</span></li>
+      <li class="phase"><span class="phase-no">07</span><div class="phase-name">Score and result<div class="phase-note">PASS / NEEDS REVISION / FAIL, score and issue counts · score weights to confirm (D7)</div></div><div class="mini"><div class="bar"><span class="full" style="width:100%"></span></div><span class="n num">8/8</span></div><span class="pill done">Done</span></li>
+      <li class="phase"><span class="phase-no">08</span><div class="phase-name">QC report<div class="phase-note">PDF download with Arabic support, never stored · issue boxes on the image and human review deferred</div></div><div class="mini"><div class="bar"><span class="full" style="width:100%"></span></div><span class="n num">6/6</span></div><span class="pill done">Done</span></li>
+      <li class="phase"><span class="phase-no">09</span><div class="phase-name">Testing and polish<div class="phase-note">Started: one live end-to-end test passed, build-cache secret leak fixed</div></div><div class="mini"><div class="bar"><span style="width:0"></span></div><span class="n num">0/10</span></div><span class="pill waiting">Needs <b>host choice</b></span></li>
+    </ol>
+  </section>
+
+  <section class="section" aria-labelledby="decisions-title">
+    <h2 id="decisions-title">Decisions</h2>
+    <div class="pair">
+      <div class="card">
+        <h3><span class="tag" style="background:var(--done)"></span>Decided</h3>
+        <ul class="list">
+          <li><span class="code">D1</span><span>Database: Supabase PostgreSQL, QC's own project</span></li>
+          <li><span class="code">D2</span><span>Users created from the command line; admin and designer roles; no sign-up</span></li>
+          <li><span class="code">D3</span><span>Logos in a private Supabase Storage bucket; one per company</span></li>
+          <li><span class="code">D4</span><span>Platform values from Meta, LinkedIn, YouTube and Google Ads pages; typed size for banners, print, slides, other</span></li>
+          <li><span class="code">D5</span><span>Gemini API (Google AI Studio, free tier) for static designs, one call per design; Local AI and Google Cloud kept in the code, paused</span></li>
+          <li><span class="code">D6</span><span>Video read with FFmpeg on our server; first 15 min, up to 120 frames</span></li>
+          <li><span class="code">D10</span><span>A persistent Node host running the app + a worker; database queue (the host itself chosen in Phase 9)</span></li>
+          <li><span class="code">D8</span><span>Report: a PDF made on download, never stored; Arabic supported (Noto fonts); dates in Dubai time</span></li>
+          <li><span class="code">D11</span><span>QC sessions are temporary: deleted 24 h after the last change; video up to 50 MB (Free plan)</span></li>
+          <li><span class="code">D12</span><span>Golden Rules saved per company, used in every QC check</span></li>
+          <li><span class="code">D13</span><span>Company access by membership; admins see every company</span></li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3><span class="tag" style="background:var(--wait)"></span>Still to decide</h3>
+        <ul class="list">
+          <li><span class="code">D7</span><span>Score weights</span></li>
+          <li><span class="code">D9</span><span>Human review of findings (later)</span></li>
+          <li><span class="code">D10</span><span>Which host (Phase 9)</span></li>
+          <li><span class="code">Keys</span><span>Rotate the Supabase service key (and Gemini key)? Depends on the OneDrive check</span></li>
+          <li><span class="code">Rule</span><span>A wrong date counts twice (“Date” and “Unexpected offer details”) — count it once?</span></li>
+          <li><span class="code">Data</span><span>Gemini free tier may use what is sent — non-confidential designs only, or a paid tier</span></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" aria-labelledby="stored-title">
+    <h2 id="stored-title">What the app keeps</h2>
+    <div class="pair">
+      <div class="card">
+        <h3><span class="tag" style="background:var(--accent)"></span>Saved permanently</h3>
+        <ul class="list plain">
+          <li>Users and sign-in</li>
+          <li>Companies, contact details and logo</li>
+          <li>Brand guidelines</li>
+          <li>Golden Rules</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3><span class="tag" style="background:var(--block)"></span>Temporary only (deleted after 24 h)</h3>
+        <ul class="list plain">
+          <li>The content being checked and supporting files</li>
+          <li>Requirements for the current check</li>
+          <li>The platform chosen and the measured size / length of the content</li>
+          <li>Analysis results (what was read in the content) — only the latest</li>
+          <li>Never kept: QC history, past designs, reports</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" aria-labelledby="history-title">
+    <h2 id="history-title">History</h2>
+    <ol class="history">
+      <li><span class="date">7 Oct 2026</span><span class="rail"></span><span class="event">Secrets found in the Turbopack build cache inside the OneDrive folder; cache switched off, rebuilt, 0 secrets. Key rotation waits on an OneDrive check</span></li>
+      <li><span class="date">7 Oct 2026</span><span class="rail"></span><span class="event">Gemini text positions made optional: clearly wrong boxes are dropped instead of failing the check; position checks become not verified</span></li>
+      <li><span class="date">7 Oct 2026</span><span class="rail"></span><span class="event">First live end-to-end QC check on real Supabase with Gemini: NEEDS REVISION, 94 / 100, PDF with logo, no history left</span></li>
+      <li><span class="date">7 Oct 2026</span><span class="rail"></span><span class="event">Gemini smoke test passed; “invalid argument” fixed; clearer error messages</span></li>
+      <li><span class="date">6 Oct 2026</span><span class="rail"></span><span class="event">Gemini API provider built (Google AI Studio key, one call per design, no billing); tested with recorded answers — real-key smoke test still to run</span></li>
+      <li><span class="date">6 Oct 2026</span><span class="rail"></span><span class="event">Start QC now offers static designs only (Design / Poster, Social Media Post); video types hidden, kept for later</span></li>
+      <li><span class="date">6 Oct 2026</span><span class="rail"></span><span class="event">Phase 8 done: downloadable PDF QC report, never stored; Arabic supported with embedded Noto fonts</span></li>
+      <li><span class="date">6 Oct 2026</span><span class="rail"></span><span class="event">Phase 7 done: PASS / NEEDS REVISION / FAIL with score and issue counts. Local AI and GPU work paused; focus on static design QC</span></li>
+      <li><span class="date">6 Oct 2026</span><span class="rail"></span><span class="event">GPU acceptance not possible on this PC (no GPU). OCR passed on all 25 designs (93%, 0 false criticals); a false-finding issue found and fixed</span></li>
+      <li><span class="date">6 Oct 2026</span><span class="rail"></span><span class="event">Local AI provider built (no API calls); migration 7 on real Supabase; working on this PC for testing, GPU machine needed for designers</span></li>
+      <li><span class="date">5 Oct 2026</span><span class="rail"></span><span class="event">Phase 6 built: background analysis (sample data), information-file requirements, migration 6 on real Supabase; real Google check still to do</span></li>
+      <li><span class="date">4 Oct 2026</span><span class="rail"></span><span class="event">D5, D6 and D10 (processing) decided: Google Cloud EU, FFmpeg on our server, a worker on a persistent Node host</span></li>
+      <li><span class="date">1 Oct 2026</span><span class="rail"></span><span class="event">Phase 5 (QC rule engine) complete and frozen</span></li>
+      <li><span class="date">1 Oct 2026</span><span class="rail"></span><span class="event">Real Supabase verified: migration 4 applied, logos and QC uploads working, test data removed; Phases 3 and 4 complete</span></li>
+      <li><span class="date">29 Sep 2026</span><span class="rail"></span><span class="event">Phase 4 (Requirements + Upload) built and checked locally; D11 decided</span></li>
+      <li><span class="date">29 Sep 2026</span><span class="rail"></span><span class="event">Real Supabase database connected; migrations 1–3 applied; admin created</span></li>
+      <li><span class="date">29 Sep 2026</span><span class="rail"></span><span class="event">Secrets moved outside OneDrive; real Supabase check started</span></li>
+      <li><span class="date">29 Sep 2026</span><span class="rail"></span><span class="event">Company logo built (D3), works locally</span></li>
+      <li><span class="date">29 Sep 2026</span><span class="rail"></span><span class="event">Company system built (Phase 3), works locally</span></li>
+      <li><span class="date">29 Sep 2026</span><span class="rail"></span><span class="event">Sign-in built (Phase 2), works locally</span></li>
+      <li><span class="date">28 Sep 2026</span><span class="rail"></span><span class="event">Project foundation done (Phase 1); plan written</span></li>
+    </ol>
+  </section>
+
+  <footer>This is the project tracker (docs/TRACKER.html). Full task list: docs/IMPLEMENTATION-PLAN.md. Standalone app; nothing shared with Skybook Audit.</footer>
+</main>

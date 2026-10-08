@@ -159,6 +159,46 @@ class Writer {
     this.text(text, { size: 13, bold: true, color: C.brand, gap: 4 });
   }
 
+  /** A main section: a thin rule, then a large plain heading, with room around it. */
+  section(text: string) {
+    this.ensure(70);
+    this.gap(16);
+    this.page.drawLine({ start: { x: MARGIN, y: this.y }, end: { x: A4.width - MARGIN, y: this.y }, thickness: 0.6, color: C.line });
+    this.gap(8);
+    this.text(text, { size: 15, bold: true, gap: 8 });
+  }
+
+  /** A small heading inside "Detailed checks". */
+  subheading(text: string) {
+    this.ensure(40);
+    this.gap(10);
+    this.text(text, { size: 10.5, bold: true, color: C.muted, gap: 3 });
+  }
+
+  /** A soft card: its height is measured from the wrapped rows first, so nothing spills out. */
+  card(rows: { text: string; size?: number; bold?: boolean; color?: RGB }[], fill: RGB, border: RGB = C.line) {
+    const pad = 10;
+    const inner = this.width - pad * 2;
+    const laid = rows.map((r) => {
+      const size = r.size ?? 9.5;
+      const font = r.bold ? this.bold : this.regular;
+      return { ...r, size, font, lines: this.wrap(r.text, font, size, inner) };
+    });
+    const height = pad * 2 + laid.reduce((h, r) => h + r.lines.length * r.size * 1.35, 0) + (laid.length - 1) * 2;
+    this.ensure(height + 8);
+    this.page.drawRectangle({ x: MARGIN, y: this.y - height, width: this.width, height, color: fill, borderColor: border, borderWidth: 0.6 });
+    let y = this.y - pad;
+    for (const r of laid) {
+      for (const line of r.lines) {
+        y -= r.size * 1.35;
+        r.font.draw(this.page, line, { x: MARGIN + pad, y: y + r.size * 0.25, size: r.size, color: r.color ?? C.ink });
+        this.lines.push(line);
+      }
+      y -= 2;
+    }
+    this.y -= height + 8;
+  }
+
   /** A simple table: column widths are fractions of the page width. */
   table(headers: string[], rows: string[][], fractions: number[]) {
     const widths = fractions.map((f) => f * this.width);
@@ -186,22 +226,26 @@ class Writer {
   }
 }
 
-function items(w: Writer, list: ReportItem[], empty: string) {
+function items(w: Writer, list: ReportItem[], empty: string, size = 9) {
   if (!list.length) {
-    w.text(empty, { color: C.muted });
+    w.text(empty, { size, color: C.muted });
     return;
   }
   for (const it of list) {
-    w.ensure(40);
-    w.gap(4);
-    w.text(`${it.severity} · ${it.category} · ${it.title}${it.file ? ` · ${it.file}` : ""}`, { bold: true, color: SEVERITY_COLOUR[it.severity] ?? C.ink });
-    if (it.expected) w.text(`Expected: ${it.expected}`, { indent: 12, color: C.muted });
-    if (it.detected) w.text(`Detected: ${it.detected}`, { indent: 12, color: C.muted });
-    w.text(it.explanation, { indent: 12 });
-    if (it.fix) w.text(`Suggested fix: ${it.fix}`, { indent: 12 });
-    w.gap(2);
+    w.ensure(36);
+    w.gap(3);
+    w.text(`${it.severity} · ${it.category} · ${it.title}${it.file ? ` · ${it.file}` : ""}`, { size, bold: true, color: SEVERITY_COLOUR[it.severity] ?? C.ink });
+    if (it.expected) w.text(`Expected: ${it.expected}`, { size, indent: 12, color: C.muted });
+    if (it.detected) w.text(`Detected: ${it.detected}`, { size, indent: 12, color: C.muted });
+    w.text(it.explanation, { size, indent: 12 });
+    if (it.fix) w.text(`Suggested fix: ${it.fix}`, { size, indent: 12 });
+    w.gap(1);
   }
 }
+
+/** Keeps every line in the main report short (the full wording is in "Detailed checks"). */
+const short = (text: string, max = 150) => (text.length > max ? `${text.slice(0, max - 1).trimEnd()}…` : text);
+const COUNTED = new Set(["Critical", "Major", "Minor"]);
 
 async function embedLogo(doc: PDFDocument, logo: ReportLogo): Promise<PDFImage | null> {
   if (!logo) return null;
@@ -254,7 +298,8 @@ export async function renderReportPdf(
   if (data.providerNote) w.text(`Analysed by: ${data.providerNote}`, { size: 9, color: C.muted });
   w.gap(8);
 
-  // --- Result banner --------------------------------------------------------
+  // --- 1. QC result ---------------------------------------------------------
+  w.section("QC result");
   const shown = resultDisplay({ result: data.result, humanChecks: data.humanCheckCount });
   const colours = shown ? RESULT_COLOURS[shown] : { strong: C.muted, soft: C.soft };
   // The label stays on one line (a longer one, e.g. "PASS — HUMAN CHECK REQUIRED", is set a
@@ -277,38 +322,112 @@ export async function renderReportPdf(
   }
   w.y = top - boxHeight - 8;
 
+  // --- 2. Summary: three equal cards ----------------------------------------
+  const toFix = data.issuesToFix.filter((it) => COUNTED.has(it.severity));
+  const suggestions = data.issuesToFix.filter((it) => !COUNTED.has(it.severity));
+  w.section("Summary");
+  const tiles: [number, string, RGB, RGB][] = [
+    [toFix.length, "Issues to fix", toFix.length ? C.failSoft : C.soft, toFix.length ? C.fail : C.muted],
+    [data.humanChecks.length, data.humanChecks.length === 1 ? "Human check" : "Human checks", data.humanChecks.length ? C.revisionSoft : C.soft, data.humanChecks.length ? C.revision : C.muted],
+    [data.passedCount, data.passedCount === 1 ? "Check passed" : "Checks passed", C.passSoft, C.pass],
+  ];
+  const tileGap = 10;
+  const tileWidth = (w.width - tileGap * 2) / 3;
+  const tileHeight = 58;
+  w.ensure(tileHeight + 8);
+  tiles.forEach(([n, label, fill, strong], i) => {
+    const x = MARGIN + i * (tileWidth + tileGap);
+    w.page.drawRectangle({ x, y: w.y - tileHeight, width: tileWidth, height: tileHeight, color: fill });
+    w.bold.draw(w.page, `${n}`, { x: x + 12, y: w.y - 28, size: 22, color: strong });
+    w.regular.draw(w.page, label, { x: x + 12, y: w.y - 46, size: 9.5, color: C.ink });
+    w.lines.push(`${n} ${label}`);
+  });
+  w.y -= tileHeight + 8;
+
+  // --- 3. What needs to be fixed ---------------------------------------------
+  w.section("What needs to be fixed");
+  if (!toFix.length) w.text("No issues to fix.", { color: C.muted });
+  for (const it of toFix) {
+    w.card(
+      [
+        { text: `${it.severity} · ${it.title}`, size: 10.5, bold: true, color: SEVERITY_COLOUR[it.severity] ?? C.ink },
+        { text: `${it.category}${it.file ? ` · ${it.file}` : ""}`, size: 8.5, color: C.muted },
+        ...(it.detected ? [{ text: `Found: ${short(it.detected)}` }] : []),
+        ...(it.fix || it.expected ? [{ text: `Fix: ${short(it.fix ?? `Make it: ${it.expected}`)}` }] : []),
+      ],
+      C.soft
+    );
+  }
+
+  // --- 4. Human checks ---------------------------------------------------------
+  if (data.humanChecks.length) {
+    w.section("Human checks");
+    w.text("The AI wasn't sure about these. They don't count for or against the result — look at each one before sending.", { size: 9, color: C.muted, gap: 6 });
+    for (const it of data.humanChecks) {
+      w.card(
+        [
+          { text: `${it.severity} · ${it.title}`, size: 10.5, bold: true, color: SEVERITY_COLOUR[it.severity] ?? C.revision },
+          { text: it.category, size: 8.5, color: C.muted },
+          ...(it.expected ? [{ text: `Should be: ${short(it.expected)}` }] : []),
+          ...(it.detected ? [{ text: `AI read: ${short(it.detected)}` }] : []),
+        ],
+        C.revisionSoft,
+        C.revisionSoft
+      );
+    }
+  }
+
+  // --- 5. Checks passed --------------------------------------------------------
+  w.section("Checks passed");
+  w.ensure(24);
+  // A drawn tick (the report fonts may not have one).
+  const tickY = w.y - 12;
+  w.page.drawLine({ start: { x: MARGIN + 1, y: tickY }, end: { x: MARGIN + 5, y: tickY - 4 }, thickness: 1.6, color: C.pass });
+  w.page.drawLine({ start: { x: MARGIN + 5, y: tickY - 4 }, end: { x: MARGIN + 12, y: tickY + 5 }, thickness: 1.6, color: C.pass });
+  w.text(`${data.passedCount} check${data.passedCount === 1 ? "" : "s"} passed`, { size: 12, bold: true, color: C.pass, indent: 20 });
+  w.text("The full list is under Detailed checks.", { size: 9, color: C.muted, indent: 20 });
+
+  // --- 6. Detailed checks (secondary, at the end, on its own page) -------------
+  // Its own page when little room is left; otherwise straight after the summary (no near-empty page).
+  if (w.y - BOTTOM < 320) {
+    w.newPage();
+    w.text("Detailed checks", { size: 15, bold: true, gap: 2 });
+  } else {
+    w.section("Detailed checks");
+  }
+  w.text("For reference: every check's full wording, the score by category and the requirements. The summary on the first page is what matters.", { size: 9, color: C.muted, gap: 4 });
   const counts = `Critical ${data.issues.critical} · Major ${data.issues.major} · Minor ${data.issues.minor} · Suggestion ${data.issues.suggestion} · Needs a human check ${data.humanCheckCount} · Not verified ${data.notVerifiedCount}`;
-  w.text(counts, { size: 9.5, bold: true });
+  w.text(counts, { size: 9, bold: true });
   w.text(
-    `Based on ${data.answered} of ${data.applicable} checks that could be answered. Only issues found count: "Needs a human check" and not verified checks never count for or against the result — look at them before sending the content.`,
-    { size: 9, color: C.muted, gap: 4 }
+    `Based on ${data.answered} of ${data.applicable} checks that could be answered. Only issues found count: "Needs a human check" and not verified checks never count for or against the result.`,
+    { size: 8.5, color: C.muted, gap: 2 }
   );
 
-  // --- Sections ---------------------------------------------------------------
-  w.heading("Score by category");
+  w.subheading("Score by category");
   w.table(["Category", "Score", "Issues", "Not counted"], data.categories.map((c) => [c.label, c.score, c.issues, c.notCounted]), [0.3, 0.14, 0.26, 0.3]);
 
-  w.heading("Requirements checked");
+  w.subheading("Requirements checked");
   if (data.requirements.length) {
     w.table(["Requirement", "Expected", "Mandatory", "Result"], data.requirements.map((r) => [r.type, r.value, r.mandatory ? "Yes" : "No", r.status]), [0.24, 0.38, 0.12, 0.26]);
   } else {
-    w.text("No confirmed requirements.", { color: C.muted });
+    w.text("No confirmed requirements.", { size: 9, color: C.muted });
   }
-  if (data.unconfirmedRequirements) w.text(`${data.unconfirmedRequirements} unconfirmed requirement(s) were not used.`, { size: 9, color: C.muted });
+  if (data.unconfirmedRequirements) w.text(`${data.unconfirmedRequirements} unconfirmed requirement(s) were not used.`, { size: 8.5, color: C.muted });
 
-  w.heading(`Issues to fix (${data.issuesToFix.length})`);
-  items(w, data.issuesToFix, "No issues to fix.");
+  w.subheading(`Issues to fix — full detail (${toFix.length})`);
+  items(w, toFix, "No issues to fix.");
 
-  w.heading(`Needs a human check (${data.humanChecks.length})`);
-  w.text("Not counted for or against the result: the reading or the AI's judgement wasn't certain enough. Check each one yourself.", { size: 9, color: C.muted, gap: 2 });
+  if (suggestions.length) {
+    w.subheading(`Suggestions (${suggestions.length})`);
+    items(w, suggestions, "None.");
+  }
+
+  w.subheading(`Needs a human check (${data.humanChecks.length})`);
   items(w, data.humanChecks, "None.");
 
-  w.heading(`Not verified (${data.notVerified.length})`);
-  w.text("These checks couldn't be done (missing company information, or content the analysis couldn't read). Not counted for or against the result.", { size: 9, color: C.muted, gap: 2 });
+  w.subheading(`Not verified (${data.notVerified.length})`);
+  w.text("These checks couldn't be done (missing company information, or content the analysis couldn't read). Not counted for or against the result.", { size: 8.5, color: C.muted, gap: 2 });
   items(w, data.notVerified, "None.");
-
-  w.gap(6);
-  w.text(`${data.passedCount} check(s) passed.`, { size: 9, color: C.muted });
 
   // --- Footer on every page -------------------------------------------------
   const pages = doc.getPages();

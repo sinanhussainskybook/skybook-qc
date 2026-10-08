@@ -76,6 +76,44 @@ describe("QC report", () => {
     expect(clean.text).not.toContain("HUMAN CHECK REQUIRED");
   });
 
+  it("simple layout: result → summary → what to fix → human checks → passed, then the detail at the end", async () => {
+    const r = await report([
+      f("brief", "failed", "critical", { ruleId: "brief.requirement.price", title: "Price", expected: "AED 1,299", detected: "Not found", explanation: "The brief asks for this, but it isn't in the content.", suggestedFix: 'Add "AED 1,299".' }),
+      f("brand", "failed", "minor", { title: "Brand colours used", detected: "#FFFFFF (99%)", explanation: "Barely used.", suggestedFix: "Use the brand colours." }),
+      f("platform_size", "failed", "suggestion", { title: "Recommended resolution", detected: "1080 × 1350", suggestedFix: "Export larger." }),
+      f("brand", "unverified", "major", { title: "Logo", expected: "The company's logo", detected: "No logo", explanation: `${HUMAN_CHECK_CRITICAL.split(" — ")[0]}: the AI wasn't clear about this.` }),
+      f("brand", "unverified", "major", { title: "Brand fonts", explanation: "No brand fonts are saved for this company." }),
+      f("content", "passed"),
+      f("content", "passed"),
+    ]);
+    const lines = r.text.split("\n");
+    const at = (s: string) => lines.indexOf(s);
+    // The six parts, in order.
+    for (const heading of ["QC result", "Summary", "What needs to be fixed", "Human checks", "Checks passed", "Detailed checks"]) expect(at(heading), heading).toBeGreaterThan(-1);
+    expect([at("QC result"), at("Summary"), at("What needs to be fixed"), at("Human checks"), at("Checks passed"), at("Detailed checks")]).toEqual(
+      [at("QC result"), at("Summary"), at("What needs to be fixed"), at("Human checks"), at("Checks passed"), at("Detailed checks")].sort((a, b) => a - b)
+    );
+    // Summary: three counts (the suggestion isn't an issue to fix).
+    expect(lines).toEqual(expect.arrayContaining(["2 Issues to fix", "1 Human check", "2 Checks passed"]));
+    // What to fix: short cards — issue, severity, found, fix; only Critical / Major / Minor.
+    const main = lines.slice(at("What needs to be fixed"), at("Detailed checks")).join("\n");
+    expect(main).toContain("Critical · Price\nBrief\nFound: Not found\nFix: Add \"AED 1,299\".");
+    expect(main).toContain("Minor · Brand colours used\nBrand\nFound: #FFFFFF (99%)\nFix: Use the brand colours.");
+    expect(main).not.toContain("Recommended resolution");
+    // Human checks in plain words; no technical prefix, no not-verified items, no long explanations.
+    expect(main).toContain("Major · Logo\nBrand\nShould be: The company's logo\nAI read: No logo");
+    expect(main).not.toMatch(/Needs a human check:|Not verified|Brand fonts|Expected:|Detected:|Suggested fix:|the AI wasn't clear/);
+    expect(main).toContain("2 checks passed");
+    // Everything is still there, after the summary: counts, tables, full wording, suggestions, not verified.
+    const detail = lines.slice(at("Detailed checks")).join("\n");
+    for (const s of ["Critical 1 · Major 0 · Minor 1 · Suggestion 1 · Needs a human check 1 · Not verified 1", "Score by category", "Requirements checked", "Critical · Brief · Price", "The brief asks for this, but it isn't in the content.", "Suggestions (1)", "Suggestion · Platform / Size · Recommended resolution", "Needs a human check (1)", "Not verified (1)", "No brand fonts are saved for this company."]) {
+      expect(detail, s).toContain(s);
+    }
+    // Presentation only: the report data (findings, counts, result) is exactly what the page uses.
+    expect(r.data).toMatchObject({ result: "fail", passedCount: 2, humanCheckCount: 1, notVerifiedCount: 1, issues: { critical: 1, major: 0, minor: 1, suggestion: 1 } });
+    expect(r.data.issuesToFix).toHaveLength(3);
+  });
+
   it("NEEDS REVISION report: the issue with severity and category", async () => {
     const r = await report([f("design_layout", "failed", "minor", { title: "Text near the edge", detected: '"Book now" touches the edge', suggestedFix: "Move it in." }), f("brief", "passed")]);
     expect(r.text).toContain("NEEDS REVISION");

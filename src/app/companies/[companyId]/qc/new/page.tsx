@@ -1,12 +1,12 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { ArrowLeft, ClipboardCheck, Clock, FileDown, FileUp, Gauge, ListChecks, Ruler, ScanSearch, Sparkles, TriangleAlert, Upload } from "lucide-react";
+import { ArrowLeft, ChevronDown, ClipboardCheck, Clock, FileUp, Gauge, ListChecks, Ruler, ScanSearch, Sparkles, TriangleAlert, Upload } from "lucide-react";
 import { AppShell } from "@/components/layout/app-shell";
 import { SectionCard } from "@/components/company/section-card";
 import { ContentTypeForm } from "@/components/qc/content-type-form";
 import { AnalysisPanel } from "@/components/qc/analysis-panel";
 import { CategoryChecks } from "@/components/qc/category-checks";
-import { resultWaitingText, Scoreboard } from "@/components/qc/scoreboard";
+import { CategoryScores, resultWaitingText, Scoreboard } from "@/components/qc/scoreboard";
 import { FileUploader } from "@/components/qc/file-uploader";
 import { GeminiFreeTierNotice } from "@/components/qc/gemini-free-tier-notice";
 import { PlatformCheck } from "@/components/qc/platform-check";
@@ -14,7 +14,6 @@ import { PlatformForm } from "@/components/qc/platform-form";
 import { RequirementsEditor } from "@/components/qc/requirements-editor";
 import { SessionFooter } from "@/components/qc/session-footer";
 import { Badge } from "@/components/ui/badge";
-import { buttonVariants } from "@/components/ui/button";
 import { requireCompanyAccess } from "@/lib/company/access";
 import { getDatabase } from "@/lib/db/client";
 import { findCurrentSession } from "@/lib/db/qc-sessions";
@@ -251,52 +250,62 @@ export default async function StartQcPage({ params }: PageProps<"/companies/[com
           <SectionCard
             id="qc-result"
             title="QC result"
-            description="PASS, NEEDS REVISION or FAIL from the checks below. Only issues found count; anything not verified or needing a human check never counts for or against."
+            description="What's wrong, how serious it is, and how to fix it."
             icon={Gauge}
           >
             {board ? (
-              <div className="space-y-4">
-                <Scoreboard board={board} mock={analysisView.detections?.source === "mock"} />
-                <div className="flex flex-wrap items-center gap-3 border-t pt-4">
-                  <a href={`/companies/${company.id}/qc/report`} download className={buttonVariants({ className: "gap-2 rounded-full" })}>
-                    <FileDown className="size-4" aria-hidden />
-                    Download QC report (PDF)
-                  </a>
-                  <p className="text-xs text-muted-foreground">Made from this session when you download it. It isn&apos;t saved anywhere — keep the file.</p>
-                </div>
-              </div>
+              <Scoreboard board={board} findings={findings} mock={analysisView.detections?.source === "mock"} reportHref={`/companies/${company.id}/qc/report`} />
             ) : (
               <p className="rounded-xl bg-muted/60 px-4 py-3 text-sm text-muted-foreground">{resultWaitingText(analysisView.analysis.state)}</p>
             )}
           </SectionCard>
         )}
 
-        {platformFindings && (
-          <SectionCard
-            id="platform-check"
-            title="Platform check"
-            description="Measured from the uploaded content. Safe zones and anything that couldn't be measured are shown as not verified, never guessed."
-            icon={ScanSearch}
-          >
-            <PlatformCheck findings={platformFindings} />
-          </SectionCard>
-        )}
-
         {findings && (
-          <SectionCard
-            id="content-checks"
-            title="Content checks"
-            description="Content, brand, Golden Rules, layout, accessibility, image, brief and legal checks for this session."
-            icon={ClipboardCheck}
-          >
-            <CategoryChecks
-              findings={findings}
-              analysis={analysisView.analysis}
-              mock={analysisView.detections?.source === "mock"}
-              local={analysisView.provider === "local"}
-              gemini={analysisView.provider === "gemini"}
-            />
-          </SectionCard>
+          <details id="all-checks" className="group rounded-2xl bg-card ring-1 ring-foreground/8">
+            <summary className="flex cursor-pointer list-none items-center gap-3 p-5 sm:px-7">
+              <ListChecks className="size-4.5 shrink-0 text-muted-foreground" aria-hidden />
+              <span className="min-w-0 flex-1">
+                <span className="block text-lg font-semibold tracking-tight">All checks in detail</span>
+                <span className="block text-sm text-muted-foreground">Every check with its full explanation, score by category, and anything that couldn&apos;t be checked.</span>
+              </span>
+              <ChevronDown className="size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" aria-hidden />
+            </summary>
+            <div className="space-y-4 px-3 pb-3 sm:px-4 sm:pb-4">
+              {board && (
+                <section aria-label="Score by category" className="px-2 sm:px-3">
+                  <CategoryScores board={board} />
+                </section>
+              )}
+            {platformFindings && (
+              <SectionCard
+                id="platform-check"
+                title="Platform check"
+                description="Measured from the uploaded content. Safe zones and anything that couldn't be measured are shown as not verified, never guessed."
+                icon={ScanSearch}
+              >
+                <PlatformCheck findings={platformFindings} />
+              </SectionCard>
+            )}
+
+            {findings && (
+              <SectionCard
+                id="content-checks"
+                title="Content checks"
+                description="Content, brand, Golden Rules, layout, accessibility, image, brief and legal checks for this session."
+                icon={ClipboardCheck}
+              >
+                <CategoryChecks
+                  findings={findings}
+                  analysis={analysisView.analysis}
+                  mock={analysisView.detections?.source === "mock"}
+                  local={analysisView.provider === "local"}
+                  gemini={analysisView.provider === "gemini"}
+                />
+              </SectionCard>
+            )}
+            </div>
+          </details>
         )}
 
         {missing.length > 0 && (

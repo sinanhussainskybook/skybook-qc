@@ -368,8 +368,16 @@ describe("Start QC page", () => {
       // No counted issues but a human check → the banner says so (the result itself is still PASS).
       expect(text).toContain("PASS — HUMAN CHECK REQUIRED No issues to fix in the checks that could be verified — but some items need a human check before it goes to the client. 100 / 100");
       expect(text).toContain("Sample data — not real AI. This is not a real QC result.");
-      expect(text).toContain("1 need a human check and 8 couldn't be verified — they don't count for or against the result.");
-      expect(text).toContain("What to fix Suggestion Platform / Size Recommended resolution");
+      // The simplified summary: three counts, short sections, passed checks collapsed into one line.
+      expect(text).toContain("0 Issues to fix 1 Human check 10 Checks passed");
+      expect(text).toContain("Issues to fix No issues to fix.");
+      expect(text).toContain("1 optional suggestion Recommended resolution — Export at 1440 × 1800 if the original artwork allows it.");
+      expect(text).toContain("Human checks The AI wasn't sure about these. They don't count for or against the result — look at each one before sending. Major Brand fonts Brand Should be Montserrat AI read Sample Sans");
+      expect(text).toContain("Passed ✓ 10 checks passed");
+      // Technical wording stays out of the summary: it is only in "All checks in detail", after the download.
+      const summary = text.slice(text.indexOf("QC result What's wrong"), text.indexOf("All checks in detail"));
+      expect(summary).not.toMatch(/not verified|Needs a human check:|Score by category|Detected:|couldn't be verified/);
+      expect(text).toContain("All checks in detail Every check with its full explanation, score by category, and anything that couldn't be checked. Score by category");
       // Phase 8: the report download, made from this session and not stored.
       expect(text).toContain("Download QC report (PDF)");
       expect(text).toContain("It isn't saved anywhere — keep the file.");

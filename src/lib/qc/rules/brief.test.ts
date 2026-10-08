@@ -141,4 +141,83 @@ describe("Brief rules", () => {
     ]);
     expect(byRule(run({ detections: detections({ texts: [text("x")] }) }), "brief.requirement")).toMatchObject([{ status: "not_applicable" }]);
   });
+
+  describe("exact dimensions from the brief (no platform needed)", () => {
+    const design = (width: number, height: number, id = "f1", unit: "px" | "pt" = "px") => ({
+      id,
+      fileName: `${id}.jpg`,
+      format: "jpeg" as const,
+      size: 500_000,
+      media: { unit, width, height },
+    });
+    const sizeCheck = (expected: string, files: ReturnType<typeof design>[], over = {}) =>
+      byRule(
+        run({
+          requirements: [requirement("dimensions", expected, over)],
+          detections: detections({ texts: [text("Book now")] }),
+          platform: { platform: null, placement: null, custom: null, files },
+        }),
+        "brief.requirement"
+      );
+
+    it("a mismatch is flagged: 1080 × 1080 asked, 1254 × 1254 delivered (MAJOR when Must have)", () => {
+      expect(sizeCheck("1080 × 1080", [design(1254, 1254)])).toEqual([
+        expect.objectContaining({
+          ruleId: "brief.requirement.dimensions",
+          status: "failed",
+          severity: "major",
+          expected: "1080 × 1080 px",
+          detected: "1254 × 1254 px",
+          suggestedFix: "Export the design at exactly 1080 × 1080 px.",
+          fileName: "f1.jpg",
+        }),
+      ]);
+      expect(sizeCheck("1080x1080", [design(1254, 1254)], { mandatory: false })[0]).toMatchObject({ status: "failed", severity: "minor" });
+    });
+
+    it("a matching size passes — written any common way", () => {
+      for (const written of ["1080 × 1080", "1080x1080 px", "1080 X 1080", "1080 by 1080 pixels", "Instagram post 1080 x 1080"]) {
+        expect(sizeCheck(written, [design(1080, 1080)]), written).toEqual([
+          expect.objectContaining({ status: "passed", expected: "1080 × 1080 px", detected: "1080 × 1080 px" }),
+        ]);
+      }
+    });
+
+    it("each design is measured separately (a carousel)", () => {
+      const findings = sizeCheck("1080 × 1080", [design(1080, 1080, "a"), design(1080, 1350, "b")]);
+      expect(findings.map((f) => [f.fileName, f.status]).sort()).toEqual([["a.jpg", "passed"], ["b.jpg", "failed"]]);
+    });
+
+    it("not measured → not verified, never guessed; no design → not verified", () => {
+      expect(sizeCheck("1080 × 1080", [{ ...design(0, 0), media: null } as never])[0]).toMatchObject({ status: "unverified" });
+      expect(sizeCheck("1080 × 1080", [design(1080, 1080, "p", "pt")])[0]).toMatchObject({ status: "unverified" });
+      expect(sizeCheck("1080 × 1080", [])[0]).toMatchObject({ status: "unverified" });
+    });
+
+    it("dimensions that aren't one exact pixel size stay with the Platform / Size check", () => {
+      for (const written of ["Square", "210 × 297 mm", "1080 × 1080 or 1080 × 1350", "4:5"]) {
+        expect(sizeCheck(written, [design(1254, 1254)])[0], written).toMatchObject({ status: "not_applicable" });
+      }
+    });
+  });
+
+  describe("exact wording capitals (Must have required text)", () => {
+    it("same words, different capitals → MINOR (T&C apply vs T&C Apply)", () => {
+      expect(check(requirement("required_text", "T&C apply"), "Book today. T&C Apply")).toMatchObject({
+        status: "failed",
+        severity: "minor",
+        expected: "T&C apply",
+        detected: "T&C Apply",
+        explanation: expect.stringContaining("capitals"),
+      });
+    });
+
+    it("normal sentences aren't held to capitals: ALL CAPS styling, a capital at the start, other text kinds, optional items", () => {
+      expect(check(requirement("required_text", "T&C apply"), "T&C APPLY")).toMatchObject({ status: "passed" });
+      expect(check(requirement("required_text", "limited availability"), "Limited availability")).toMatchObject({ status: "passed" });
+      expect(check(requirement("required_text", "T&C apply", { mandatory: false }), "T&C Apply")).toMatchObject({ status: "passed" });
+      expect(check(requirement("offer", "Free airport transfer"), "free Airport Transfer")).toMatchObject({ status: "passed" });
+      expect(check(requirement("headline", "Summer in the sun"), "Summer In The Sun")).toMatchObject({ status: "passed" });
+    });
+  });
 });

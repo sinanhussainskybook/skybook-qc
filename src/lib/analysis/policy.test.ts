@@ -239,3 +239,26 @@ describe("local provider safety rules", () => {
     expect(partial.explanation).toBe(PARTLY_ANALYSED);
   });
 });
+
+/** An exact size in the brief is the file's own measurement: it counts whoever read the text. */
+describe("exact dimensions from the brief", () => {
+  const sized = (provider: "gemini" | "local" | "google" | "mock", width: number) => {
+    const d = detections({ texts: [text("Book now", { confidence: 0.6 })], textCoverage: 0.95 });
+    const files = [{ id: "f1", fileName: "post.jpg", format: "jpeg" as const, size: 1, media: { unit: "px" as const, width, height: width } }];
+    const findings = applyConfidencePolicy(
+      run({ detections: d, requirements: [requirement("dimensions", "1080 × 1080")], platform: { platform: null, placement: null, custom: null, files } }),
+      d,
+      { state: "done" },
+      { provider }
+    );
+    return findings.find((f) => f.ruleId === "brief.requirement.dimensions")!;
+  };
+
+  it("is measured, not AI: a mismatch counts and a match passes — Gemini included", () => {
+    expect(isRegistered("brief.requirement.dimensions")).toBe(true);
+    for (const provider of ["gemini", "local", "google", "mock"] as const) {
+      expect(sized(provider, 1254), provider).toMatchObject({ status: "failed", severity: "major", detected: "1254 × 1254 px" });
+      expect(sized(provider, 1080), provider).toMatchObject({ status: "passed" });
+    }
+  });
+});

@@ -259,17 +259,26 @@ export async function insertRequirement(
 export async function insertExtractedRequirement(
   db: Database,
   sessionId: string,
-  input: { type: string; label: string | null; expectedValue: string; notes: string | null; sourceFileId: string },
+  input: { type: string; label: string | null; expectedValue: string; notes: string | null; sourceFileId: string; mandatory?: boolean },
   now: Date
 ): Promise<string> {
   const [row] = await db.query<{ id: string }>(
     `insert into qc_requirements
        (session_id, type, label, expected_value, notes, mandatory, confirmed, source, source_file_id, created_at, updated_at)
-     values ($1, $2, $3, $4, $5, false, false, 'extracted', $6, $7, $7)
+     values ($1, $2, $3, $4, $5, $8, false, 'extracted', $6, $7, $7)
      returning id`,
-    [sessionId, input.type, input.label, input.expectedValue, input.notes, input.sourceFileId, now]
+    [sessionId, input.type, input.label, input.expectedValue, input.notes, input.sourceFileId, now, input.mandatory ?? false]
   );
   return row.id;
+}
+
+/** Confirm & Run QC: every requirement in the session is confirmed at once. */
+export async function confirmAllRequirements(db: Database, sessionId: string, now: Date): Promise<number> {
+  const rows = await db.query(
+    "update qc_requirements set confirmed = true, updated_at = $2 where session_id = $1 and confirmed = false returning id",
+    [sessionId, now]
+  );
+  return rows.length;
 }
 
 /** Returns false if the requirement isn't in this session. */

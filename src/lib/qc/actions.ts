@@ -25,6 +25,7 @@ import {
   confirmUpload,
   markReady,
   prepareUpload,
+  READINESS_MESSAGES,
   removeFile,
   removeSessionCompletely,
   startSession,
@@ -32,7 +33,7 @@ import {
 } from "@/lib/qc/session";
 import type { FileKind } from "@/lib/qc/qc-file";
 import { getQcStorage } from "@/lib/storage/qc-storage";
-import { enqueueRun } from "@/lib/analysis/enqueue";
+import { enqueueBriefReading, enqueueRun } from "@/lib/analysis/enqueue";
 import { latestRun, type RunKind, type RunStatus } from "@/lib/db/analysis-runs";
 
 /**
@@ -233,7 +234,11 @@ export async function prepareUploadAction(input: {
   }
 }
 
-/** Step 2: checks what actually arrived; a file that fails is deleted. */
+/**
+ * Step 2: checks what actually arrived; a file that fails is deleted. An
+ * information file (the brief) is then read straight away: what it asks for
+ * appears under Requirements for the designer to review.
+ */
 export async function confirmUploadAction(input: {
   sessionId: string;
   fileId: string;
@@ -243,7 +248,14 @@ export async function confirmUploadAction(input: {
   const storage = getQcStorage();
   if (!storage) return { ok: false, error: MESSAGES.storageNotConfigured };
 
-  const result = await confirmUpload(getDatabase(), storage, found.session, input.fileId, getUploadLimitBytes(), new Date());
+  const db = getDatabase();
+  const now = new Date();
+  const result = await confirmUpload(db, storage, found.session, input.fileId, getUploadLimitBytes(), now);
+  if (result.ok && result.file.kind === "information") {
+    // If it can't start now (analysis not set up, a design being analysed), the
+    // Information section offers to read the brief instead.
+    await enqueueBriefReading(db, found.session, found.user.id, now).catch((error) => console.error("Queueing the brief reading failed:", error));
+  }
   refresh(found.company.id);
   return result.ok ? { ok: true } : { ok: false, error: result.error };
 }
@@ -270,19 +282,26 @@ export async function cancelUploadAction(input: { sessionId: string; fileId: str
 }
 
 // ---------------------------------------------------------------------------
-// Save and continue
+// Confirm & Run QC
 // ---------------------------------------------------------------------------
 
+const briefBeingRead = async (db: ReturnType<typeof getDatabase>, sessionId: string) => {
+  const run = await latestRun(db, sessionId, "information");
+  return run?.status === "queued" || run?.status === "processing";
+};
+
+/** Confirms every listed requirement, marks the session Ready and analyses the content. */
 export async function markReadyAction(_previous: QcFormState, formData: FormData): Promise<QcFormState> {
   const found = await sessionFromForm(formData);
   if (!found) return { error: MESSAGES.notAvailable };
   const db = getDatabase();
-  const [requirements, files] = await Promise.all([
+  const [requirements, files, briefReading] = await Promise.all([
     listRequirements(db, found.session.id),
     listFiles(db, found.session.id, "ready"),
+    briefBeingRead(db, found.session.id),
   ]);
   const now = new Date();
-  const result = await markReady(db, found.session, requirements, files, now);
+  const result = await markReady(db, found.session, requirements, files, now, { briefReading });
   if (!result.ok) return { error: result.problems.join(" ") };
   // Phase 6: analyse the content in the background (the worker picks it up).
   const queued = await enqueueRun(db, found.session, found.user.id, "content", now).catch((error) => {
@@ -290,20 +309,28 @@ export async function markReadyAction(_previous: QcFormState, formData: FormData
     return { ok: false as const, error: MESSAGES.failed };
   });
   refresh(found.company.id);
-  return { ok: true, message: queued.ok ? "Saved. The content is being analysed." : "Saved. This check is ready for QC." };
+  return { ok: true, message: queued.ok ? "Confirmed. The content is being analysed." : "Confirmed. This check is ready for QC." };
 }
 
 // ---------------------------------------------------------------------------
 // Content analysis (Phase 6)
 // ---------------------------------------------------------------------------
 
-/** Analyse (or analyse again / try again). Kind: content (default) or information. */
+/**
+ * Analyse again / try again. Kind: content (default) or information. Content
+ * is only analysed against confirmed requirements — with none, QC would pass
+ * content it never checked against the brief.
+ */
 export async function startAnalysisAction(_previous: QcFormState, formData: FormData): Promise<QcFormState> {
   const found = await sessionFromForm(formData);
   if (!found) return { error: MESSAGES.notAvailable };
   const kind: RunKind = field(formData, "kind") === "information" ? "information" : "content";
+  const db = getDatabase();
   try {
-    const queued = await enqueueRun(getDatabase(), found.session, found.user.id, kind, new Date());
+    if (kind === "content" && !(await listRequirements(db, found.session.id)).some((r) => r.confirmed)) {
+      return { error: READINESS_MESSAGES.requirements };
+    }
+    const queued = await enqueueRun(db, found.session, found.user.id, kind, new Date());
     if (!queued.ok) return { error: queued.error };
   } catch (error) {
     console.error("Queueing the analysis failed:", error);

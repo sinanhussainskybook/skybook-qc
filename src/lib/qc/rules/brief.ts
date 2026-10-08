@@ -1,4 +1,5 @@
 import {
+  capitalizationDifference,
   containsText,
   ctaMatches,
   datesMatch,
@@ -11,6 +12,7 @@ import {
   findPrices,
   findTimes,
   findWebsites,
+  parseExactSize,
   parsePercentage,
   parsePrice,
   phonesMatch,
@@ -22,6 +24,7 @@ import { allText, type ContentDetections } from "@/lib/qc/detections";
 import type { Finding, Rule, Severity } from "@/lib/qc/findings";
 import type { QcInputRequirement } from "@/lib/qc/qc-input";
 import { requirementTypeLabel } from "@/lib/qc/requirements";
+import type { ContentFileFacts } from "@/lib/qc/rules/platform-size";
 import { ALL_TYPES, findingFor, NEEDS_ANALYSIS, notApplicable, notVerified, severityFor, type QcContext } from "@/lib/qc/rules/context";
 
 /**
@@ -34,7 +37,14 @@ import { ALL_TYPES, findingFor, NEEDS_ANALYSIS, notApplicable, notVerified, seve
  *              doesn't ask for (an old offer left in, for example).
  * A mandatory requirement missing or wrong is CRITICAL; optional: wrong is
  * MAJOR, missing MINOR. Video counts what's said as well as what's shown.
- * Disclaimers are Legal (5.12); platform and dimensions are Platform / Size (5.11).
+ * Disclaimers are Legal (5.12); platform is Platform / Size (5.11).
+ *
+ * Two exact checks for what the client confirmed:
+ *   dimensions  an exact pixel size ("1080 × 1080") is compared with each
+ *               design's measured size — no platform choice needed. Any other
+ *               dimensions wording is left to the Platform / Size check.
+ *   capitals    a MANDATORY required text whose words are all there but with
+ *               different capitals ("T&C Apply" for "T&C apply") is MINOR.
  */
 
 const CATEGORY = "brief" as const;
@@ -136,12 +146,43 @@ function check(r: QcInputRequirement, d: ContentDetections): Outcome | "unchecke
   }
 }
 
-function judge(r: QcInputRequirement, d: ContentDetections | null): Finding {
+/** Requirement types whose wording must be copied exactly, capitals included, when mandatory. */
+const EXACT_WORDING = new Set(["required_text"]);
+
+/** A confirmed exact pixel size against every design's measured size (one finding per design). */
+function judgeSize(r: QcInputRequirement, size: { width: number; height: number }, files: ContentFileFacts[], title: string): Finding[] {
+  const id = `${RULE_ID}.dimensions`;
+  const make = findingFor(id, CATEGORY, title);
+  const expected = `${size.width} × ${size.height} px`;
+  const severity: Severity = r.mandatory ? "major" : "minor";
+  if (!files.length) return [notVerified(id, CATEGORY, title, severity, "No design has been uploaded to measure.", expected)];
+  return files.map((file) => {
+    const m = file.media;
+    const where = { fileId: file.id, fileName: file.fileName };
+    if (!m || m.unit !== "px" || m.width === undefined || m.height === undefined) {
+      return { ...notVerified(id, CATEGORY, title, severity, "This design's size in pixels couldn't be measured — check it by eye.", expected), ...where };
+    }
+    const match = m.width === size.width && m.height === size.height;
+    return make({
+      severity,
+      status: match ? "passed" : "failed",
+      expected,
+      detected: `${m.width} × ${m.height} px`,
+      explanation: match ? "The design is the exact size the brief asks for." : `The design isn't the size the brief asks for.${r.mandatory ? " The brief marks it as mandatory." : ""}`,
+      suggestedFix: `Export the design at exactly ${expected}.`,
+      ...where,
+    });
+  });
+}
+
+function judge(r: QcInputRequirement, d: ContentDetections | null, files: ContentFileFacts[] = []): Finding | Finding[] {
   const label = requirementTypeLabel(r.type);
   const title = r.label ? `${label}: ${r.label}` : label;
   const id = `${RULE_ID}.${r.type}`;
   const make = findingFor(id, CATEGORY, title);
   const notes = r.notes ? ` Note from the brief: ${r.notes}` : "";
+  const size = r.type === "dimensions" ? parseExactSize(r.expectedValue) : null;
+  if (size) return judgeSize(r, size, files, title);
   if (r.type === "platform" || r.type === "dimensions") {
     return notApplicable(id, CATEGORY, title, "Checked by the Platform / Size check against the platform chosen for this session.");
   }
@@ -152,8 +193,21 @@ function judge(r: QcInputRequirement, d: ContentDetections | null): Finding {
   }
   const mandatoryNote = r.mandatory ? " The brief marks it as mandatory." : "";
   switch (outcome.kind) {
-    case "present":
+    case "present": {
+      const capitals = r.mandatory && EXACT_WORDING.has(r.type) ? capitalizationDifference(allText(d) ?? "", r.expectedValue) : null;
+      if (capitals) {
+        return make({
+          severity: "minor",
+          status: "failed",
+          expected: r.expectedValue,
+          detected: capitals,
+          explanation: "The wording is right, but the capitals differ from the brief.",
+          suggestedFix: `Write it exactly as "${r.expectedValue}".`,
+          confidence: outcome.confidence,
+        });
+      }
       return make({ severity: severityFor(r.mandatory), status: "passed", expected: r.expectedValue, detected: outcome.detected, explanation: "Present as the brief asks.", confidence: outcome.confidence });
+    }
     case "mismatched":
       return make({
         severity: "major" as Severity,
@@ -196,7 +250,7 @@ const requirementsRule: Rule<QcContext> = {
   run(context) {
     const list = context.requirements.filter((r) => r.type !== "disclaimer");
     if (list.length === 0) return [notApplicable(RULE_ID, CATEGORY, "Brief", "No confirmed requirements to check (disclaimers are checked under Legal).")];
-    return list.map((r) => judge(r, context.detections));
+    return list.flatMap((r) => judge(r, context.detections, context.platform?.files));
   },
 };
 

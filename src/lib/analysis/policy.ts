@@ -75,6 +75,7 @@ export const EVIDENCE: Record<string, "text" | "measured" | "ai" | "none"> = {
   "image.audio": "measured",
   "brief.requirement.cta": "ai", // a different CTA is found by role
   "brief.requirement.headline": "ai", // a different headline is found by role
+  "brief.requirement.dimensions": "measured", // the file's own size against an exact size in the brief
   "brief.requirement": "text",
   "brief.unexpected": "text",
   "platform": "measured",
@@ -124,10 +125,11 @@ export type PolicyOptions = {
  * (overlap, edges, contrast, size) are treated as AI: an AI-only CRITICAL is
  * "Needs a human check — possible critical issue", other findings count only
  * when Gemini said it was clear, and an AI "no problem found" pass is not
- * verified. Only the file's own measurements (Platform / Size) and measured
+ * verified. Only the file's own measurements (Platform / Size, and an exact
+ * size the brief asks for) and measured
  * audio stay "measured". Google, local and the mock are unchanged.
  */
-const GEMINI_STILL_MEASURED = ["platform", "image.audio"];
+const GEMINI_STILL_MEASURED = ["platform", "brief.requirement.dimensions", "image.audio"];
 
 /**
  * Passes that cover ALL text positions / sizes at once ("No overlaps", "Clear

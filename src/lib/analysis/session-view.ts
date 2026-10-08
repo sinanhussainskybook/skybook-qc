@@ -31,7 +31,7 @@ export async function loadAnalysisView(db: Database, sessionId: string, contentF
     latestRun(db, sessionId, "content"),
     latestRun(db, sessionId, "information"),
     latestDetections(db, sessionId),
-    countRuns(db, sessionId),
+    countRuns(db, sessionId, "content"), // brief readings don't count toward the limit
   ]);
   const current = filesFingerprint(contentFiles.filter((f) => f.status === "ready").slice(0, ANALYSIS_LIMITS.maxImagesPerRun));
   const detections = stored && stored.fingerprint === current ? stored.detections : null;

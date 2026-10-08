@@ -33,6 +33,60 @@ export function containsText(haystack: string, needle: string): boolean {
   return n.length > 0 && ` ${normalizeWords(haystack)} `.includes(` ${n} `);
 }
 
+type Word = { key: string; raw: string; start: number; end: number };
+
+/** The words of already-normalised text, with where each one is (same word rules as normalizeWords). */
+function wordsOf(value: string): Word[] {
+  const out: Word[] = [];
+  for (const m of value.matchAll(/[\p{L}\p{N}%‘’ʼ']+/gu)) {
+    const raw = m[0].replace(/[‘’ʼ']/g, "");
+    if (raw) out.push({ key: raw.toLowerCase(), raw, start: m.index, end: m.index + m[0].length });
+  }
+  return out;
+}
+
+/**
+ * For wording that must be copied exactly: when `needle` is in `haystack` with
+ * the same words but different capitals ("T&C Apply" for "T&C apply"), what the
+ * content shows. Null when an exact copy is there, when it isn't there at all,
+ * when it's set in ALL CAPITALS (a styling choice), or when only its very first
+ * letter differs (the start of a line).
+ */
+export function capitalizationDifference(haystack: string, needle: string): string | null {
+  const want = wordsOf(needle.normalize("NFKC"));
+  const text = haystack.normalize("NFKC");
+  const found = wordsOf(text);
+  if (!want.length) return null;
+  let different: string | null = null;
+  for (let i = 0; i + want.length <= found.length; i++) {
+    const span = found.slice(i, i + want.length);
+    if (!span.every((w, j) => w.key === want[j].key)) continue;
+    const shown = span.map((w) => w.raw).join(" ");
+    const expected = want.map((w) => w.raw).join(" ");
+    if (shown.slice(1) === expected.slice(1)) return null; // the same (perhaps bar the first letter)
+    const letters = shown.replace(/[^\p{L}]/gu, "");
+    if (letters.toUpperCase() === letters) continue; // ALL CAPS styling
+    different ??= text.slice(span[0].start, span[span.length - 1].end);
+  }
+  return different;
+}
+
+/**
+ * An exact pixel size from a requirement: "1080 × 1080", "1080x1080 px",
+ * "1080 by 1080 pixels". Null when there's no single size, or it's in
+ * another unit (mm, cm, inches, points).
+ */
+export function parseExactSize(value: string): { width: number; height: number } | null {
+  const text = value.normalize("NFKC");
+  if (/\d\s*(?:mm|cm|in|inch|inches|pt|")(?![\p{L}])/iu.test(text)) return null;
+  const sizes = [...text.matchAll(/(?<![\d.])(\d{2,5})\s*(?:px\s*)?(?:x|×|\*|by)\s*(\d{2,5})(?![\d.])/giu)].map((m) => ({
+    width: Number(m[1]),
+    height: Number(m[2]),
+  }));
+  const distinct = new Set(sizes.map((s) => `${s.width}x${s.height}`));
+  return distinct.size === 1 ? sizes[0] : null;
+}
+
 /** Damerau–Levenshtein (optimal string alignment) distance. */
 export function editDistance(a: string, b: string): number {
   const d: number[][] = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);

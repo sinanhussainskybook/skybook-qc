@@ -136,6 +136,7 @@ describe("Phase 4 actions and authorization", () => {
     expect(await actions.markReadyAction({}, form({ sessionId }))).toMatchObject({
       error: expect.stringContaining("Choose the platform"),
     });
+    expect(await actions.saveRequirementAction({}, form({ sessionId, type: "offer", expected_value: "20% off", mandatory: "on" }))).toEqual({ ok: true });
     expect(
       await actions.setPlatformAction({}, form({ sessionId, platform: "instagram", placement: "feed_image" }))
     ).toMatchObject({ ok: true });

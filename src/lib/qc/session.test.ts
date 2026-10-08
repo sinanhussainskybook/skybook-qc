@@ -23,6 +23,7 @@ import {
   removeFile,
   removeSessionCompletely,
   startSession,
+  READINESS_MESSAGES,
 } from "@/lib/qc/session";
 import { loadQcInput, missingCompanyInformation } from "@/lib/qc/qc-input";
 
@@ -167,26 +168,40 @@ describe("QC session rules (Storage faked)", () => {
   });
 
   describe("ready", () => {
-    it("needs a platform, uploaded content and every requirement confirmed", async () => {
+    it("needs a platform, uploaded content and at least one requirement; Confirm & Run QC confirms them all", async () => {
+      // No requirements: blocked — a PASS with nothing to check against would mislead.
+      expect(readinessProblems([], [])).toEqual([READINESS_MESSAGES.content, READINESS_MESSAGES.requirements]);
+      expect(READINESS_MESSAGES.requirements).toBe("Add or confirm the client's requirements before running QC.");
+
       await insertRequirement(db, session.id, { type: "offer", label: null, expected_value: "20% off", notes: null, mandatory: true, confirmed: false }, T0);
-      let requirements = await listRequirements(db, session.id);
-      expect(readinessProblems(requirements, [])).toEqual([
-        "Upload the content you want checked.",
-        "Confirm or delete 1 requirement — unconfirmed requirements are never used.",
-      ]);
+      await insertRequirement(db, session.id, { type: "price", label: null, expected_value: "AED 99", notes: null, mandatory: true, confirmed: false }, T0);
+      const requirements = await listRequirements(db, session.id);
+      // Unconfirmed is fine here: the button confirms the list.
+      expect(readinessProblems(requirements, [])).toEqual([READINESS_MESSAGES.content]);
+      // While the brief is still being read, wait for it.
+      expect(readinessProblems(requirements, [], undefined, { briefReading: true })).toEqual([READINESS_MESSAGES.content, READINESS_MESSAGES.briefReading]);
 
       await upload("content", "poster.jpg", JPEG);
-      await db.query("update qc_requirements set confirmed = true");
-      requirements = await listRequirements(db, session.id);
       const files = await listFiles(db, session.id);
-      expect(await markReady(db, session, requirements, files, T0)).toEqual({
-        ok: false,
-        problems: ["Choose the platform the content is for."],
-      });
+      expect(await markReady(db, session, requirements, files, T0)).toEqual({ ok: false, problems: [READINESS_MESSAGES.platform] });
+      expect((await listRequirements(db, session.id)).some((r) => r.confirmed)).toBe(false); // nothing changed
+
       await setSessionPlatform(db, session.id, { ...NO_PLATFORM, platform: "instagram", placement: "feed_image" }, T0);
       const withPlatform = (await findCurrentSession(db, acme, dee.id, T0))!;
       expect(await markReady(db, withPlatform, requirements, files, T0)).toEqual({ ok: true });
       expect((await findCurrentSession(db, acme, dee.id, T0))!.status).toBe("ready");
+      expect((await listRequirements(db, session.id)).every((r) => r.confirmed)).toBe(true);
+    });
+
+    it("an exact size in the brief (Dimensions 1080 × 1080) stands in for the platform choice", async () => {
+      await upload("content", "poster.jpg", JPEG);
+      const files = await listFiles(db, session.id);
+      await insertRequirement(db, session.id, { type: "dimensions", label: null, expected_value: "Square, roughly", notes: null, mandatory: true, confirmed: false }, T0);
+      expect(readinessProblems(await listRequirements(db, session.id), files, session)).toEqual([READINESS_MESSAGES.platform]);
+      await insertRequirement(db, session.id, { type: "dimensions", label: null, expected_value: "1080 × 1080 px", notes: null, mandatory: true, confirmed: false }, T0);
+      const requirements = await listRequirements(db, session.id);
+      expect(readinessProblems(requirements, files, session)).toEqual([]);
+      expect(await markReady(db, session, requirements, files, T0)).toEqual({ ok: true });
     });
   });
 

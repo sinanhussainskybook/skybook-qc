@@ -39,8 +39,7 @@ describe("Requirements form keeps what was typed", () => {
     fireEvent.change(field("req-new-label"), { target: { value: "Summer offer" } });
     fireEvent.change(field("req-new-value"), { target: { value: "20% off all villas" } });
     fireEvent.change(field("req-new-notes"), { target: { value: "Top right corner" } });
-    fireEvent.click(screen.getByLabelText("Mandatory")); // on → off
-    fireEvent.click(screen.getByLabelText(/^Confirmed/)); // off → on
+    fireEvent.click(screen.getByLabelText(/^Must have/)); // on → off
   }
 
   it("A. a refused new requirement shows the error and keeps every field", async () => {
@@ -57,17 +56,18 @@ describe("Requirements form keeps what was typed", () => {
       label: "Summer offer",
       expected_value: "20% off all villas",
       notes: "Top right corner",
-      confirmed: "on",
     });
     expect(sent.has("mandatory")).toBe(false);
+    // No per-item confirm: Confirm & Run QC confirms the whole list.
+    expect(sent.has("confirmed")).toBe(false);
+    expect(screen.queryByLabelText(/^Confirmed/)).toBeNull();
 
     expect(screen.getByText("Too long.")).toBeTruthy();
     expect(field("req-new-type").value).toBe("offer");
     expect(field("req-new-label").value).toBe("Summer offer");
     expect(field("req-new-value").value).toBe("20% off all villas");
     expect(field("req-new-notes").value).toBe("Top right corner");
-    expect((screen.getByLabelText("Mandatory") as HTMLInputElement).checked).toBe(false);
-    expect((screen.getByLabelText(/^Confirmed/) as HTMLInputElement).checked).toBe(true);
+    expect((screen.getByLabelText(/^Must have/) as HTMLInputElement).checked).toBe(false);
   });
 
   it("a whole-form error (e.g. session gone) also keeps the fields", async () => {
@@ -97,7 +97,7 @@ describe("Requirements form keeps what was typed", () => {
     fireEvent.change(field("req-r1-label"), { target: { value: "New name" } });
     fireEvent.change(field("req-r1-value"), { target: { value: "25% off" } });
     fireEvent.change(field("req-r1-notes"), { target: { value: "Bold" } });
-    fireEvent.click(screen.getByLabelText("Mandatory"));
+    fireEvent.click(screen.getByLabelText(/^Must have/));
     await submit(screen.getByRole("form", { name: "Edit requirement" }));
 
     const sent = actions.saveRequirementAction.mock.calls[0][1] as FormData;
@@ -106,7 +106,7 @@ describe("Requirements form keeps what was typed", () => {
     expect(field("req-r1-label").value).toBe("New name");
     expect(field("req-r1-value").value).toBe("25% off");
     expect(field("req-r1-notes").value).toBe("Bold");
-    expect((screen.getByLabelText("Mandatory") as HTMLInputElement).checked).toBe(false);
+    expect((screen.getByLabelText(/^Must have/) as HTMLInputElement).checked).toBe(false);
   });
 });
 

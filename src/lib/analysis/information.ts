@@ -19,11 +19,15 @@ import { ocrValidator, validateRequirementCandidates } from "@/lib/analysis/vali
  *   1. pattern rules (no AI): phone, email, website, price, percentage;
  *   2. the AI proposes more — and a proposal is kept ONLY when its value and
  *      its quote appear word for word in the file's text (no invention).
- * Every candidate is stored UNCONFIRMED and OPTIONAL (source = extracted):
- * it is never used by QC until the designer reviews and confirms it.
+ * Every candidate is stored UNCONFIRMED (source = extracted): it is never used
+ * by QC until the designer reviews the list and presses Confirm & Run QC.
+ * Price, CTA, headline, disclaimer and dimensions start as Must have; the
+ * rest start Optional. The designer can change either.
  */
 
 export const MAX_CANDIDATES_PER_RUN = 50;
+/** Extracted requirements of these kinds start as Must have (mandatory). */
+export const MUST_HAVE_TYPES: ReadonlySet<string> = new Set(["price", "cta", "headline", "disclaimer", "dimensions"]);
 const NOTE_PREFIX = "Found in";
 
 type Candidate = { type: string; label: string | null; value: string; fileId: string; fileName: string };
@@ -178,6 +182,7 @@ export async function processInformationRun(
         expectedValue: c.value.slice(0, 2000),
         notes: `${NOTE_PREFIX} ${c.fileName}`.slice(0, 1000),
         sourceFileId: c.fileId,
+        mandatory: MUST_HAVE_TYPES.has(c.type),
       },
       now()
     );

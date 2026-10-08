@@ -5,7 +5,7 @@ import { CircleCheck, RotateCcw } from "lucide-react";
 import { markReadyAction, startOverAction } from "@/lib/qc/actions";
 import { Button } from "@/components/ui/button";
 
-/** Save and continue (marks the session Ready) and Start over (deletes it). */
+/** Confirm & Run QC (confirms the requirements, marks the session Ready, analyses the content) and Start over (deletes it). */
 export function SessionFooter({
   sessionId,
   status,
@@ -27,15 +27,15 @@ export function SessionFooter({
           <div>
             <p className="font-semibold">Ready for QC</p>
             <p className="mt-0.5 text-sm text-foreground">
-              Everything for this check is saved. The content is analysed in the background and the checks below update
-              when it finishes, with the QC result. Any change you make sets this back to draft.
+              The requirements are confirmed. The content is analysed in the background and the QC result appears below
+              when it finishes. Any change you make sets this back to draft — press Confirm &amp; Run QC again to use it.
             </p>
           </div>
         </div>
       ) : (
         problems.length > 0 && (
           <ul className="space-y-1 rounded-xl bg-muted/60 p-4 text-sm">
-            <li className="font-medium">Before you continue:</li>
+            <li className="font-medium">Before you run QC:</li>
             {problems.map((problem) => (
               <li key={problem} className="text-muted-foreground">
                 · {problem}
@@ -59,7 +59,7 @@ export function SessionFooter({
             disabled={saving || status === "ready"}
             className="h-11 rounded-full bg-foreground px-6 text-sm font-semibold text-background hover:bg-foreground/85"
           >
-            {saving ? "Saving…" : status === "ready" ? "Saved" : "Save and continue"}
+            {saving ? "Starting…" : status === "ready" ? "Confirmed" : "Confirm & Run QC"}
           </Button>
         </form>
 

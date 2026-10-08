@@ -12,7 +12,7 @@ import { findAccessibleCompany, insertCompany } from "@/lib/db/companies";
 import { claimNextRun, findRun, insertRun } from "@/lib/db/analysis-runs";
 import { insertPendingFile, insertSession, listFiles, listRequirements, markFileReady, type QcSession } from "@/lib/db/qc-sessions";
 import { docxText, xlsxText } from "@/lib/analysis/documents";
-import { patternCandidates } from "@/lib/analysis/information";
+import { MUST_HAVE_TYPES, patternCandidates } from "@/lib/analysis/information";
 import { PassThroughPreparer } from "@/lib/analysis/media/types";
 import { MockProvider } from "@/lib/analysis/mock-provider";
 import { filesFingerprint, processRun } from "@/lib/analysis/pipeline";
@@ -117,14 +117,18 @@ describe("reading information files (6.7)", () => {
       return { result, run: (await findRun(db, claimed.id))! };
     }
 
-    it("reads DOCX, XLSX, TXT and a PDF text layer; candidates are UNCONFIRMED, optional, extracted, linked to their file", async () => {
+    it("reads DOCX, XLSX, TXT and a PDF text layer; candidates are UNCONFIRMED, extracted, linked to their file; price/CTA/headline/disclaimer/dimensions start Must have", async () => {
       const wordId = await addInfo("brief.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "docx", docx(["Summer Escape campaign", "Price AED 1,299"]));
       await addInfo("sheet.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "xlsx", xlsx([["Call", "+971 4 123 4567"]]));
       await addInfo("notes.txt", "text/plain", "txt", strToU8("Email sales@skybook.com"));
       await addInfo("brief.pdf", "application/pdf", "pdf", textPdf(["Book now at www.skybook.com"]));
       expect((await run()).result).toBe("done");
       const reqs = await listRequirements(db, session.id);
-      expect(reqs.every((r) => r.source === "extracted" && !r.confirmed && !r.mandatory)).toBe(true);
+      expect(reqs.every((r) => r.source === "extracted" && !r.confirmed)).toBe(true);
+      // Price is one of the Must have kinds; the rest start Optional.
+      expect(reqs.every((r) => r.mandatory === MUST_HAVE_TYPES.has(r.type))).toBe(true);
+      expect(reqs.find((r) => r.type === "price")?.mandatory).toBe(true);
+      expect(reqs.find((r) => r.type === "phone")?.mandatory).toBe(false);
       const values = reqs.map((r) => [r.type, r.expected_value]);
       expect(values).toEqual(
         expect.arrayContaining([
@@ -168,7 +172,7 @@ describe("reading information files (6.7)", () => {
       // "AED 1" IS written in the file, so the pattern rule offers it — but only as an
       // unconfirmed candidate the designer reviews; the injected instruction itself does nothing else.
       const reqs = await listRequirements(db, session.id);
-      expect(reqs.every((r) => !r.confirmed && !r.mandatory)).toBe(true);
+      expect(reqs.every((r) => !r.confirmed)).toBe(true);
       expect(reqs).toHaveLength(2);
     });
 

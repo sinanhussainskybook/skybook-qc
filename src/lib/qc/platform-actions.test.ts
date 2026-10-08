@@ -221,9 +221,10 @@ describe("Phase 5 — platform choice and measured content", () => {
       expect(await listFiles(state.db, sessionId, "any")).toEqual([]);
     });
 
-    it("Ready needs a platform", async () => {
+    it("Ready needs a platform (or an exact size in the brief)", async () => {
       await upload("post.png", pngOf(1440, 1800));
-      expect(await actions.markReadyAction({}, form({ sessionId }))).toEqual({ error: "Choose the platform the content is for." });
+      await actions.saveRequirementAction({}, form({ sessionId, type: "price", expected_value: "AED 99", mandatory: "on" }));
+      expect(await actions.markReadyAction({}, form({ sessionId }))).toEqual({ error: expect.stringMatching(/^Choose the platform the content is for/) });
       await actions.setPlatformAction({}, form({ sessionId, platform: "instagram", placement: "feed_image" }));
       expect(await actions.markReadyAction({}, form({ sessionId }))).toMatchObject({ ok: true });
     });

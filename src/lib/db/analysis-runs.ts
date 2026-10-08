@@ -56,8 +56,21 @@ export async function insertRun(
   return row ?? null;
 }
 
-export async function countRuns(db: Database, sessionId: string): Promise<number> {
-  const [row] = await db.query<{ count: number }>("select count(*)::int as count from qc_analysis_runs where session_id = $1", [sessionId]);
+/**
+ * A run still waiting to start takes in files added since it was queued (another
+ * information file uploaded straight after the first). Returns false once it has started.
+ */
+export async function refreshQueuedFingerprint(db: Database, runId: string, fingerprint: string): Promise<boolean> {
+  const rows = await db.query("update qc_analysis_runs set files_fingerprint = $2 where id = $1 and status = 'queued' returning id", [runId, fingerprint]);
+  return rows.length > 0;
+}
+
+/** How many runs a session has had — of one kind when `kind` is given. */
+export async function countRuns(db: Database, sessionId: string, kind?: RunKind): Promise<number> {
+  const [row] = await db.query<{ count: number }>(
+    "select count(*)::int as count from qc_analysis_runs where session_id = $1 and ($2::text is null or kind = $2)",
+    [sessionId, kind ?? null]
+  );
   return Number(row.count);
 }
 

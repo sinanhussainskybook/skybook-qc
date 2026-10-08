@@ -17,20 +17,22 @@ const active = (s?: string) => s === "queued" || s === "processing";
 
 const WORDING = {
   content: {
-    notYet: "Not analysed yet. The content is analysed when you save and continue.",
+    notYet: "Not analysed yet. The content is analysed when you press Confirm & Run QC.",
     noFiles: "Upload the content to analyse it.",
-    start: "Analyse now",
+    /** No start button: Confirm & Run QC starts the first analysis. */
+    start: null,
     again: "Analyse again",
     done: "Analysed. The results are in the checks below.",
     stale: "Analysed — but the files have changed since.",
   },
   information: {
-    notYet: "The requirements in these files can be found for you to review.",
-    noFiles: "Upload information files to find requirements in them.",
-    start: "Find requirements in these files",
-    again: "Look again",
-    done: "Done. Anything found was added to Requirements above as unconfirmed — review each one; nothing is used until you confirm it.",
-    stale: "Done.",
+    // The brief is read by itself on upload; this only shows if that couldn't start.
+    notYet: "The brief hasn't been read yet.",
+    noFiles: "Upload the brief to read the requirements from it.",
+    start: "Read the brief",
+    again: "Read again",
+    done: "Brief read. What it asks for is listed under Requirements — check the list, edit or remove anything, then press Confirm & Run QC.",
+    stale: "A file was added or removed since the brief was read — read it again to include it.",
   },
 } as const;
 
@@ -54,7 +56,8 @@ export function AnalysisPanel({
   hasContent: boolean;
   initial: AnalysisStatusView | null;
   stale: boolean;
-  runsLeft: number;
+  /** Design analysis runs left; omitted for brief reading, which has no run limit. */
+  runsLeft?: number;
 }) {
   const router = useRouter();
   const [run, setRun] = useState(initial);
@@ -79,8 +82,8 @@ export function AnalysisPanel({
 
   const words = WORDING[kind];
   const percent = run && run.total > 0 ? Math.round((run.done / run.total) * 100) : 0;
-  const runButton = (label: string) =>
-    hasContent && runsLeft > 0 ? (
+  const runButton = (label: string | null) =>
+    label && hasContent && (runsLeft === undefined || runsLeft > 0) ? (
       <form action={formAction}>
         <input type="hidden" name="sessionId" value={sessionId} />
         <input type="hidden" name="kind" value={kind} />

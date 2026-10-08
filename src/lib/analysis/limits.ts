@@ -12,7 +12,7 @@ export const ANALYSIS_LIMITS = {
   maxVideoAnalysedMs: 15 * 60 * 1000,
   maxOcrFramesPerVideo: 120,
   maxKeyFramesPerVideo: 8,
-  /** Runs per session (Try again included). */
+  /** Design analysis runs per session (Try again included). Brief readings don't count. */
   maxRunsPerSession: 5,
 
   /** Prepared images sent to providers. Both Vision and Gemini accept about 7 MB inline. */

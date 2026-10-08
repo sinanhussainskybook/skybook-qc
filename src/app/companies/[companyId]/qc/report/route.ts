@@ -3,6 +3,7 @@ import { findCompanyForUser } from "@/lib/company/access";
 import { getDatabase } from "@/lib/db/client";
 import { findCurrentSession } from "@/lib/db/qc-sessions";
 import { loadSessionResult } from "@/lib/qc/session-result";
+import { READINESS_MESSAGES } from "@/lib/qc/session";
 import { buildReportData } from "@/lib/report/report-data";
 import { logoForReport } from "@/lib/report/report-logo";
 import { renderReportPdf, reportFileName } from "@/lib/report/report-pdf";
@@ -33,6 +34,7 @@ export async function GET(_request: Request, { params }: RouteContext<"/companie
   if (!session) return plain(404, "There is no QC session for this company.");
 
   const result = await loadSessionResult(db, company, session);
+  if (result.noRequirements) return plain(409, READINESS_MESSAGES.requirements);
   if (!result.findings || !result.board) return plain(409, "There is no QC result yet: upload the content and let it be analysed first.");
 
   // The saved logo, read on the server from the private bucket; any problem → name only.

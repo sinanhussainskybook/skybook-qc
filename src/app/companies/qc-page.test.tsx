@@ -177,7 +177,8 @@ describe("Start QC page", () => {
       expect(html, heading).toContain(heading);
     }
     expect(html).not.toContain("Client Document");
-    expect(html).toContain("Save and continue");
+    expect(html).toContain("Confirm &amp; Run QC");
+    expect(html).not.toContain("Save and continue");
     expect(html).toContain("Deleted automatically in 24 hours");
     // Upload Content accepts only what the content type allows.
     expect(html).toContain('accept=".jpg,.jpeg,image/jpeg,.png,image/png,.webp,image/webp,.pdf,application/pdf"');
@@ -190,7 +191,7 @@ describe("Start QC page", () => {
     expect(html).toContain("MP4, MOV, WEBM · up to 1 file");
   });
 
-  it("shows requirements with their state — unconfirmed ones clearly need review", async () => {
+  it("shows requirements as a simple list — Must have / Optional, no per-item confirm", async () => {
     findCurrentSession.mockResolvedValue(session());
     listRequirements.mockResolvedValue([
       { id: "r1", type: "offer", label: null, expected_value: "20% discount", notes: "Summer only", mandatory: true, confirmed: false, source: "manual" },
@@ -198,10 +199,12 @@ describe("Start QC page", () => {
     ]);
     const html = main(renderToStaticMarkup(await StartQcPage(props)));
     expect(html).toContain("20% discount");
-    expect(html).toContain("Needs review");
-    expect(html).toContain("Mandatory");
+    expect(html).toContain("Must have");
     expect(html).toContain("Optional");
-    expect(html).toContain("Confirm or delete 1 requirement");
+    expect(html).not.toContain("Needs review");
+    expect(html).not.toContain("Confirm or delete");
+    expect(html).not.toMatch(/>Confirm<\/button>/);
+    expect(html).toContain("Confirm &amp; Run QC");
   });
 
   it("lists uploaded files by name, type and size", async () => {
@@ -219,6 +222,9 @@ describe("Start QC page", () => {
 
   it("Platform check: Expected / Detected / Issue / Suggested fix, not-verified items; no result before analysis", async () => {
     findCurrentSession.mockResolvedValue(session({ platform: "instagram", placement: "stories_image" }));
+    listRequirements.mockResolvedValue([
+      { id: "r1", type: "price", label: null, expected_value: "AED 1,299", notes: null, mandatory: true, confirmed: true, source: "manual", source_file_id: null, created_at: now, updated_at: now },
+    ]);
     listFiles.mockResolvedValue([
       {
         id: "f2", kind: "content", file_name: "story.png", mime_type: "image/png", file_size: 900_000, status: "ready",
@@ -271,7 +277,8 @@ describe("Start QC page", () => {
     const html = main(renderToStaticMarkup(await StartQcPage(props)));
     expect(html).not.toContain("Platform check");
     expect(html).not.toContain("Content checks");
-    expect(html).toContain("Choose the platform the content is for.");
+    expect(html).toContain("Choose the platform the content is for");
+    expect(html).toContain("Add or confirm the client&#x27;s requirements before running QC.");
   });
 
   it("warns which company information is missing (checks will be 'not verified')", async () => {
@@ -293,7 +300,7 @@ describe("Start QC page", () => {
     // Visible text only (colour class names like "text-pass" aren't words on the page).
     const text = html.replace(/<[^>]+>/g, " ");
     expect(text).toContain("Ready for QC");
-    expect(text).toContain("with the QC result.");
+    expect(text).toContain("the QC result appears below");
     expect(text).not.toMatch(NO_RESULT_BANNER);
   });
 
@@ -314,14 +321,58 @@ describe("Start QC page", () => {
         .replace(/&amp;/g, "&")
         .replace(/\s+/g, " ");
 
+    const confirmedRequirement = {
+      id: "q1", type: "required_text", label: null, expected_value: "Sample headline", notes: null, mandatory: false, confirmed: true,
+      source: "manual", source_file_id: null, created_at: now, updated_at: now,
+    };
+    const mockDetections = async () => {
+      const { filesFingerprint } = await import("@/lib/analysis/pipeline");
+      latestRun.mockResolvedValue(runRow({ status: "done", stage: "Finished", progress_done: 4 }));
+      latestDetections.mockResolvedValue({
+        runId: "r1",
+        provider: "mock",
+        fingerprint: filesFingerprint([contentFile]),
+        detections: { source: "mock", frame: { width: 1080, height: 1350 }, texts: [{ text: "Sample headline", confidence: 0.95, fileId: "f2" }], textCoverage: 0.95 },
+      });
+    };
+
     beforeEach(() => {
       process.env.QC_ANALYSIS_PROVIDER = "mock";
       findCurrentSession.mockResolvedValue(session({ platform: "instagram", placement: "feed_image" }));
       listFiles.mockResolvedValue([contentFile]);
+      listRequirements.mockResolvedValue([confirmedRequirement]);
+    });
+
+    it("runs left counts design analyses only: with all 5 used, the brief can still be read again", async () => {
+      listFiles.mockResolvedValue([contentFile, { id: "f1", kind: "information", file_name: "brief.txt", mime_type: "text/plain", file_size: 100, status: "ready" }]);
+      await mockDetections();
+      countRuns.mockResolvedValue(5);
+      const text = await page();
+      expect(countRuns).toHaveBeenCalledWith(expect.anything(), SESSION, "content");
+      expect(text).toContain("This session has used all its analysis runs.");
+      expect(text.match(/used all its analysis runs/g)).toHaveLength(1); // the design panel only
+      expect(text).toContain("Read again");
+      expect(text).not.toContain("Analyse again");
+    });
+
+    it("analysed, but no confirmed requirement: no PASS — the page asks for the requirements instead", async () => {
+      listRequirements.mockResolvedValue([]);
+      await mockDetections();
+      const text = await page();
+      expect(text).toContain("Add or confirm the client's requirements before running QC.");
+      expect(text).not.toMatch(NO_RESULT_BANNER);
+      expect(text).not.toContain("PASS");
+      expect(text).not.toContain("Download QC report");
+      // Unconfirmed ones don't count either.
+      listRequirements.mockResolvedValue([{ ...confirmedRequirement, confirmed: false }]);
+      expect(await page()).not.toMatch(NO_RESULT_BANNER);
+      // With a confirmed requirement the result is shown as before.
+      listRequirements.mockResolvedValue([confirmedRequirement]);
+      expect(await page()).toMatch(NO_RESULT_BANNER);
     });
 
     it("not analysed yet: says when it happens", async () => {
-      expect(await page()).toContain("analysed when you save and continue");
+      expect(await page()).toContain("analysed when you press Confirm & Run QC");
     });
 
     it("in progress: progress and the mock label; checks say they are waiting; no result yet", async () => {
@@ -369,11 +420,11 @@ describe("Start QC page", () => {
       expect(text).toContain("PASS — HUMAN CHECK REQUIRED No issues to fix in the checks that could be verified — but some items need a human check before it goes to the client. 100 / 100");
       expect(text).toContain("Sample data — not real AI. This is not a real QC result.");
       // The simplified summary: three counts, short sections, passed checks collapsed into one line.
-      expect(text).toContain("0 Issues to fix 1 Human check 10 Checks passed");
+      expect(text).toContain("0 Issues to fix 1 Human check 11 Checks passed"); // 10 + the confirmed requirement found
       expect(text).toContain("Issues to fix No issues to fix.");
       expect(text).toContain("1 optional suggestion Recommended resolution — Export at 1440 × 1800 if the original artwork allows it.");
       expect(text).toContain("Human checks The AI wasn't sure about these. They don't count for or against the result — look at each one before sending. Major Brand fonts Brand Should be Montserrat AI read Sample Sans");
-      expect(text).toContain("Passed ✓ 10 checks passed");
+      expect(text).toContain("Passed ✓ 11 checks passed");
       // Technical wording stays out of the summary: it is only in "All checks in detail", after the download.
       const summary = text.slice(text.indexOf("QC result What's wrong"), text.indexOf("All checks in detail"));
       expect(summary).not.toMatch(/not verified|Needs a human check:|Score by category|Detected:|couldn't be verified/);

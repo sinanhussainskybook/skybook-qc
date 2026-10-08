@@ -49,6 +49,13 @@ describe("GET /companies/[companyId]/qc/report", () => {
     expect(findCurrentSession).toHaveBeenLastCalledWith(expect.anything(), "c1", "u1", expect.any(Date));
   });
 
+  it("no confirmed requirement → 409 with the plain message, never a PASS report", async () => {
+    loadSessionResult.mockResolvedValueOnce({ config: company(), requirements: [], files: [], findings: [passed], analysisView: { detections: { source: "mock" }, provider: "mock" }, board: null, noRequirements: true });
+    const blocked = await call();
+    expect(blocked.status).toBe(409);
+    expect(await blocked.text()).toBe("Add or confirm the client's requirements before running QC.");
+  });
+
   it("a PDF download, not cached, named after the company and date", async () => {
     const res = await call();
     expect(res.status).toBe(200);

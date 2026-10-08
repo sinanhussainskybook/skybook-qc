@@ -1,13 +1,8 @@
 "use client";
 
 import { useActionState, useState } from "react";
-import { CircleCheck, Pencil, Plus, Trash2 } from "lucide-react";
-import {
-  deleteRequirementAction,
-  saveRequirementAction,
-  setRequirementConfirmedAction,
-  type QcFormState,
-} from "@/lib/qc/actions";
+import { Pencil, Plus, Trash2 } from "lucide-react";
+import { deleteRequirementAction, saveRequirementAction, type QcFormState } from "@/lib/qc/actions";
 import { REQUIREMENT_TYPES, requirementTypeLabel } from "@/lib/qc/requirements";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -15,7 +10,10 @@ import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { submitKeepingValues } from "@/components/qc/submit-keeping-values";
 
-/** What the client asked for, as a list of requirement cards with Add / Edit / Confirm / Delete. */
+/**
+ * What the client asked for, as a simple list with Add / Edit / Delete. There's
+ * no per-item confirm: Confirm & Run QC (below) confirms the whole list.
+ */
 
 export type RequirementView = {
   id: string;
@@ -101,32 +99,21 @@ function RequirementCard({
   requirement: RequirementView;
   onEdit: () => void;
 }) {
-  const [confirmState, confirmAction, confirming] = useActionState(setRequirementConfirmedAction, {});
   const [deleteState, deleteAction, deleting] = useActionState(deleteRequirementAction, {});
   const [askDelete, setAskDelete] = useState(false);
   const title = requirement.label || requirementTypeLabel(requirement.type);
-  const error = confirmState.error ?? deleteState.error;
+  const error = deleteState.error;
 
   return (
-    <div
-      className={cn(
-        "rounded-xl bg-card p-4 ring-1",
-        requirement.confirmed ? "ring-border" : "ring-revision/40 bg-revision-soft/40"
-      )}
-    >
+    <div className="rounded-xl bg-card p-4 ring-1 ring-border">
       <div className="flex flex-wrap items-center gap-1.5">
         <Badge variant="secondary">{requirementTypeLabel(requirement.type)}</Badge>
         {requirement.mandatory ? (
-          <Badge className="bg-foreground text-background">Mandatory</Badge>
+          <Badge className="bg-foreground text-background">Must have</Badge>
         ) : (
           <Badge variant="outline">Optional</Badge>
         )}
-        {requirement.confirmed ? (
-          <Badge className="bg-pass-soft text-pass">Confirmed</Badge>
-        ) : (
-          <Badge className="bg-revision-soft text-revision">Needs review</Badge>
-        )}
-        {requirement.source === "extracted" && <Badge variant="outline">From uploaded information</Badge>}
+        {requirement.source === "extracted" && <Badge variant="outline">From the brief</Badge>}
       </div>
 
       {requirement.label && <p className="mt-2 text-xs font-medium text-muted-foreground">{title}</p>}
@@ -136,17 +123,6 @@ function RequirementCard({
       )}
 
       <div className="mt-3 flex flex-wrap items-center gap-1">
-        {!requirement.confirmed && (
-          <form action={confirmAction}>
-            <input type="hidden" name="sessionId" value={sessionId} />
-            <input type="hidden" name="requirementId" value={requirement.id} />
-            <input type="hidden" name="confirmed" value="true" />
-            <Button type="submit" size="sm" disabled={confirming} className="rounded-full">
-              <CircleCheck aria-hidden />
-              Confirm
-            </Button>
-          </form>
-        )}
         <Button type="button" variant="ghost" size="sm" className="rounded-full" onClick={onEdit}>
           <Pencil aria-hidden />
           Edit
@@ -289,16 +265,7 @@ function RequirementForm({
             defaultChecked={requirement?.mandatory ?? true}
             className="size-4 accent-primary"
           />
-          Mandatory
-        </label>
-        <label className="flex items-center gap-2.5 text-sm font-medium">
-          <input
-            type="checkbox"
-            name="confirmed"
-            defaultChecked={requirement?.confirmed ?? false}
-            className="size-4 accent-primary"
-          />
-          Confirmed — this is what the client asked for
+          Must have <span className="font-normal text-muted-foreground">(untick for optional)</span>
         </label>
       </div>
 

@@ -1,4 +1,4 @@
-import { containsText, findName } from "@/lib/qc/compare";
+import { capitalizationDifference, containsText, findName } from "@/lib/qc/compare";
 import { allText } from "@/lib/qc/detections";
 import type { Rule } from "@/lib/qc/findings";
 import { ALL_TYPES, findingFor, NEEDS_ANALYSIS, notApplicable, notVerified, severityFor, type QcContext } from "@/lib/qc/rules/context";
@@ -7,7 +7,9 @@ import { ALL_TYPES, findingFor, NEEDS_ANALYSIS, notApplicable, notVerified, seve
  * Legal & Compliance QC (plan 5.12) — ONLY rules that are configured;
  * nothing is invented. The configured legal rules today are the
  * disclaimers in the confirmed brief (requirement type "disclaimer"): each
- * must appear on screen word for word. (A company's mandatory disclaimer
+ * must appear on screen word for word. A MANDATORY disclaimer whose words
+ * are all there but with different capitals ("T&C Apply" for "T&C apply")
+ * is MINOR. (A company's mandatory disclaimer
  * saved as a Golden Rule is checked under Golden Rules, 5.6.)
  *
  * With no disclaimer in the brief there is nothing to check, and the
@@ -38,6 +40,17 @@ const disclaimerRule: Rule<QcContext> = {
       if (text === null) return notVerified(this.id, CATEGORY, title, severity, NEEDS_ANALYSIS, r.expectedValue);
       const make = findingFor(this.id, CATEGORY, title);
       if (containsText(text, r.expectedValue)) {
+        const capitals = r.mandatory ? capitalizationDifference(text, r.expectedValue) : null;
+        if (capitals) {
+          return make({
+            severity: "minor",
+            status: "failed",
+            expected: r.expectedValue,
+            detected: capitals,
+            explanation: "The disclaimer's words are right, but the capitals differ — legal wording must be exact.",
+            suggestedFix: `Show the disclaimer exactly as: "${r.expectedValue}".`,
+          });
+        }
         return make({ severity, status: "passed", expected: r.expectedValue, detected: "Present word for word", explanation: "The disclaimer appears exactly as required." });
       }
       const close = findName(text, r.expectedValue);

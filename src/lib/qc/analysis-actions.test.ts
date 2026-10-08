@@ -34,7 +34,8 @@ vi.mock("@/lib/storage/qc-storage", () => ({ getQcStorage: () => state.storage }
 
 const actions = await import("@/lib/qc/actions");
 const { insertCompany, addCompanyMember } = await import("@/lib/db/companies");
-const { findCurrentSession } = await import("@/lib/db/qc-sessions");
+const { findCurrentSession, listFiles, listRequirements } = await import("@/lib/db/qc-sessions");
+const { filesFingerprint } = await import("@/lib/analysis/pipeline");
 
 const form = (values: Record<string, string>) => {
   const data = new FormData();
@@ -83,48 +84,149 @@ describe("analysis actions", () => {
     sessionId = (await findCurrentSession(state.db, acme, dee.id, new Date()))!.id;
   });
 
-  it("Save and continue queues a content analysis run for the owner", async () => {
+  const addRequirement = (values: Record<string, string> = {}) =>
+    actions.saveRequirementAction({}, form({ sessionId, type: "price", expected_value: "AED 1,299", mandatory: "on", ...values }));
+  const confirmAll = () => state.db.query("update qc_requirements set confirmed = true where session_id = $1", [sessionId]);
+  const infoFingerprint = async () => {
+    const files = (await listFiles(state.db, sessionId, "ready")).filter((f) => f.kind === "information");
+    return filesFingerprint(files);
+  };
+
+  it("Confirm & Run QC confirms every requirement and queues a content analysis run for the owner", async () => {
     await upload("content", "post.png", pngOf(1440, 1800));
     await actions.setPlatformAction({}, form({ sessionId, platform: "instagram", placement: "feed_image" }));
-    expect(await actions.markReadyAction({}, form({ sessionId }))).toMatchObject({ ok: true, message: "Saved. The content is being analysed." });
+    await addRequirement();
+    await addRequirement({ type: "cta", expected_value: "Book now" });
+    expect((await listRequirements(state.db, sessionId)).some((r) => r.confirmed)).toBe(false);
+    expect(await actions.markReadyAction({}, form({ sessionId }))).toMatchObject({ ok: true, message: "Confirmed. The content is being analysed." });
+    expect((await listRequirements(state.db, sessionId)).every((r) => r.confirmed)).toBe(true);
     expect(await runs()).toEqual([{ status: "queued", requested_by: dee.id, kind: "content" }]);
     expect(await actions.analysisStatusAction(sessionId)).toMatchObject({ status: "queued", kind: "content", mock: true });
   });
 
-  it("Analyse now: one active run; then 'already running'", async () => {
+  it("no requirements: Confirm & Run QC and Analyse are both blocked — never a PASS with nothing to check against", async () => {
     await upload("content", "post.png", pngOf(1440, 1800));
+    await actions.setPlatformAction({}, form({ sessionId, platform: "instagram", placement: "feed_image" }));
+    const blocked = { error: "Add or confirm the client's requirements before running QC." };
+    expect(await actions.markReadyAction({}, form({ sessionId }))).toEqual(blocked);
+    expect(await actions.startAnalysisAction({}, form({ sessionId }))).toEqual(blocked);
+    // Unconfirmed requirements don't count for Analyse again either (Confirm & Run QC confirms them).
+    await addRequirement();
+    expect(await actions.startAnalysisAction({}, form({ sessionId }))).toEqual(blocked);
+    expect(await runs()).toEqual([]);
+    expect((await findCurrentSession(state.db, acme, dee.id, new Date()))!.status).toBe("draft");
+  });
+
+  it("Analyse again: one active run; then 'already running'", async () => {
+    await upload("content", "post.png", pngOf(1440, 1800));
+    await addRequirement();
+    await confirmAll();
     expect(await actions.startAnalysisAction({}, form({ sessionId }))).toEqual({ ok: true });
     expect(await actions.startAnalysisAction({}, form({ sessionId }))).toEqual({ error: "An analysis is already running for this session." });
   });
 
   it("nothing to analyse, or not set up on this server", async () => {
+    await addRequirement();
+    await confirmAll();
     expect(await actions.startAnalysisAction({}, form({ sessionId }))).toEqual({ error: "Upload the content first." });
     await upload("content", "post.png", pngOf(1440, 1800));
     delete process.env.QC_ANALYSIS_PROVIDER;
     expect(await actions.startAnalysisAction({}, form({ sessionId }))).toEqual({ error: "Content analysis isn't set up on this server." });
   });
 
-  it("Find requirements in these files: an information run, polled separately from the content run", async () => {
+  it("uploading the brief starts reading it automatically: an information run, polled separately from the content run", async () => {
     expect(await actions.startAnalysisAction({}, form({ sessionId, kind: "information" }))).toMatchObject({ error: expect.any(String) });
     await upload("information", "brief.txt", new TextEncoder().encode("Price AED 1,299"));
-    expect(await actions.startAnalysisAction({}, form({ sessionId, kind: "information" }))).toEqual({ ok: true });
     expect(await runs()).toEqual([{ status: "queued", requested_by: dee.id, kind: "information" }]);
     expect(await actions.analysisStatusAction(sessionId, "information")).toMatchObject({ status: "queued", kind: "information" });
     expect(await actions.analysisStatusAction(sessionId, "content")).toBeNull();
+
+    // A second file while the first reading is still waiting: the same run takes it in.
+    await upload("information", "email.txt", new TextEncoder().encode("CTA: Book now"));
+    expect(await runs()).toHaveLength(1);
+    const [run] = await state.db.query<{ files_fingerprint: string }>("select files_fingerprint from qc_analysis_runs where session_id = $1", [sessionId]);
+    expect(run.files_fingerprint).toBe(await infoFingerprint());
+    expect(run.files_fingerprint.startsWith("2:")).toBe(true);
+  });
+
+  it("Confirm & Run QC waits while the brief is still being read", async () => {
+    await upload("content", "post.png", pngOf(1440, 1800));
+    await actions.setPlatformAction({}, form({ sessionId, platform: "instagram", placement: "feed_image" }));
+    await upload("information", "brief.txt", new TextEncoder().encode("Price AED 1,299"));
+    expect(await actions.markReadyAction({}, form({ sessionId }))).toEqual({ error: expect.stringMatching(/still being read/) });
+    await state.db.query("update qc_analysis_runs set status = 'done' where session_id = $1", [sessionId]);
+    await addRequirement();
+    expect(await actions.markReadyAction({}, form({ sessionId }))).toMatchObject({ ok: true });
+  });
+
+  it("if the brief can't be read straight away (a design is being analysed), Read the brief is offered instead", async () => {
+    await upload("content", "post.png", pngOf(1440, 1800));
+    await addRequirement();
+    await confirmAll();
+    expect(await actions.startAnalysisAction({}, form({ sessionId }))).toEqual({ ok: true });
+    await upload("information", "brief.txt", new TextEncoder().encode("Price AED 1,299"));
+    expect(await runs()).toEqual([{ status: "queued", requested_by: dee.id, kind: "content" }]);
+    await state.db.query("update qc_analysis_runs set status = 'done' where session_id = $1", [sessionId]);
+    expect(await actions.startAnalysisAction({}, form({ sessionId, kind: "information" }))).toEqual({ ok: true });
   });
 
   it("at most 5 runs per session", async () => {
     await upload("content", "post.png", pngOf(1440, 1800));
+    await addRequirement();
+    await confirmAll();
     for (let i = 0; i < 5; i++) {
       expect(await actions.startAnalysisAction({}, form({ sessionId }))).toEqual({ ok: true });
       await state.db.query("update qc_analysis_runs set status = 'done' where session_id = $1", [sessionId]);
     }
+    expect(await actions.startAnalysisAction({}, form({ sessionId }))).toMatchObject({ error: expect.stringMatching(/used its 5 analysis runs/) });
+    expect(await runs()).toHaveLength(5);
+  });
+
+  it("reading the brief never uses up a design analysis run", async () => {
+    const done = () => state.db.query("update qc_analysis_runs set status = 'done' where session_id = $1", [sessionId]);
+    // Six brief readings (more than the limit): automatic on upload, then Read again.
+    await upload("information", "brief.txt", new TextEncoder().encode("Price AED 1,299"));
+    await done();
+    for (let i = 0; i < 5; i++) {
+      expect(await actions.startAnalysisAction({}, form({ sessionId, kind: "information" }))).toEqual({ ok: true });
+      await done();
+    }
+    expect((await runs()).filter((r) => r.kind === "information")).toHaveLength(6);
+
+    // All 5 design analyses are still available — and the 6th is still refused.
+    await upload("content", "post.png", pngOf(1440, 1800));
+    await addRequirement();
+    await confirmAll();
+    for (let i = 0; i < 5; i++) {
+      expect(await actions.startAnalysisAction({}, form({ sessionId }))).toEqual({ ok: true });
+      await done();
+    }
+    expect(await actions.startAnalysisAction({}, form({ sessionId }))).toMatchObject({ error: expect.stringMatching(/used its 5 analysis runs/) });
+    expect((await runs()).filter((r) => r.kind === "content")).toHaveLength(5);
+
+    // With the design runs used up, the brief can still be read.
+    expect(await actions.startAnalysisAction({}, form({ sessionId, kind: "information" }))).toEqual({ ok: true });
+  });
+
+  it("Confirm & Run QC counts as a design analysis run", async () => {
+    await upload("content", "post.png", pngOf(1440, 1800));
+    await actions.setPlatformAction({}, form({ sessionId, platform: "instagram", placement: "feed_image" }));
+    await addRequirement();
+    await state.db.query(
+      `insert into qc_analysis_runs (session_id, requested_by, kind, provider, files_fingerprint, status, created_at)
+       select $1, $2, 'content', 'mock', 'x', 'done', now() from generate_series(1, 4)`,
+      [sessionId, dee.id]
+    );
+    expect(await actions.markReadyAction({}, form({ sessionId }))).toMatchObject({ ok: true, message: "Confirmed. The content is being analysed." });
+    await state.db.query("update qc_analysis_runs set status = 'done' where session_id = $1", [sessionId]);
     expect(await actions.startAnalysisAction({}, form({ sessionId }))).toMatchObject({ error: expect.stringMatching(/used its 5 analysis runs/) });
   });
 
   describe("authorization", () => {
     beforeEach(async () => {
       await upload("content", "post.png", pngOf(1440, 1800));
+      await addRequirement();
+      await confirmAll();
     });
 
     it("another designer of the same company, and an admin-free forged id, can't queue or read the run", async () => {

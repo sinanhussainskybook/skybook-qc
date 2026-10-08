@@ -2,6 +2,7 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import type { Database } from "@/lib/db/database";
 import {
+  confirmAllRequirements,
   countFiles,
   deleteFileRow,
   deleteSessionRow,
@@ -24,6 +25,7 @@ import {
 } from "@/lib/db/qc-sessions";
 import { contentMedia, contentTypeLabel, type ContentType } from "@/lib/qc/content-types";
 import { measureMedia, MEASURED_FORMATS, type MediaInfo } from "@/lib/qc/media-info";
+import { parseExactSize } from "@/lib/qc/compare";
 import {
   allowedFormats,
   checkUploadedFile,
@@ -348,37 +350,52 @@ export async function removeFile(
 // Ready
 // ---------------------------------------------------------------------------
 
-/** What still stops the session being Ready (empty when it can be marked Ready). */
+export const READINESS_MESSAGES = {
+  requirements: "Add or confirm the client's requirements before running QC.",
+  briefReading: "The brief is still being read — wait for it to finish, then review what was found.",
+  platform: "Choose the platform the content is for, or add the exact size the client asked for (e.g. 1080 × 1080) as a Dimensions requirement.",
+  content: "Upload the content you want checked.",
+} as const;
+
+/** A requirement giving an exact pixel size — enough to check the size without a platform. */
+export const hasExactSize = (requirements: Pick<QcRequirement, "type" | "expected_value">[]) =>
+  requirements.some((r) => r.type === "dimensions" && parseExactSize(r.expected_value) !== null);
+
+/**
+ * What still stops Confirm & Run QC (empty when it can run). Every requirement
+ * listed is confirmed by that button, so at least one must be there — QC with
+ * no requirements would pass content it can't actually check against the brief.
+ */
 export function readinessProblems(
   requirements: QcRequirement[],
   files: QcFile[],
-  session?: Pick<QcSession, "platform">
+  session?: Pick<QcSession, "platform">,
+  options: { briefReading?: boolean } = {}
 ): string[] {
   const problems: string[] = [];
-  if (session && !session.platform) {
-    problems.push("Choose the platform the content is for.");
+  if (session && !session.platform && !hasExactSize(requirements)) {
+    problems.push(READINESS_MESSAGES.platform);
   }
   if (!files.some((file) => file.kind === "content" && file.status === "ready")) {
-    problems.push("Upload the content you want checked.");
+    problems.push(READINESS_MESSAGES.content);
   }
-  const unconfirmed = requirements.filter((r) => !r.confirmed).length;
-  if (unconfirmed > 0) {
-    problems.push(
-      `Confirm or delete ${unconfirmed} requirement${unconfirmed === 1 ? "" : "s"} — unconfirmed requirements are never used.`
-    );
-  }
+  if (options.briefReading) problems.push(READINESS_MESSAGES.briefReading);
+  else if (requirements.length === 0) problems.push(READINESS_MESSAGES.requirements);
   return problems;
 }
 
+/** Confirm & Run QC: confirms every listed requirement and marks the session Ready. */
 export async function markReady(
   db: Database,
   session: QcSession,
   requirements: QcRequirement[],
   files: QcFile[],
-  now: Date
+  now: Date,
+  options: { briefReading?: boolean } = {}
 ): Promise<{ ok: true } | { ok: false; problems: string[] }> {
-  const problems = readinessProblems(requirements, files, session);
+  const problems = readinessProblems(requirements, files, session, options);
   if (problems.length > 0) return { ok: false, problems };
+  await confirmAllRequirements(db, session.id, now);
   await touchSession(db, session.id, now, { status: "ready" });
   return { ok: true };
 }

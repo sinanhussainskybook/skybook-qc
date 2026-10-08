@@ -21,12 +21,13 @@ import { getUploadLimitBytes } from "@/lib/env";
 import { contentMedia, contentTypeLabel } from "@/lib/qc/content-types";
 import { missingCompanyInformation } from "@/lib/qc/qc-input";
 import { maxFiles } from "@/lib/qc/qc-file";
-import { purgeExpiredSessions, readinessProblems } from "@/lib/qc/session";
+import { purgeExpiredSessions, READINESS_MESSAGES, readinessProblems } from "@/lib/qc/session";
 import { getQcStorage } from "@/lib/storage/qc-storage";
 import { loadSessionResult } from "@/lib/qc/session-result";
 import type { AnalysisRun } from "@/lib/db/analysis-runs";
 import type { AnalysisStatusView } from "@/lib/qc/actions";
 import { configuredProvider } from "@/lib/analysis/config";
+import { briefChangedSince } from "@/lib/analysis/enqueue";
 
 export const metadata: Metadata = { title: "Start QC · Skybook AI QC" };
 
@@ -79,12 +80,13 @@ export default async function StartQcPage({ params }: PageProps<"/companies/[com
   }
 
   // Findings and the result, computed the same way as the downloaded report.
-  const { requirements, files, config, findings, analysisView, board } = await loadSessionResult(db, company, session);
+  const { requirements, files, config, findings, analysisView, board, noRequirements } = await loadSessionResult(db, company, session);
   const information = files.filter((f) => f.kind === "information");
   const content = files.filter((f) => f.kind === "content");
-  const problems = readinessProblems(requirements, files, session);
   const run = analysisView.run;
   const infoRun = analysisView.informationRun;
+  const briefReading = infoRun?.status === "queued" || infoRun?.status === "processing";
+  const problems = readinessProblems(requirements, files, session, { briefReading });
   const platformFindings = findings && session.platform ? findings.filter((f) => f.category === "platform_size") : null;
   const missing = missingCompanyInformation(config);
   const hoursLeft = Math.max(1, Math.ceil((session.expires_at.getTime() - now.getTime()) / 3_600_000));
@@ -154,7 +156,7 @@ export default async function StartQcPage({ params }: PageProps<"/companies/[com
         <SectionCard
           id="requirements"
           title="3. Requirements"
-          description="What the client asked for. Only confirmed requirements are used when QC runs."
+          description="What the client asked for — read from the brief you upload in step 4, or added by hand. Check the list, edit or remove anything that's wrong, then press Confirm & Run QC."
           icon={ListChecks}
         >
           <RequirementsEditor
@@ -178,7 +180,7 @@ export default async function StartQcPage({ params }: PageProps<"/companies/[com
         <SectionCard
           id="information"
           title="4. Upload Information"
-          description="Supporting files with the client's requirements — a brief, an email, a spreadsheet. The requirements in them can be found for you; each one found is added above as unconfirmed for you to review."
+          description="The client's brief — a document, an email, a spreadsheet. It's read as soon as it's uploaded, and what it asks for is listed under Requirements for you to check."
           icon={Upload}
         >
           <FileUploader
@@ -199,8 +201,7 @@ export default async function StartQcPage({ params }: PageProps<"/companies/[com
                 sessionId={session.id}
                 configured={analysisView.configured}
                 hasContent
-                stale={false}
-                runsLeft={analysisView.runsLeft}
+                stale={infoRun?.status === "done" && briefChangedSince(infoRun, files)}
                 initial={statusOf(infoRun)}
               />
             </div>
@@ -253,7 +254,9 @@ export default async function StartQcPage({ params }: PageProps<"/companies/[com
             description="What's wrong, how serious it is, and how to fix it."
             icon={Gauge}
           >
-            {board ? (
+            {noRequirements ? (
+              <p className="rounded-xl bg-revision-soft px-4 py-3 text-sm font-medium text-revision">{READINESS_MESSAGES.requirements}</p>
+            ) : board ? (
               <Scoreboard board={board} findings={findings} mock={analysisView.detections?.source === "mock"} reportHref={`/companies/${company.id}/qc/report`} />
             ) : (
               <p className="rounded-xl bg-muted/60 px-4 py-3 text-sm text-muted-foreground">{resultWaitingText(analysisView.analysis.state)}</p>

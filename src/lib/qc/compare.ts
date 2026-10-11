@@ -87,6 +87,40 @@ export function parseExactSize(value: string): { width: number; height: number }
   return distinct.size === 1 ? sizes[0] : null;
 }
 
+/**
+ * The exact pixel size a Dimensions requirement gives: as parseExactSize, and
+ * also when the "×" was lost on the way ("1080  1080 px" — an AI copying the
+ * brief can drop the symbol). That second form must be exactly two numbers and
+ * at most a pixel unit — nothing else — so no other wording is read as a size.
+ */
+export function parseDimensions(value: string): { width: number; height: number } | null {
+  const exact = parseExactSize(value);
+  if (exact) return exact;
+  const m = value.normalize("NFKC").trim().match(/^(\d{2,5})\s+(\d{2,5})\s*(?:px|pixels?)?$/i);
+  return m ? { width: Number(m[1]), height: Number(m[2]) } : null;
+}
+
+/** A size written the one standard way: "1080 × 1080 px". */
+export const sizeText = (size: { width: number; height: number }) => `${size.width} × ${size.height} px`;
+
+/**
+ * The one exact pixel size a brief gives, read from its own text (no AI) —
+ * e.g. "Dimensions 1080 × 1080 px". Only on a line that is clearly about size
+ * (it says dimension(s), size, resolution, px / pixels, or uses "×"), and only
+ * when the brief gives exactly one such size; several sizes, or sizes in mm /
+ * inches, are left for the designer and the platform choice.
+ */
+export function findExactSize(text: string): { width: number; height: number } | null {
+  const found = new Map<string, { width: number; height: number }>();
+  for (const line of text.normalize("NFKC").split(/\r?\n/)) {
+    if (!/dimension|size|resolution|px|pixel|×/i.test(line)) continue;
+    const size = parseExactSize(line);
+    if (size) found.set(`${size.width}x${size.height}`, size);
+    else if ([...line.matchAll(/(?<![\d.])\d{2,5}\s*(?:px\s*)?(?:x|×|\*|by)\s*\d{2,5}(?![\d.])/giu)].length > 0) return null; // several on one line, or another unit
+  }
+  return found.size === 1 ? [...found.values()][0] : null;
+}
+
 /** Damerau–Levenshtein (optimal string alignment) distance. */
 export function editDistance(a: string, b: string): number {
   const d: number[][] = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);

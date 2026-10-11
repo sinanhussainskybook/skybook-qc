@@ -175,6 +175,13 @@ describe("Brief rules", () => {
       expect(sizeCheck("1080x1080", [design(1254, 1254)], { mandatory: false })[0]).toMatchObject({ status: "failed", severity: "minor" });
     });
 
+    it("regression: a size whose × was lost ('1080  1080 px') is still checked against the design", () => {
+      expect(sizeCheck("1080  1080 px", [design(1254, 1254)])).toEqual([
+        expect.objectContaining({ ruleId: "brief.requirement.dimensions", status: "failed", severity: "major", expected: "1080 × 1080 px", detected: "1254 × 1254 px" }),
+      ]);
+      expect(sizeCheck("1080 1080", [design(1080, 1080)])[0]).toMatchObject({ status: "passed" });
+    });
+
     it("a matching size passes — written any common way", () => {
       for (const written of ["1080 × 1080", "1080x1080 px", "1080 X 1080", "1080 by 1080 pixels", "Instagram post 1080 x 1080"]) {
         expect(sizeCheck(written, [design(1080, 1080)]), written).toEqual([
@@ -198,6 +205,24 @@ describe("Brief rules", () => {
       for (const written of ["Square", "210 × 297 mm", "1080 × 1080 or 1080 × 1350", "4:5"]) {
         expect(sizeCheck(written, [design(1254, 1254)])[0], written).toMatchObject({ status: "not_applicable" });
       }
+    });
+  });
+
+  describe("product / service described in the brief", () => {
+    it("regression: an optional product or service name that isn't on the design isn't reported as missing", () => {
+      for (const type of ["product_name", "service_name"]) {
+        const missing = check(requirement(type, "Customized Azerbaijan Travel Packages", { mandatory: false }), "Snow Has Arrived in Azerbaijan!", "Customised Packages");
+        expect(missing, type).toMatchObject({ status: "not_applicable", severity: "suggestion" });
+        expect(missing.explanation, type).toContain("doesn't require these exact words");
+      }
+    });
+
+    it("still checked when it is on the design, misspelt, or Must have", () => {
+      expect(check(requirement("product_name", "Palm Residence", { mandatory: false }), "The Palm Residence collection")).toMatchObject({ status: "passed" });
+      expect(check(requirement("product_name", "Palm Residence", { mandatory: false }), "The Palm Residense collection")).toMatchObject({ status: "failed", severity: "major" });
+      expect(check(requirement("product_name", "Palm Residence"), "Summer sale")).toMatchObject({ status: "failed", severity: "critical", detected: "Not found" });
+      // Other kinds of text are unchanged: an optional offer that's missing is still MINOR.
+      expect(check(requirement("offer", "Free airport transfer", { mandatory: false }), "Summer sale")).toMatchObject({ status: "failed", severity: "minor" });
     });
   });
 

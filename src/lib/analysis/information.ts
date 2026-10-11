@@ -2,7 +2,18 @@ import type { AnalysisRun } from "@/lib/db/analysis-runs";
 import { cancelRun, failRun, finishRun, heartbeat } from "@/lib/db/analysis-runs";
 import { insertExtractedRequirement, listFiles, listRequirements, touchSession } from "@/lib/db/qc-sessions";
 import type { Company } from "@/lib/company/types";
-import { containsText, findEmails, findPercentages, findPhones, findPrices, findWebsites, normalizeWords } from "@/lib/qc/compare";
+import {
+  containsText,
+  findEmails,
+  findExactSize,
+  findPercentages,
+  findPhones,
+  findPrices,
+  findWebsites,
+  normalizeWords,
+  parseDimensions,
+  sizeText,
+} from "@/lib/qc/compare";
 import { REQUIREMENT_TYPES } from "@/lib/qc/requirements";
 import { callProvider, RunAborted } from "@/lib/analysis/call";
 import { docxText, plainText, xlsxText } from "@/lib/analysis/documents";
@@ -20,9 +31,12 @@ import { ocrValidator, validateRequirementCandidates } from "@/lib/analysis/vali
  *   2. the AI proposes more — and a proposal is kept ONLY when its value and
  *      its quote appear word for word in the file's text (no invention).
  * Every candidate is stored UNCONFIRMED (source = extracted): it is never used
- * by QC until the designer reviews the list and presses Confirm & Run QC.
- * Price, CTA, headline, disclaimer and dimensions start as Must have; the
- * rest start Optional. The designer can change either.
+ * by QC until the designer presses Check Design (descriptive items never are).
+ * Price, CTA, headline, disclaimer and dimensions start as Must have. A
+ * product or service name is Must have only when the brief explicitly asks
+ * for that exact name — by its wording or by listing it under a required-
+ * content heading (explicitlyRequired); otherwise it is description. The
+ * rest start Optional.
  */
 
 export const MAX_CANDIDATES_PER_RUN = 50;
@@ -30,7 +44,65 @@ export const MAX_CANDIDATES_PER_RUN = 50;
 export const MUST_HAVE_TYPES: ReadonlySet<string> = new Set(["price", "cta", "headline", "disclaimer", "dimensions"]);
 const NOTE_PREFIX = "Found in";
 
-type Candidate = { type: string; label: string | null; value: string; fileId: string; fileName: string };
+type Candidate = { type: string; label: string | null; value: string; fileId: string; fileName: string; explicit?: boolean };
+
+/** Names a brief may only describe: Must have only when it explicitly asks for the exact name. */
+const NAME_TYPES: ReadonlySet<string> = new Set(["product_name", "service_name"]);
+
+/** Wording that makes a name an exact requirement rather than a description. */
+const EXACT_WORDING =
+  /\b(?:must|mandatory|required|exact(?:ly)?|verbatim|word[- ]for[- ]word|as written|as spelt|as spelled|has to|have to|needs? to)\b/i;
+
+/**
+ * Section headings in a brief (short lines): one that marks REQUIRED content
+ * ("Required Content", "Required Value", "Required Text", "Mandatory…", "Must
+ * have / include…"), and one that starts a descriptive section. A bare
+ * "Requirements" title is neither — it heads the whole brief.
+ */
+const REQUIRED_HEADING = /^(?:required\s+(?:content|value|values|text|copy|elements|items|information|details)|mandatory\b|compulsory\b|must[- ](?:have|haves|include|appear|show)\b)/i;
+const OTHER_HEADING =
+  /^(?:(?:additional|general|further|more|other)\s+)?(?:special\s+instructions?|instructions?|notes?|company\s+(?:information|info|details|profile)|background|about\b|context|overview|descriptions?|campaign\b|purpose|objectives?|target\s+audience|audience|optional|nice\s+to\s+have|tone|style|brand\s+guidelines?|deliverables?|references?|not\s+specified|product\s+(?:information|details)|service\s+(?:information|details))/i;
+const HEADING_MAX_LENGTH = 60;
+
+/** Is line `index` under a required-content heading (the nearest heading above it, or on it)? */
+function underRequiredHeading(lines: string[], index: number): boolean {
+  for (let i = index; i >= 0; i--) {
+    const line = lines[i].trim();
+    if (!line || line.length > HEADING_MAX_LENGTH) continue;
+    if (REQUIRED_HEADING.test(line)) return true;
+    if (OTHER_HEADING.test(line)) return false;
+  }
+  return false; // no heading at all: description
+}
+
+const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/**
+ * Does the brief explicitly require this exact name on the design? Read from
+ * the brief's own words and layout — no AI judgement:
+ *   - the name is in quotation marks ("Palm Residence", “Palm Residence”), or
+ *   - the line that gives it (or the AI's quote / label for it) says it must
+ *     be exact — "must", "required", "mandatory", "exactly", "as written"…, or
+ *   - it is listed under a required-content heading: the nearest heading above
+ *     it is "Required Content" / "Required Value" / "Mandatory…" (Travel Mart's
+ *     "Required Content" table), not "Background", "Company Information"…
+ * The name's own words are left out of the wording test ("Required Gear" is a
+ * name, not an instruction). Anything else — a name mentioned in a background
+ * paragraph, a company-information section, or a brief with no headings —
+ * stays description.
+ */
+export function explicitlyRequired(text: string, value: string, context: (string | null | undefined)[] = []): boolean {
+  const name = value.trim();
+  if (!name) return false;
+  const quoted = new RegExp(`["“”„«»]\\s*${escapeRegExp(name)}\\s*["“”„«»]`, "i");
+  if (quoted.test(text)) return true;
+  const without = (line: string) => line.replace(new RegExp(escapeRegExp(name), "gi"), " ");
+  const all = text.split(/\r?\n/);
+  const at = all.flatMap((line, i) => (containsText(line, name) ? [i] : []));
+  if (at.some((i) => underRequiredHeading(all, i))) return true;
+  const lines = at.map((i) => all[i]);
+  return [...lines, ...context.filter((c): c is string => Boolean(c))].some((line) => EXACT_WORDING.test(without(line)));
+}
 
 const TYPE_LABELS = new Set<string>(REQUIREMENT_TYPES.map((t) => t.value));
 
@@ -42,6 +114,9 @@ export function patternCandidates(text: string): Omit<Candidate, "fileId" | "fil
   for (const w of findWebsites(text)) out.push({ type: "website", label: null, value: w });
   for (const p of findPrices(text)) out.push({ type: "price", label: null, value: p.text });
   for (const n of new Set(findPercentages(text))) out.push({ type: "percentage", label: null, value: `${n}%` });
+  // The brief's exact size, as the brief writes it — so it never depends on the AI copying the "×".
+  const size = findExactSize(text);
+  if (size) out.push({ type: "dimensions", label: null, value: sizeText(size) });
   return out;
 }
 
@@ -153,7 +228,11 @@ export async function processInformationRun(
       for (const c of proposed.value.candidates) {
         // No invention: the value and the quote must both be in the file's own text.
         if (!containsText(text, c.value) || !containsText(text, c.quote)) continue;
-        candidates.push({ type: c.type, label: c.label, value: c.value, fileId: file.id, fileName: file.file_name });
+        // A size the AI copied without its "×" ("1080  1080 px") is stored the standard way.
+        const size = c.type === "dimensions" ? parseDimensions(c.value) : null;
+        const value = size ? sizeText(size) : c.value;
+        const explicit = NAME_TYPES.has(c.type) && explicitlyRequired(text, c.value, [c.quote, c.label]);
+        candidates.push({ type: c.type, label: c.label, value, fileId: file.id, fileName: file.file_name, explicit });
       }
     }
   }
@@ -182,7 +261,7 @@ export async function processInformationRun(
         expectedValue: c.value.slice(0, 2000),
         notes: `${NOTE_PREFIX} ${c.fileName}`.slice(0, 1000),
         sourceFileId: c.fileId,
-        mandatory: MUST_HAVE_TYPES.has(c.type),
+        mandatory: MUST_HAVE_TYPES.has(c.type) || Boolean(c.explicit),
       },
       now()
     );

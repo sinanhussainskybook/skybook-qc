@@ -134,7 +134,7 @@ describe("Phase 4 actions and authorization", () => {
     expect((await listFiles(state.db, sessionId)).map((f) => f.file_name)).toEqual(["poster.png"]);
 
     expect(await actions.markReadyAction({}, form({ sessionId }))).toMatchObject({
-      error: expect.stringContaining("Choose the platform"),
+      error: expect.stringContaining("Upload the client brief"),
     });
     expect(await actions.saveRequirementAction({}, form({ sessionId, type: "offer", expected_value: "20% off", mandatory: "on" }))).toEqual({ ok: true });
     expect(

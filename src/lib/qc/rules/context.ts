@@ -48,7 +48,7 @@ export function notAnalysedExplanation(analysis: AnalysisState | undefined): str
     case "not_configured":
       return "Content analysis isn't set up on this server, so this can't be checked. Not counted for or against the result.";
     case "not_started":
-      return "The content hasn't been analysed yet — it is analysed when you press Confirm & Run QC. Not counted for or against the result.";
+      return "The content hasn't been analysed yet — it is analysed when you press Check Design. Not counted for or against the result.";
     case "pending":
       return "The content is being analysed. This updates when the analysis finishes. Not counted for or against the result.";
     case "failed":

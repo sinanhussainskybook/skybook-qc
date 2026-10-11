@@ -1,9 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { ArrowLeft, ChevronDown, ClipboardCheck, Clock, FileUp, Gauge, ListChecks, Ruler, ScanSearch, Sparkles, TriangleAlert, Upload } from "lucide-react";
+import { ArrowLeft, ChevronDown, ClipboardCheck, Clock, FileUp, Gauge, ListChecks, Ruler, ScanSearch, TriangleAlert, Upload } from "lucide-react";
 import { AppShell } from "@/components/layout/app-shell";
 import { SectionCard } from "@/components/company/section-card";
-import { ContentTypeForm } from "@/components/qc/content-type-form";
 import { AnalysisPanel } from "@/components/qc/analysis-panel";
 import { CategoryChecks } from "@/components/qc/category-checks";
 import { CategoryScores, resultWaitingText, Scoreboard } from "@/components/qc/scoreboard";
@@ -11,17 +10,17 @@ import { FileUploader } from "@/components/qc/file-uploader";
 import { GeminiFreeTierNotice } from "@/components/qc/gemini-free-tier-notice";
 import { PlatformCheck } from "@/components/qc/platform-check";
 import { PlatformForm } from "@/components/qc/platform-form";
-import { RequirementsEditor } from "@/components/qc/requirements-editor";
 import { SessionFooter } from "@/components/qc/session-footer";
-import { Badge } from "@/components/ui/badge";
+import { StartQcButton } from "@/components/qc/start-qc-button";
 import { requireCompanyAccess } from "@/lib/company/access";
 import { getDatabase } from "@/lib/db/client";
 import { findCurrentSession } from "@/lib/db/qc-sessions";
 import { getUploadLimitBytes } from "@/lib/env";
-import { contentMedia, contentTypeLabel } from "@/lib/qc/content-types";
+import { contentMedia } from "@/lib/qc/content-types";
 import { missingCompanyInformation } from "@/lib/qc/qc-input";
 import { maxFiles } from "@/lib/qc/qc-file";
-import { purgeExpiredSessions, READINESS_MESSAGES, readinessProblems } from "@/lib/qc/session";
+import { hasExactSize, purgeExpiredSessions, READINESS_MESSAGES, readinessProblems } from "@/lib/qc/session";
+import { isCheckable } from "@/lib/qc/requirements";
 import { getQcStorage } from "@/lib/storage/qc-storage";
 import { loadSessionResult } from "@/lib/qc/session-result";
 import type { AnalysisRun } from "@/lib/db/analysis-runs";
@@ -32,15 +31,16 @@ import { briefChangedSince } from "@/lib/analysis/enqueue";
 export const metadata: Metadata = { title: "Start QC · Skybook AI QC" };
 
 /**
- * Phase 4 — Requirements + Upload. One page: what am I checking, what did
- * the client ask for, what supporting information do I have, what content
- * am I submitting. Everything here is a temporary session (D11): only this
- * designer can open it, and it is deleted 24 hours after the last change.
- * Phase 5 adds the platform choice and the QC engine; Phase 6 adds content
- * analysis: saving queues a background run (the worker), its progress shows
- * here, and its validated detections feed every rule. Without them checks
- * show as "not verified" with the reason. The QC result (Phase 7) is shown once
- * the content has been analysed.
+ * Start QC — the designer's whole flow on one page:
+ *   Start QC → 1. Upload client brief (read automatically) → 2. Upload design
+ *   → 3. Check Design → QC result → Download PDF.
+ * The requirements read from the brief aren't shown or edited here: Check
+ * Design confirms the ones that can be checked (descriptive items never are).
+ * The platform is asked for only when the brief gives no exact size.
+ * Everything is a temporary session (D11): only this designer can open it,
+ * and it is deleted 24 hours after the last change. The design is analysed
+ * in the background (the worker); the result is computed fresh from its
+ * detections, the same way as the downloaded report.
  */
 export default async function StartQcPage({ params }: PageProps<"/companies/[companyId]/qc/new">) {
   const { companyId } = await params;
@@ -71,9 +71,10 @@ export default async function StartQcPage({ params }: PageProps<"/companies/[com
           <p className="text-sm font-medium text-muted-foreground">{company.name}</p>
           <h1 className="mt-1 text-2xl font-semibold tracking-tight">Start QC</h1>
           <p className="mt-2 mb-6 text-sm text-muted-foreground">
-            What are you checking? You&apos;ll add the client&apos;s requirements and upload the content next.
+            Upload the client&apos;s brief and the design, then press Check Design. The design is checked against the
+            brief and this company&apos;s brand rules.
           </p>
-          <ContentTypeForm mode="start" companyId={company.id} />
+          <StartQcButton companyId={company.id} />
         </section>
       </AppShell>
     );
@@ -87,7 +88,13 @@ export default async function StartQcPage({ params }: PageProps<"/companies/[com
   const infoRun = analysisView.informationRun;
   const briefReading = infoRun?.status === "queued" || infoRun?.status === "processing";
   const problems = readinessProblems(requirements, files, session, { briefReading });
+  // What the brief gave that can be checked (descriptive items never are). The list itself isn't shown.
+  const checkable = requirements.filter(isCheckable);
+  // The platform is asked for only when the brief, once read, gives no exact size.
+  const askPlatform = Boolean(session.platform) || (!briefReading && checkable.length > 0 && !hasExactSize(checkable));
   const platformFindings = findings && session.platform ? findings.filter((f) => f.category === "platform_size") : null;
+  // The result appears once the design has been checked (or is being checked).
+  const showResult = Boolean(findings && run);
   const missing = missingCompanyInformation(config);
   const hoursLeft = Math.max(1, Math.ceil((session.expires_at.getTime() - now.getTime()) / 3_600_000));
   const limit = getUploadLimitBytes();
@@ -100,17 +107,8 @@ export default async function StartQcPage({ params }: PageProps<"/companies/[com
 
       <header className="mt-5 flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">Start QC</h1>
-            {session.status === "ready" ? (
-              <Badge className="bg-pass-soft text-pass">Ready</Badge>
-            ) : (
-              <Badge variant="outline">Draft</Badge>
-            )}
-          </div>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {company.name} · {contentTypeLabel(session.content_type)}
-          </p>
+          <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">Start QC</h1>
+          <p className="mt-1 text-sm text-muted-foreground">{company.name}</p>
         </div>
         <p className="flex items-center gap-1.5 rounded-full bg-muted px-3 py-1.5 text-xs text-muted-foreground">
           <Clock className="size-3.5" aria-hidden />
@@ -126,62 +124,14 @@ export default async function StartQcPage({ params }: PageProps<"/companies/[com
       )}
 
       <div className="mt-6 space-y-6">
-        <SectionCard id="content-type" title="1. What are you checking?" icon={FileUp}>
-          <ContentTypeForm mode="change" companyId={company.id} sessionId={session.id} current={session.content_type} />
-        </SectionCard>
-
-        <SectionCard
-          id="platform"
-          title="2. Platform"
-          description="Where the content will be published. Its size, ratio, format, file size and length are checked against that platform's published specification."
-          icon={Ruler}
-        >
-          <PlatformForm
-            key={`${session.content_type}-${session.platform ?? ""}-${session.placement ?? ""}`}
-            sessionId={session.id}
-            media={contentMedia(session.content_type)}
-            current={{
-              platform: session.platform,
-              placement: session.placement,
-              customLabel: session.custom_label,
-              customWidth: session.custom_width,
-              customHeight: session.custom_height,
-              customUnit: session.custom_unit,
-              customMinDpi: session.custom_min_dpi,
-              customMaxBytes: session.custom_max_bytes,
-            }}
-          />
-        </SectionCard>
-
-        <SectionCard
-          id="requirements"
-          title="3. Requirements"
-          description="What the client asked for — read from the brief you upload in step 4, or added by hand. Check the list, edit or remove anything that's wrong, then press Confirm & Run QC."
-          icon={ListChecks}
-        >
-          <RequirementsEditor
-            sessionId={session.id}
-            requirements={requirements.map((r) => ({
-              id: r.id,
-              type: r.type,
-              label: r.label,
-              expected_value: r.expected_value,
-              notes: r.notes,
-              mandatory: r.mandatory,
-              confirmed: r.confirmed,
-              source: r.source,
-            }))}
-          />
-        </SectionCard>
-
         {/* Before any file can reach Google: only when Gemini is the configured provider. */}
         {configuredProvider() === "gemini" && <GeminiFreeTierNotice />}
 
         <SectionCard
           id="information"
-          title="4. Upload Information"
-          description="The client's brief — a document, an email, a spreadsheet. It's read as soon as it's uploaded, and what it asks for is listed under Requirements for you to check."
-          icon={Upload}
+          title="1. Upload client brief"
+          description="The client's brief — a document, an email or a spreadsheet. It's read automatically as soon as it's uploaded."
+          icon={FileUp}
         >
           <FileUploader
             sessionId={session.id}
@@ -191,7 +141,7 @@ export default async function StartQcPage({ params }: PageProps<"/companies/[com
             maxFiles={maxFiles("information", session.content_type)}
             generalLimitBytes={limit}
             storageReady={storage !== null}
-            buttonLabel="Upload information"
+            buttonLabel="Upload brief"
           />
           {information.length > 0 && (
             <div className="mt-4 border-t pt-4">
@@ -202,6 +152,7 @@ export default async function StartQcPage({ params }: PageProps<"/companies/[com
                 configured={analysisView.configured}
                 hasContent
                 stale={infoRun?.status === "done" && briefChangedSince(infoRun, files)}
+                found={checkable.length}
                 initial={statusOf(infoRun)}
               />
             </div>
@@ -210,7 +161,7 @@ export default async function StartQcPage({ params }: PageProps<"/companies/[com
 
         <SectionCard
           id="content"
-          title="5. Upload Content"
+          title="2. Upload design"
           description={
             contentMedia(session.content_type) === "video"
               ? "The video you want checked."
@@ -226,28 +177,60 @@ export default async function StartQcPage({ params }: PageProps<"/companies/[com
             maxFiles={maxFiles("content", session.content_type)}
             generalLimitBytes={limit}
             storageReady={storage !== null}
-            buttonLabel="Upload content"
+            buttonLabel="Upload design"
           />
         </SectionCard>
+
+        {askPlatform && (
+          <SectionCard
+            id="platform"
+            title="Platform"
+            description="The brief doesn't give an exact size, so choose where the design will be published. Its size, ratio, format and file size are checked against that platform's published specification."
+            icon={Ruler}
+          >
+            <PlatformForm
+              key={`${session.content_type}-${session.platform ?? ""}-${session.placement ?? ""}`}
+              sessionId={session.id}
+              media={contentMedia(session.content_type)}
+              current={{
+                platform: session.platform,
+                placement: session.placement,
+                customLabel: session.custom_label,
+                customWidth: session.custom_width,
+                customHeight: session.custom_height,
+                customUnit: session.custom_unit,
+                customMinDpi: session.custom_min_dpi,
+                customMaxBytes: session.custom_max_bytes,
+              }}
+            />
+          </SectionCard>
+        )}
 
         <SectionCard
-          id="analysis"
-          title="6. Analysis"
-          description="The design is read in the background — text, colours, logo and images. Results feed the checks below."
-          icon={Sparkles}
+          id="check"
+          title="3. Check design"
+          description="The design is compared with the brief and the company's brand rules."
+          icon={ScanSearch}
         >
-          <AnalysisPanel
-            key={run ? `${run.id}-${run.status}` : "none"}
-            sessionId={session.id}
-            configured={analysisView.configured}
-            hasContent={content.length > 0}
-            stale={analysisView.stale}
-            runsLeft={analysisView.runsLeft}
-            initial={statusOf(run)}
-          />
+          <div className="space-y-4">
+            <SessionFooter sessionId={session.id} status={session.status} problems={problems} />
+            {run && (
+              <div className="border-t pt-4">
+                <AnalysisPanel
+                  key={`${run.id}-${run.status}`}
+                  sessionId={session.id}
+                  configured={analysisView.configured}
+                  hasContent={content.length > 0}
+                  stale={analysisView.stale}
+                  runsLeft={analysisView.runsLeft}
+                  initial={statusOf(run)}
+                />
+              </div>
+            )}
+          </div>
         </SectionCard>
 
-        {findings && (
+        {showResult && (
           <SectionCard
             id="qc-result"
             title="QC result"
@@ -257,14 +240,14 @@ export default async function StartQcPage({ params }: PageProps<"/companies/[com
             {noRequirements ? (
               <p className="rounded-xl bg-revision-soft px-4 py-3 text-sm font-medium text-revision">{READINESS_MESSAGES.requirements}</p>
             ) : board ? (
-              <Scoreboard board={board} findings={findings} mock={analysisView.detections?.source === "mock"} reportHref={`/companies/${company.id}/qc/report`} />
+              <Scoreboard board={board} findings={findings!} mock={analysisView.detections?.source === "mock"} reportHref={`/companies/${company.id}/qc/report`} />
             ) : (
               <p className="rounded-xl bg-muted/60 px-4 py-3 text-sm text-muted-foreground">{resultWaitingText(analysisView.analysis.state)}</p>
             )}
           </SectionCard>
         )}
 
-        {findings && (
+        {showResult && (
           <details id="all-checks" className="group rounded-2xl bg-card ring-1 ring-foreground/8">
             <summary className="flex cursor-pointer list-none items-center gap-3 p-5 sm:px-7">
               <ListChecks className="size-4.5 shrink-0 text-muted-foreground" aria-hidden />
@@ -280,18 +263,16 @@ export default async function StartQcPage({ params }: PageProps<"/companies/[com
                   <CategoryScores board={board} />
                 </section>
               )}
-            {platformFindings && (
-              <SectionCard
-                id="platform-check"
-                title="Platform check"
-                description="Measured from the uploaded content. Safe zones and anything that couldn't be measured are shown as not verified, never guessed."
-                icon={ScanSearch}
-              >
-                <PlatformCheck findings={platformFindings} />
-              </SectionCard>
-            )}
-
-            {findings && (
+              {platformFindings && (
+                <SectionCard
+                  id="platform-check"
+                  title="Platform check"
+                  description="Measured from the uploaded content. Safe zones and anything that couldn't be measured are shown as not verified, never guessed."
+                  icon={ScanSearch}
+                >
+                  <PlatformCheck findings={platformFindings} />
+                </SectionCard>
+              )}
               <SectionCard
                 id="content-checks"
                 title="Content checks"
@@ -299,14 +280,13 @@ export default async function StartQcPage({ params }: PageProps<"/companies/[com
                 icon={ClipboardCheck}
               >
                 <CategoryChecks
-                  findings={findings}
+                  findings={findings!}
                   analysis={analysisView.analysis}
                   mock={analysisView.detections?.source === "mock"}
                   local={analysisView.provider === "local"}
                   gemini={analysisView.provider === "gemini"}
                 />
               </SectionCard>
-            )}
             </div>
           </details>
         )}
@@ -324,10 +304,6 @@ export default async function StartQcPage({ params }: PageProps<"/companies/[com
             </span>
           </p>
         )}
-
-        <section className="rounded-2xl bg-card p-5 ring-1 ring-foreground/8 sm:p-7" aria-label="Save">
-          <SessionFooter sessionId={session.id} status={session.status} problems={problems} />
-        </section>
       </div>
     </AppShell>
   );

@@ -412,7 +412,9 @@ export async function renderReportPdf(
   } else {
     w.text("No confirmed requirements.", { size: 9, color: C.muted });
   }
-  if (data.unconfirmedRequirements) w.text(`${data.unconfirmedRequirements} unconfirmed requirement(s) were not used.`, { size: 8.5, color: C.muted });
+  if (data.unconfirmedRequirements) {
+    w.text(`${data.unconfirmedRequirements} requirement(s) from the brief weren't part of this check — press Check Design again to include them.`, { size: 8.5, color: C.muted });
+  }
 
   w.subheading(`Issues to fix — full detail (${toFix.length})`);
   items(w, toFix, "No issues to fix.");

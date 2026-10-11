@@ -92,28 +92,36 @@ describe("analysis actions", () => {
     return filesFingerprint(files);
   };
 
-  it("Confirm & Run QC confirms every requirement and queues a content analysis run for the owner", async () => {
+  it("Check Design confirms every requirement and queues a content analysis run for the owner", async () => {
     await upload("content", "post.png", pngOf(1440, 1800));
     await actions.setPlatformAction({}, form({ sessionId, platform: "instagram", placement: "feed_image" }));
     await addRequirement();
     await addRequirement({ type: "cta", expected_value: "Book now" });
     expect((await listRequirements(state.db, sessionId)).some((r) => r.confirmed)).toBe(false);
-    expect(await actions.markReadyAction({}, form({ sessionId }))).toMatchObject({ ok: true, message: "Confirmed. The content is being analysed." });
+    expect(await actions.markReadyAction({}, form({ sessionId }))).toMatchObject({ ok: true, message: "Checking the design…" });
     expect((await listRequirements(state.db, sessionId)).every((r) => r.confirmed)).toBe(true);
     expect(await runs()).toEqual([{ status: "queued", requested_by: dee.id, kind: "content" }]);
     expect(await actions.analysisStatusAction(sessionId)).toMatchObject({ status: "queued", kind: "content", mock: true });
   });
 
-  it("no requirements: Confirm & Run QC and Analyse are both blocked — never a PASS with nothing to check against", async () => {
+  it("no requirements: Check Design and Try again are both blocked — never a PASS with nothing to check against", async () => {
     await upload("content", "post.png", pngOf(1440, 1800));
     await actions.setPlatformAction({}, form({ sessionId, platform: "instagram", placement: "feed_image" }));
     const blocked = { error: "Add or confirm the client's requirements before running QC." };
-    expect(await actions.markReadyAction({}, form({ sessionId }))).toEqual(blocked);
+    expect(await actions.markReadyAction({}, form({ sessionId }))).toEqual({ error: "Upload the client brief." });
     expect(await actions.startAnalysisAction({}, form({ sessionId }))).toEqual(blocked);
-    // Unconfirmed requirements don't count for Analyse again either (Confirm & Run QC confirms them).
+    // A brief that gave nothing checkable (only descriptive items): the clearer-brief message.
+    await upload("information", "brief.txt", new TextEncoder().encode("Summer campaign"));
+    await state.db.query("update qc_analysis_runs set status = 'done' where session_id = $1", [sessionId]);
+    await addRequirement({ type: "special_instruction", expected_value: "Make it feel summery" });
+    expect(await actions.markReadyAction({}, form({ sessionId }))).toEqual({
+      error: "We couldn't find clear requirements in this brief. Please upload a clearer brief.",
+    });
+    expect((await runs()).filter((r) => r.kind === "content")).toEqual([]);
+    // Unconfirmed requirements don't count for Try again either (Check Design confirms them).
     await addRequirement();
     expect(await actions.startAnalysisAction({}, form({ sessionId }))).toEqual(blocked);
-    expect(await runs()).toEqual([]);
+    expect((await runs()).filter((r) => r.kind === "content")).toEqual([]);
     expect((await findCurrentSession(state.db, acme, dee.id, new Date()))!.status).toBe("draft");
   });
 
@@ -208,7 +216,7 @@ describe("analysis actions", () => {
     expect(await actions.startAnalysisAction({}, form({ sessionId, kind: "information" }))).toEqual({ ok: true });
   });
 
-  it("Confirm & Run QC counts as a design analysis run", async () => {
+  it("Check Design counts as a design analysis run", async () => {
     await upload("content", "post.png", pngOf(1440, 1800));
     await actions.setPlatformAction({}, form({ sessionId, platform: "instagram", placement: "feed_image" }));
     await addRequirement();
@@ -217,7 +225,7 @@ describe("analysis actions", () => {
        select $1, $2, 'content', 'mock', 'x', 'done', now() from generate_series(1, 4)`,
       [sessionId, dee.id]
     );
-    expect(await actions.markReadyAction({}, form({ sessionId }))).toMatchObject({ ok: true, message: "Confirmed. The content is being analysed." });
+    expect(await actions.markReadyAction({}, form({ sessionId }))).toMatchObject({ ok: true, message: "Checking the design…" });
     await state.db.query("update qc_analysis_runs set status = 'done' where session_id = $1", [sessionId]);
     expect(await actions.startAnalysisAction({}, form({ sessionId }))).toMatchObject({ error: expect.stringMatching(/used its 5 analysis runs/) });
   });

@@ -4,7 +4,7 @@ import type { QcFile, QcRequirement, QcSession } from "@/lib/db/qc-sessions";
 import { contentTypeLabel } from "@/lib/qc/content-types";
 import { CATEGORIES, severityLabel, type Finding, type Severity } from "@/lib/qc/findings";
 import { findPlacement, findPlatform } from "@/lib/qc/platforms";
-import { requirementTypeLabel } from "@/lib/qc/requirements";
+import { isCheckable, requirementTypeLabel } from "@/lib/qc/requirements";
 import { RESULT_DISPLAY_LABEL, RESULT_DISPLAY_SUMMARY, resultDisplay, type QcResult, type Scoreboard } from "@/lib/qc/scoring";
 
 /**
@@ -146,7 +146,8 @@ export function buildReportData(input: {
       mandatory: r.mandatory,
       status: statusOf(findingFor(r, findings)),
     })),
-    unconfirmedRequirements: input.requirements.length - confirmed.length,
+    // Descriptive brief items (campaign, instructions…) are never checked on purpose — not "unused".
+    unconfirmedRequirements: input.requirements.filter((r) => !r.confirmed && isCheckable(r)).length,
     issuesToFix: board.counting.map((f) => item(f)),
     humanChecks: findings.filter(isHumanCheck).map((f) => item(f, f.severity === "critical" ? "Possible critical" : severityLabel(f.severity))),
     notVerified: findings.filter((f) => f.status === "unverified" && !isHumanCheck(f)).map((f) => item(f, "Not verified")),

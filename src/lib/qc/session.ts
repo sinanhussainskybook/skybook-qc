@@ -25,7 +25,8 @@ import {
 } from "@/lib/db/qc-sessions";
 import { contentMedia, contentTypeLabel, type ContentType } from "@/lib/qc/content-types";
 import { measureMedia, MEASURED_FORMATS, type MediaInfo } from "@/lib/qc/media-info";
-import { parseExactSize } from "@/lib/qc/compare";
+import { parseDimensions } from "@/lib/qc/compare";
+import { BRIEF_UNCLEAR_MESSAGE, DESCRIPTIVE_REQUIREMENT_TYPES, isCheckable } from "@/lib/qc/requirements";
 import {
   allowedFormats,
   checkUploadedFile,
@@ -351,20 +352,24 @@ export async function removeFile(
 // ---------------------------------------------------------------------------
 
 export const READINESS_MESSAGES = {
+  /** No checkable requirement to compare the design with (never a PASS without one). */
   requirements: "Add or confirm the client's requirements before running QC.",
-  briefReading: "The brief is still being read — wait for it to finish, then review what was found.",
-  platform: "Choose the platform the content is for, or add the exact size the client asked for (e.g. 1080 × 1080) as a Dimensions requirement.",
-  content: "Upload the content you want checked.",
+  brief: "Upload the client brief.",
+  briefReading: "The brief is still being read — this takes a few seconds.",
+  briefUnclear: BRIEF_UNCLEAR_MESSAGE,
+  platform: "Choose the platform the design is for — the brief doesn't give an exact size.",
+  content: "Upload the design.",
 } as const;
 
 /** A requirement giving an exact pixel size — enough to check the size without a platform. */
 export const hasExactSize = (requirements: Pick<QcRequirement, "type" | "expected_value">[]) =>
-  requirements.some((r) => r.type === "dimensions" && parseExactSize(r.expected_value) !== null);
+  requirements.some((r) => r.type === "dimensions" && parseDimensions(r.expected_value) !== null);
 
 /**
- * What still stops Confirm & Run QC (empty when it can run). Every requirement
- * listed is confirmed by that button, so at least one must be there — QC with
- * no requirements would pass content it can't actually check against the brief.
+ * What still stops Check Design (empty when it can run). Check Design confirms
+ * every checkable requirement, so at least one must be there — QC with none
+ * would pass a design it never checked against the brief. Descriptive items
+ * (campaign, instructions…) don't count: they are never checked.
  */
 export function readinessProblems(
   requirements: QcRequirement[],
@@ -373,18 +378,21 @@ export function readinessProblems(
   options: { briefReading?: boolean } = {}
 ): string[] {
   const problems: string[] = [];
-  if (session && !session.platform && !hasExactSize(requirements)) {
-    problems.push(READINESS_MESSAGES.platform);
-  }
+  const checkable = requirements.filter(isCheckable);
+  const hasBrief = files.some((file) => file.kind === "information" && file.status === "ready");
+  if (options.briefReading) problems.push(READINESS_MESSAGES.briefReading);
+  else if (checkable.length === 0) problems.push(hasBrief ? READINESS_MESSAGES.briefUnclear : READINESS_MESSAGES.brief);
   if (!files.some((file) => file.kind === "content" && file.status === "ready")) {
     problems.push(READINESS_MESSAGES.content);
   }
-  if (options.briefReading) problems.push(READINESS_MESSAGES.briefReading);
-  else if (requirements.length === 0) problems.push(READINESS_MESSAGES.requirements);
+  // Only once the brief is read: until then it may still give the exact size.
+  if (session && !session.platform && !options.briefReading && checkable.length > 0 && !hasExactSize(checkable)) {
+    problems.push(READINESS_MESSAGES.platform);
+  }
   return problems;
 }
 
-/** Confirm & Run QC: confirms every listed requirement and marks the session Ready. */
+/** Check Design: confirms the checkable requirements and marks the session Ready. */
 export async function markReady(
   db: Database,
   session: QcSession,
@@ -395,7 +403,7 @@ export async function markReady(
 ): Promise<{ ok: true } | { ok: false; problems: string[] }> {
   const problems = readinessProblems(requirements, files, session, options);
   if (problems.length > 0) return { ok: false, problems };
-  await confirmAllRequirements(db, session.id, now);
+  await confirmAllRequirements(db, session.id, now, DESCRIPTIVE_REQUIREMENT_TYPES);
   await touchSession(db, session.id, now, { status: "ready" });
   return { ok: true };
 }

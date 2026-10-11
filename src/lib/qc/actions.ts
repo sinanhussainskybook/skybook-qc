@@ -282,7 +282,7 @@ export async function cancelUploadAction(input: { sessionId: string; fileId: str
 }
 
 // ---------------------------------------------------------------------------
-// Confirm & Run QC
+// Check Design
 // ---------------------------------------------------------------------------
 
 const briefBeingRead = async (db: ReturnType<typeof getDatabase>, sessionId: string) => {
@@ -290,7 +290,7 @@ const briefBeingRead = async (db: ReturnType<typeof getDatabase>, sessionId: str
   return run?.status === "queued" || run?.status === "processing";
 };
 
-/** Confirms every listed requirement, marks the session Ready and analyses the content. */
+/** Check Design: confirms the brief's checkable requirements, marks the session Ready and checks the design. */
 export async function markReadyAction(_previous: QcFormState, formData: FormData): Promise<QcFormState> {
   const found = await sessionFromForm(formData);
   if (!found) return { error: MESSAGES.notAvailable };
@@ -309,7 +309,7 @@ export async function markReadyAction(_previous: QcFormState, formData: FormData
     return { ok: false as const, error: MESSAGES.failed };
   });
   refresh(found.company.id);
-  return { ok: true, message: queued.ok ? "Confirmed. The content is being analysed." : "Confirmed. This check is ready for QC." };
+  return { ok: true, message: queued.ok ? "Checking the design…" : "Ready to check." };
 }
 
 // ---------------------------------------------------------------------------

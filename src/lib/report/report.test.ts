@@ -138,7 +138,16 @@ describe("QC report", () => {
     expect(r.text).toContain("Detected: AED 1,399");
     expect(r.text).toContain('Suggested fix: Change it to "AED 1,299".');
     expect(r.data.requirements).toEqual([{ type: "Price", value: "AED 1,299", mandatory: true, status: "To fix (Critical)" }]);
-    expect(r.text).toContain("1 unconfirmed requirement(s) were not used.");
+    expect(r.text).toContain("1 requirement(s) from the brief weren't part of this check — press Check Design again to include them.");
+    expect(r.text).not.toContain("unconfirmed");
+  });
+
+  it("descriptive brief items (campaign, instructions, audience, other) are never reported as unused or as errors", async () => {
+    const descriptive = ["campaign_name", "special_instruction", "target_audience", "other"].map((t) => req(t, "Winter campaign", { confirmed: false }));
+    const r = await report([f("brief", "passed")], { requirements: [req("price", "AED 1,299"), ...descriptive] });
+    expect(r.data.unconfirmedRequirements).toBe(0);
+    expect(r.text).not.toMatch(/unconfirmed|weren't part of this check|were not used/);
+    expect(r.data.requirements.map((x) => x.type)).toEqual(["Price"]);
   });
 
   it("'Needs a human check' items: listed with their wording, never counted", async () => {

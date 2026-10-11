@@ -1,11 +1,15 @@
 "use client";
 
 import { useActionState, useState } from "react";
-import { CircleCheck, RotateCcw } from "lucide-react";
+import { RotateCcw, ScanSearch } from "lucide-react";
 import { markReadyAction, startOverAction } from "@/lib/qc/actions";
 import { Button } from "@/components/ui/button";
 
-/** Confirm & Run QC (confirms the requirements, marks the session Ready, analyses the content) and Start over (deletes it). */
+/**
+ * Check Design — the one button: it confirms what was read from the brief,
+ * marks the session Ready and checks the design (markReadyAction) — and
+ * Start over (deletes the session). Until it can run, it says plainly why.
+ */
 export function SessionFooter({
   sessionId,
   status,
@@ -18,31 +22,18 @@ export function SessionFooter({
   const [readyState, readyAction, saving] = useActionState(markReadyAction, {});
   const [overState, overAction, clearing] = useActionState(startOverAction, {});
   const [askStartOver, setAskStartOver] = useState(false);
+  const blocked = status === "draft" && problems.length > 0;
 
   return (
     <div className="space-y-4">
-      {status === "ready" ? (
-        <div className="flex items-start gap-3 rounded-xl bg-pass-soft p-4 text-pass">
-          <CircleCheck className="mt-0.5 size-5 shrink-0" aria-hidden />
-          <div>
-            <p className="font-semibold">Ready for QC</p>
-            <p className="mt-0.5 text-sm text-foreground">
-              The requirements are confirmed. The content is analysed in the background and the QC result appears below
-              when it finishes. Any change you make sets this back to draft — press Confirm &amp; Run QC again to use it.
-            </p>
-          </div>
-        </div>
-      ) : (
-        problems.length > 0 && (
-          <ul className="space-y-1 rounded-xl bg-muted/60 p-4 text-sm">
-            <li className="font-medium">Before you run QC:</li>
-            {problems.map((problem) => (
-              <li key={problem} className="text-muted-foreground">
-                · {problem}
-              </li>
-            ))}
-          </ul>
-        )
+      {blocked && (
+        <ul className="space-y-1 rounded-xl bg-muted/60 p-4 text-sm">
+          {problems.map((problem) => (
+            <li key={problem} className="text-muted-foreground">
+              · {problem}
+            </li>
+          ))}
+        </ul>
       )}
 
       {(readyState.error || overState.error) && (
@@ -56,17 +47,18 @@ export function SessionFooter({
           <input type="hidden" name="sessionId" value={sessionId} />
           <Button
             type="submit"
-            disabled={saving || status === "ready"}
+            disabled={saving || blocked || status === "ready"}
             className="h-11 rounded-full bg-foreground px-6 text-sm font-semibold text-background hover:bg-foreground/85"
           >
-            {saving ? "Starting…" : status === "ready" ? "Confirmed" : "Confirm & Run QC"}
+            <ScanSearch aria-hidden />
+            {saving ? "Starting…" : "Check Design"}
           </Button>
         </form>
 
         {askStartOver ? (
           <form action={overAction} className="flex flex-wrap items-center gap-1 rounded-full bg-fail-soft py-0.5 pr-0.5 pl-3">
             <input type="hidden" name="sessionId" value={sessionId} />
-            <span className="text-xs font-medium text-fail">Delete this check&apos;s requirements and files?</span>
+            <span className="text-xs font-medium text-fail">Delete this check&apos;s brief and design?</span>
             <Button type="submit" size="sm" disabled={clearing} className="rounded-full bg-fail text-white hover:bg-fail/85">
               Yes, start over
             </Button>

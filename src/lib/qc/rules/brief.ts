@@ -12,7 +12,7 @@ import {
   findPrices,
   findTimes,
   findWebsites,
-  parseExactSize,
+  parseDimensions,
   parsePercentage,
   parsePrice,
   phonesMatch,
@@ -45,6 +45,10 @@ import { ALL_TYPES, findingFor, NEEDS_ANALYSIS, notApplicable, notVerified, seve
  *               dimensions wording is left to the Platform / Size check.
  *   capitals    a MANDATORY required text whose words are all there but with
  *               different capitals ("T&C Apply" for "T&C apply") is MINOR.
+ * A product or service name the brief only describes (not Must have) isn't
+ * reported as missing: briefs often describe the offer ("Customized Azerbaijan
+ * Travel Packages") without asking for those words on the design. Shown, or
+ * misspelt, it is still checked; a Must have one must be there.
  */
 
 const CATEGORY = "brief" as const;
@@ -146,6 +150,9 @@ function check(r: QcInputRequirement, d: ContentDetections): Outcome | "unchecke
   }
 }
 
+/** Brief items that may only describe the offer: not "missing" unless they are Must have. */
+const DESCRIBED_TYPES = new Set(["product_name", "service_name"]);
+
 /** Requirement types whose wording must be copied exactly, capitals included, when mandatory. */
 const EXACT_WORDING = new Set(["required_text"]);
 
@@ -181,7 +188,7 @@ function judge(r: QcInputRequirement, d: ContentDetections | null, files: Conten
   const id = `${RULE_ID}.${r.type}`;
   const make = findingFor(id, CATEGORY, title);
   const notes = r.notes ? ` Note from the brief: ${r.notes}` : "";
-  const size = r.type === "dimensions" ? parseExactSize(r.expectedValue) : null;
+  const size = r.type === "dimensions" ? parseDimensions(r.expectedValue) : null;
   if (size) return judgeSize(r, size, files, title);
   if (r.type === "platform" || r.type === "dimensions") {
     return notApplicable(id, CATEGORY, title, "Checked by the Platform / Size check against the platform chosen for this session.");
@@ -229,6 +236,9 @@ function judge(r: QcInputRequirement, d: ContentDetections | null, files: Conten
         confidence: outcome.confidence,
       });
     case "missing":
+      if (DESCRIBED_TYPES.has(r.type) && !r.mandatory) {
+        return notApplicable(id, CATEGORY, title, "The brief describes this, but doesn't require these exact words on the design, so it isn't counted.");
+      }
       return make({
         severity: severityFor(r.mandatory, "minor"),
         status: "failed",

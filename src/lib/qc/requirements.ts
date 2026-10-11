@@ -37,6 +37,20 @@ export function requirementTypeLabel(value: string): string {
   return REQUIREMENT_TYPES.find((type) => type.value === value)?.label ?? value.replace(/_/g, " ");
 }
 
+/**
+ * Descriptive brief items — the campaign, special instructions, the audience,
+ * anything else. They are read from the brief and kept, but never checked
+ * against the design: they aren't words that must appear on it, so they would
+ * only make "Not found" issues.
+ */
+export const DESCRIPTIVE_REQUIREMENT_TYPES: readonly string[] = ["campaign_name", "special_instruction", "target_audience", "other"];
+
+/** Shown when the brief can't be read or gives nothing that can be checked. */
+export const BRIEF_UNCLEAR_MESSAGE = "We couldn't find clear requirements in this brief. Please upload a clearer brief.";
+
+/** A requirement QC can check against the design (not a descriptive item). */
+export const isCheckable = (requirement: { type: string }) => !DESCRIPTIVE_REQUIREMENT_TYPES.includes(requirement.type);
+
 /** Where a requirement came from. `extracted` items (future AI / OCR) always start unconfirmed. */
 export const REQUIREMENT_SOURCES = ["manual", "extracted"] as const;
 export type RequirementSource = (typeof REQUIREMENT_SOURCES)[number];

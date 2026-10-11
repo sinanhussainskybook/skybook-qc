@@ -168,18 +168,19 @@ describe("QC session rules (Storage faked)", () => {
   });
 
   describe("ready", () => {
-    it("needs a platform, uploaded content and at least one requirement; Confirm & Run QC confirms them all", async () => {
-      // No requirements: blocked — a PASS with nothing to check against would mislead.
-      expect(readinessProblems([], [])).toEqual([READINESS_MESSAGES.content, READINESS_MESSAGES.requirements]);
-      expect(READINESS_MESSAGES.requirements).toBe("Add or confirm the client's requirements before running QC.");
+    it("Check Design needs the brief's requirements and the design (and a platform when the brief gives no exact size); it confirms them all", async () => {
+      // Nothing yet: upload the brief and the design.
+      expect(readinessProblems([], [])).toEqual([READINESS_MESSAGES.brief, READINESS_MESSAGES.content]);
+      expect(READINESS_MESSAGES.brief).toBe("Upload the client brief.");
+      expect(READINESS_MESSAGES.content).toBe("Upload the design.");
 
       await insertRequirement(db, session.id, { type: "offer", label: null, expected_value: "20% off", notes: null, mandatory: true, confirmed: false }, T0);
       await insertRequirement(db, session.id, { type: "price", label: null, expected_value: "AED 99", notes: null, mandatory: true, confirmed: false }, T0);
       const requirements = await listRequirements(db, session.id);
       // Unconfirmed is fine here: the button confirms the list.
       expect(readinessProblems(requirements, [])).toEqual([READINESS_MESSAGES.content]);
-      // While the brief is still being read, wait for it.
-      expect(readinessProblems(requirements, [], undefined, { briefReading: true })).toEqual([READINESS_MESSAGES.content, READINESS_MESSAGES.briefReading]);
+      // While the brief is still being read, wait for it (and don't ask for a platform yet).
+      expect(readinessProblems(requirements, [], session, { briefReading: true })).toEqual([READINESS_MESSAGES.briefReading, READINESS_MESSAGES.content]);
 
       await upload("content", "poster.jpg", JPEG);
       const files = await listFiles(db, session.id);
@@ -193,6 +194,31 @@ describe("QC session rules (Storage faked)", () => {
       expect((await listRequirements(db, session.id)).every((r) => r.confirmed)).toBe(true);
     });
 
+    it("descriptive brief items (campaign, special instructions, audience, other) are kept but never confirmed or checked", async () => {
+      await upload("content", "poster.jpg", JPEG);
+      await upload("information", "brief.pdf", PDF);
+      const add = (type: string, value: string) =>
+        insertRequirement(db, session.id, { type, label: null, expected_value: value, notes: null, mandatory: false, confirmed: true }, T0);
+      for (const [type, value] of [["campaign_name", "Azerbaijan winter promotion"], ["special_instruction", "Use a snow theme"], ["target_audience", "Families"], ["other", "Logo top right"]]) {
+        await add(type, value);
+      }
+      const files = await listFiles(db, session.id);
+      // Only descriptive items: nothing can be checked → the clearer-brief message.
+      expect(readinessProblems(await listRequirements(db, session.id), files, session)).toEqual([READINESS_MESSAGES.briefUnclear]);
+      expect(READINESS_MESSAGES.briefUnclear).toBe("We couldn't find clear requirements in this brief. Please upload a clearer brief.");
+
+      await add("dimensions", "1080 × 1080 px");
+      const requirements = await listRequirements(db, session.id);
+      expect(await markReady(db, session, requirements, files, T0)).toEqual({ ok: true });
+      const after = await listRequirements(db, session.id);
+      expect(after).toHaveLength(5); // nothing is deleted
+      expect(after.filter((r) => r.confirmed).map((r) => r.type)).toEqual(["dimensions"]);
+      // QC only ever reads confirmed requirements.
+      const company = (await findAccessibleCompany(db, { id: dee.id, role: "designer" }, acme))!;
+      const input = await loadQcInput(db, company, (await findCurrentSession(db, acme, dee.id, T0))!);
+      expect(input.requirements.map((r) => r.type)).toEqual(["dimensions"]);
+    });
+
     it("an exact size in the brief (Dimensions 1080 × 1080) stands in for the platform choice", async () => {
       await upload("content", "poster.jpg", JPEG);
       const files = await listFiles(db, session.id);
@@ -202,6 +228,15 @@ describe("QC session rules (Storage faked)", () => {
       const requirements = await listRequirements(db, session.id);
       expect(readinessProblems(requirements, files, session)).toEqual([]);
       expect(await markReady(db, session, requirements, files, T0)).toEqual({ ok: true });
+    });
+  });
+
+  describe("ready — sizes", () => {
+    it("regression: a brief size stored without its × ('1080  1080 px') still stands in for the platform", async () => {
+      await upload("content", "poster.jpg", JPEG);
+      await insertRequirement(db, session.id, { type: "dimensions", label: null, expected_value: "1080  1080 px", notes: null, mandatory: true, confirmed: false }, T0);
+      const requirements = await listRequirements(db, session.id);
+      expect(readinessProblems(requirements, await listFiles(db, session.id), session)).toEqual([]);
     });
   });
 

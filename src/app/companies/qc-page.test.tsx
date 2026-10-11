@@ -78,6 +78,14 @@ const session = (over = {}) => ({
   ...over,
 });
 
+/** A design check in progress (the result section appears once a check has started). */
+const checking = {
+  id: "run1", session_id: "s1", requested_by: "u1", kind: "content", provider: "mock", status: "processing", stage: "Reading text",
+  progress_done: 1, progress_total: 4, attempts: 1, files_fingerprint: "x", analysed_share: null, failure_reason: null,
+  created_at: new Date(), started_at: new Date(), heartbeat_at: new Date(), finished_at: null,
+};
+const visible = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/&#x27;/g, "'").replace(/&amp;/g, "&").replace(/\s+/g, " ");
+
 const main = (html: string) => html.slice(html.indexOf("<main"), html.indexOf("</main>"));
 /** The visible result banner (the section description names the results, so match the banner itself). */
 const NO_RESULT_BANNER = /QC result: |\/ 100|No issues to fix|Fix the issues below|at least one critical issue/;
@@ -110,17 +118,14 @@ describe("Start QC page", () => {
     expect(purgeExpiredSessions).toHaveBeenCalled();
   });
 
-  it("without a session: asks what's being checked, offering the static design types only", async () => {
+  it("without a session: one Start QC button — no content-type question (new checks are Design / Poster)", async () => {
     const html = main(renderToStaticMarkup(await StartQcPage(props)));
-    for (const label of ["Design / Poster", "Social Media Post"]) {
-      expect(html, label).toContain(label);
-    }
-    // Video types are kept in the code for later, but not offered.
-    for (const label of ["Reel / Short", "YouTube Video"]) {
+    expect(html).toContain("Start QC");
+    expect(html).toContain('name="contentType" value="design_poster"');
+    expect(html).not.toMatch(/type="radio"/);
+    for (const label of ["What are you checking?", "Social Media Post", "Reel / Short", "YouTube Video"]) {
       expect(html, label).not.toContain(label);
     }
-    expect(html.match(/type="radio"/g)).toHaveLength(2);
-    expect(html).toContain("Start QC");
   });
 
   describe("Gemini free tier privacy notice", () => {
@@ -133,18 +138,14 @@ describe("Start QC page", () => {
       return main(renderToStaticMarkup(await StartQcPage(props)));
     };
 
-    it("Gemini → the notice is shown, with the exact text, directly above 4. Upload Information", async () => {
+    it("Gemini → the notice is shown, with the exact text, directly above 1. Upload client brief", async () => {
       const html = await page("gemini");
       expect(html).toContain(NOTICE_TITLE);
       expect(html).toContain(NOTICE_TEXT);
       expect(html.match(/aria-label="Gemini free tier privacy notice"/g)).toHaveLength(1);
-      // Placement: after 3. Requirements, immediately before 4. Upload Information (nothing in between).
-      const notice = html.indexOf(NOTICE_TITLE);
-      const requirements = html.indexOf("3. Requirements");
-      const information = html.indexOf("4. Upload Information");
-      expect(requirements).toBeLessThan(notice);
-      expect(notice).toBeLessThan(information);
-      // The notice is the element right before the "4. Upload Information" section.
+      // Placement: before anything is uploaded, immediately before 1. Upload client brief.
+      expect(html.indexOf(NOTICE_TITLE)).toBeLessThan(html.indexOf("1. Upload client brief"));
+      // The notice is the element right before the brief upload section.
       expect(html).toMatch(/Gemini has no EU data region\.<\/p><\/div><\/aside><section id="information"/);
     });
 
@@ -153,7 +154,7 @@ describe("Start QC page", () => {
         const html = await page(provider);
         expect(html).not.toContain(NOTICE_TITLE);
         expect(html).not.toContain("Gemini free tier privacy notice");
-        expect(html).toContain("4. Upload Information"); // the page itself is unchanged
+        expect(html).toContain("1. Upload client brief"); // the page itself is unchanged
       });
     }
 
@@ -164,23 +165,23 @@ describe("Start QC page", () => {
     });
   });
 
-  it("with a session: content type, requirements, Upload Information and Upload Content on one page", async () => {
+  it("with a session: upload the brief, upload the design, Check Design — nothing else to fill in", async () => {
     findCurrentSession.mockResolvedValue(session());
     const html = main(renderToStaticMarkup(await StartQcPage(props)));
-    for (const heading of [
-      "1. What are you checking?",
-      "2. Platform",
-      "3. Requirements",
-      "4. Upload Information",
-      "5. Upload Content",
-    ]) {
-      expect(html, heading).toContain(heading);
+    const text = visible(html);
+    expect(text.indexOf("1. Upload client brief")).toBeGreaterThan(-1);
+    expect(text.indexOf("1. Upload client brief")).toBeLessThan(text.indexOf("2. Upload design"));
+    expect(text.indexOf("2. Upload design")).toBeLessThan(text.indexOf("3. Check design"));
+    expect(text).toContain("Upload brief");
+    expect(text).toContain("Upload design");
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*>.*Check Design<\/button>/); // nothing uploaded yet
+    for (const gone of ["What are you checking?", "Requirements", "Confirm & Run QC", "Save and continue", "Find requirements", "Analyse now", "Draft"]) {
+      expect(text, gone).not.toContain(gone);
     }
-    expect(html).not.toContain("Client Document");
-    expect(html).toContain("Confirm &amp; Run QC");
-    expect(html).not.toContain("Save and continue");
-    expect(html).toContain("Deleted automatically in 24 hours");
-    // Upload Content accepts only what the content type allows.
+    expect(html).not.toContain('id="platform"'); // asked only when the brief, once read, gives no exact size
+    expect(html).not.toContain('id="qc-result"'); // no result before a check
+    expect(text).toContain("Deleted automatically in 24 hours");
+    // The design upload accepts only what the content type allows.
     expect(html).toContain('accept=".jpg,.jpeg,image/jpeg,.png,image/png,.webp,image/webp,.pdf,application/pdf"');
   });
 
@@ -191,20 +192,79 @@ describe("Start QC page", () => {
     expect(html).toContain("MP4, MOV, WEBM · up to 1 file");
   });
 
-  it("shows requirements as a simple list — Must have / Optional, no per-item confirm", async () => {
+  it("the requirements read from the brief are never shown or edited — no types, Must have / Optional or editor", async () => {
     findCurrentSession.mockResolvedValue(session());
     listRequirements.mockResolvedValue([
-      { id: "r1", type: "offer", label: null, expected_value: "20% discount", notes: "Summer only", mandatory: true, confirmed: false, source: "manual" },
-      { id: "r2", type: "cta", label: null, expected_value: "Book now", notes: null, mandatory: false, confirmed: true, source: "manual" },
+      { id: "r1", type: "offer", label: null, expected_value: "20% discount", notes: "Summer only", mandatory: true, confirmed: false, source: "extracted" },
+      { id: "r2", type: "cta", label: null, expected_value: "Book now", notes: null, mandatory: false, confirmed: true, source: "extracted" },
     ]);
     const html = main(renderToStaticMarkup(await StartQcPage(props)));
-    expect(html).toContain("20% discount");
-    expect(html).toContain("Must have");
-    expect(html).toContain("Optional");
-    expect(html).not.toContain("Needs review");
-    expect(html).not.toContain("Confirm or delete");
-    expect(html).not.toMatch(/>Confirm<\/button>/);
-    expect(html).toContain("Confirm &amp; Run QC");
+    for (const hidden of ["20% discount", "Must have", "Optional", "Requirement type", "Add requirement", "Needs review"]) {
+      expect(html, hidden).not.toContain(hidden);
+    }
+    expect(html).not.toMatch(/Edit<\/button>|Delete<\/button>/);
+  });
+
+  it("the platform is asked for only when the brief gives no exact size", async () => {
+    findCurrentSession.mockResolvedValue(session());
+    const req = (type: string, value: string) => ({ id: type, type, label: null, expected_value: value, notes: null, mandatory: true, confirmed: false, source: "extracted" });
+    listRequirements.mockResolvedValue([req("price", "AED 99"), req("dimensions", "1080 × 1080 px")]);
+    expect(main(renderToStaticMarkup(await StartQcPage(props)))).not.toContain('id="platform"');
+    listRequirements.mockResolvedValue([req("price", "AED 99")]);
+    const html = main(renderToStaticMarkup(await StartQcPage(props)));
+    expect(html).toContain('id="platform"');
+    expect(visible(html)).toContain("The brief doesn't give an exact size, so choose where the design will be published.");
+    // A platform already chosen stays visible.
+    findCurrentSession.mockResolvedValue(session({ platform: "instagram", placement: "feed_image" }));
+    listRequirements.mockResolvedValue([req("dimensions", "1080 × 1080 px")]);
+    expect(main(renderToStaticMarkup(await StartQcPage(props)))).toContain('id="platform"');
+  });
+
+  describe("reading the brief", () => {
+    const briefFile = { id: "f1", kind: "information", file_name: "brief.pdf", mime_type: "application/pdf", file_size: 34_000, status: "ready" };
+    const infoRun = (over = {}) => ({ ...checking, id: "i1", kind: "information", status: "done", files_fingerprint: "", ...over });
+    beforeEach(async () => {
+      process.env.QC_ANALYSIS_PROVIDER = "mock";
+      findCurrentSession.mockResolvedValue(session());
+      listFiles.mockResolvedValue([briefFile]);
+      const { filesFingerprint } = await import("@/lib/analysis/pipeline");
+      const done = infoRun({ files_fingerprint: filesFingerprint([briefFile]) });
+      latestRun.mockImplementation(async (_db: unknown, _id: string, kind: string) => (kind === "information" ? done : null));
+    });
+    const page = async () => visible(main(renderToStaticMarkup(await StartQcPage(props))));
+    const req = (type: string) => ({ id: type, type, label: null, expected_value: "x", notes: null, mandatory: false, confirmed: false, source: "extracted" });
+
+    it("read and something to check: 'Brief read.'", async () => {
+      listRequirements.mockResolvedValue([req("price")]);
+      const text = await page();
+      expect(text).toContain("Brief read.");
+      expect(text).not.toContain("We couldn't find clear requirements");
+    });
+
+    it("read but nothing checkable (or only descriptive items): the clearer-brief message, and Check Design waits", async () => {
+      for (const found of [[], [req("campaign_name"), req("special_instruction"), req("target_audience"), req("other")]]) {
+        listRequirements.mockResolvedValue(found);
+        const text = await page();
+        expect(text.match(/We couldn't find clear requirements in this brief\. Please upload a clearer brief\./g)?.length).toBeGreaterThanOrEqual(1);
+        expect(text).not.toContain("Brief read.");
+      }
+    });
+
+    it("couldn't be read: the clearer-brief message with the reason, and Try again", async () => {
+      latestRun.mockImplementation(async (_db: unknown, _id: string, kind: string) =>
+        kind === "information" ? infoRun({ status: "failed", failure_reason: "the file couldn't be read" }) : null
+      );
+      const text = await page();
+      expect(text).toContain("We couldn't find clear requirements in this brief. Please upload a clearer brief. (the file couldn't be read)");
+      expect(text).toContain("Try again");
+    });
+
+    it("being read: says so, and Check Design waits for it", async () => {
+      latestRun.mockImplementation(async (_db: unknown, _id: string, kind: string) => (kind === "information" ? infoRun({ status: "processing" }) : null));
+      const text = await page();
+      expect(text).toContain("Reading the brief…");
+      expect(text).toContain("The brief is still being read");
+    });
   });
 
   it("lists uploaded files by name, type and size", async () => {
@@ -231,6 +291,9 @@ describe("Start QC page", () => {
         media_width: 1080, media_height: 1350, media_duration_ms: null, media_dpi: null, media_pages: null, media_note: null,
       },
     ]);
+    // Before Check Design: no result and no detail.
+    expect(main(renderToStaticMarkup(await StartQcPage(props)))).not.toContain("Platform check");
+    latestRun.mockImplementation(async (_db: unknown, _id: string, kind: string) => (kind === "content" ? checking : null));
     const html = main(renderToStaticMarkup(await StartQcPage(props)));
     const text = html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
     expect(text).toContain("Platform check");
@@ -239,7 +302,7 @@ describe("Start QC page", () => {
     expect(text).toContain("4:5 (1080 × 1350)");
     expect(text).toContain("Safe zone — not verified.");
     expect(text).toContain("Source: Meta Ads Guide");
-    expect(text).toContain("No result: content analysis isn&#x27;t set up on this server.");
+    expect(text).toContain("The result appears when the analysis finishes.");
     expect(text).not.toMatch(NO_RESULT_BANNER);
   });
 
@@ -258,6 +321,7 @@ describe("Start QC page", () => {
         media_width: 1080, media_height: 1350, media_duration_ms: null, media_dpi: null, media_pages: null, media_note: null,
       },
     ]);
+    latestRun.mockImplementation(async (_db: unknown, _id: string, kind: string) => (kind === "content" ? { ...checking, status: "failed", failure_reason: "x" } : null));
     const html = main(renderToStaticMarkup(await StartQcPage(props)));
     const text = html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
     expect(text).toContain("Content checks");
@@ -267,18 +331,17 @@ describe("Start QC page", () => {
     expect(text).toContain("Golden Rule: Always use Book now");
     expect(text).toContain("Expected: AED 1,299");
     expect(text).toMatch(/\d+ checks not verified/);
-    expect(text).toContain("Content analysis isn&#x27;t set up on this server");
+    expect(text).toContain("The analysis didn&#x27;t finish (x)");
     expect(text).not.toContain("To fix");
     expect(text).not.toMatch(/\d+ passed/);
   });
 
-  it("no Platform check until a platform is chosen and content is uploaded", async () => {
+  it("before anything is uploaded: no checks, and Check Design says what's missing", async () => {
     findCurrentSession.mockResolvedValue(session());
-    const html = main(renderToStaticMarkup(await StartQcPage(props)));
-    expect(html).not.toContain("Platform check");
-    expect(html).not.toContain("Content checks");
-    expect(html).toContain("Choose the platform the content is for");
-    expect(html).toContain("Add or confirm the client&#x27;s requirements before running QC.");
+    const text = visible(main(renderToStaticMarkup(await StartQcPage(props))));
+    expect(text).not.toContain("Platform check");
+    expect(text).not.toContain("Content checks");
+    expect(text).toContain("· Upload the client brief. · Upload the design.");
   });
 
   it("warns which company information is missing (checks will be 'not verified')", async () => {
@@ -299,8 +362,7 @@ describe("Start QC page", () => {
     const html = main(renderToStaticMarkup(await StartQcPage(props)));
     // Visible text only (colour class names like "text-pass" aren't words on the page).
     const text = html.replace(/<[^>]+>/g, " ");
-    expect(text).toContain("Ready for QC");
-    expect(text).toContain("the QC result appears below");
+    expect(text).toContain("Check Design");
     expect(text).not.toMatch(NO_RESULT_BANNER);
   });
 
@@ -371,8 +433,11 @@ describe("Start QC page", () => {
       expect(await page()).toMatch(NO_RESULT_BANNER);
     });
 
-    it("not analysed yet: says when it happens", async () => {
-      expect(await page()).toContain("analysed when you press Confirm & Run QC");
+    it("not checked yet: Check Design is the way to start; no result yet", async () => {
+      const text = await page();
+      expect(text).toContain("Check Design");
+      expect(text).not.toContain("Checking the design");
+      expect(text).not.toMatch(NO_RESULT_BANNER);
     });
 
     it("in progress: progress and the mock label; checks say they are waiting; no result yet", async () => {
@@ -381,7 +446,7 @@ describe("Start QC page", () => {
       expect(text).toContain("The result appears when the analysis finishes.");
       expect(text).not.toMatch(NO_RESULT_BANNER);
       expect(text).not.toContain("Download QC report");
-      expect(text).toContain("Reading text…");
+      expect(text).toContain("Checking the design…");
       expect(text).toContain("2 of 4 steps");
       expect(text).toContain("Sample data — not real AI");
       expect(text).toContain("The content is being analysed");
@@ -390,7 +455,7 @@ describe("Start QC page", () => {
     it("failed: the plain reason and Try again", async () => {
       latestRun.mockResolvedValue(runRow({ status: "failed", stage: "Failed", failure_reason: "The text reader timed out." }));
       const text = await page();
-      expect(text).toContain("The analysis didn't finish: The text reader timed out.");
+      expect(text).toContain("The check didn't finish: The text reader timed out.");
       expect(text).toContain("Try again");
       expect(text).toContain("The analysis didn't finish (The text reader timed out)");
     });
@@ -412,7 +477,7 @@ describe("Start QC page", () => {
       });
       loadCompanyConfiguration.mockResolvedValue({ ...emptyConfig, brand: { ...emptyConfig.brand, fonts: [{ id: "x", family: "Montserrat", weights: null, usage: null, size_guidance: null, created_at: now, updated_at: now }] } });
       const text = await page();
-      expect(text).toContain("Analysed. The results are in the checks below.");
+      expect(text).toContain("Design checked — the result is below.");
       expect(text).toContain("Sample data — not real AI. These results come from the test provider");
       expect(text).toContain("need a human check");
       // Phase 7: the result — labelled as sample data; uncounted checks said plainly.
@@ -456,7 +521,7 @@ describe("Start QC page", () => {
     it("results for different files are not used", async () => {
       latestRun.mockResolvedValue(runRow({ status: "done" }));
       latestDetections.mockResolvedValue({ runId: "r1", provider: "mock", fingerprint: "1:old", detections: { source: "mock", texts: [] } });
-      expect(await page()).toContain("the files have changed since");
+      expect(await page()).toContain("The design has changed since it was checked");
     });
   });
 });

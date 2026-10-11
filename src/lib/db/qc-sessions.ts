@@ -272,11 +272,15 @@ export async function insertExtractedRequirement(
   return row.id;
 }
 
-/** Confirm & Run QC: every requirement in the session is confirmed at once. */
-export async function confirmAllRequirements(db: Database, sessionId: string, now: Date): Promise<number> {
+/**
+ * Check Design: the session's requirements are confirmed at once — all but the
+ * `skipTypes` (descriptive items), which are left unconfirmed so QC never uses them.
+ */
+export async function confirmAllRequirements(db: Database, sessionId: string, now: Date, skipTypes: readonly string[] = []): Promise<number> {
   const rows = await db.query(
-    "update qc_requirements set confirmed = true, updated_at = $2 where session_id = $1 and confirmed = false returning id",
-    [sessionId, now]
+    `update qc_requirements set confirmed = not (type = any($3::text[])), updated_at = $2
+      where session_id = $1 and confirmed is distinct from not (type = any($3::text[])) returning id`,
+    [sessionId, now, [...skipTypes]]
   );
   return rows.length;
 }

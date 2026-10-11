@@ -12,7 +12,7 @@ import { findAccessibleCompany, insertCompany } from "@/lib/db/companies";
 import { claimNextRun, findRun, insertRun } from "@/lib/db/analysis-runs";
 import { insertPendingFile, insertSession, listFiles, listRequirements, markFileReady, type QcSession } from "@/lib/db/qc-sessions";
 import { docxText, xlsxText } from "@/lib/analysis/documents";
-import { MUST_HAVE_TYPES, patternCandidates } from "@/lib/analysis/information";
+import { explicitlyRequired, MUST_HAVE_TYPES, patternCandidates } from "@/lib/analysis/information";
 import { PassThroughPreparer } from "@/lib/analysis/media/types";
 import { MockProvider } from "@/lib/analysis/mock-provider";
 import { filesFingerprint, processRun } from "@/lib/analysis/pipeline";
@@ -73,6 +73,95 @@ describe("reading information files (6.7)", () => {
       ["price", "AED 1,299"],
       ["percentage", "20%"],
     ]);
+    // The brief's one exact size (no AI) — and none when it gives several.
+    expect(patternCandidates("Dimensions\n1080 × 1080 px").map((c) => [c.type, c.value])).toEqual([["dimensions", "1080 × 1080 px"]]);
+    expect(patternCandidates("Post size 1080 × 1080 px\nStory size 1080 × 1920 px").filter((c) => c.type === "dimensions")).toEqual([]);
+  });
+
+  describe("product / service names: an exact requirement or only a description?", () => {
+    // The Travel Mart brief exactly as the app's PDF reader returns its text (2026-10-11).
+    const travelMart = [
+      "Travel Mart Travels — Azerbaijan Campaign QC", "", "Requirements", "",
+      "Campaign / Purpose: Azerbaijan winter/snow travel promotion — promoting customized travel packages", "to Azerbaijan.", "",
+      "Required Content", "", "Requirement Type", "Required Value", "",
+      "Headline", "Snow Has Arrived in Azerbaijan!", "",
+      "Required Text", "Customized Packages", "", "Required Text", "Flights + Hotels", "", "Required Text", "Tours + Transfers", "",
+      "Required Text", "Ready for a Snowy Escape?", "", "CTA", "Book Now", "", "Disclaimer", "T&C apply", "",
+      "Phone", "+974 4444 12337", "", "Phone", "+974 4441 2307", "", "WhatsApp", "+974 5119 1007", "",
+      "Website", "travelmarttravels.com", "", "Other", "amesh@travelmarttravels.com", "",
+      "Product / Service", "Customized Azerbaijan Travel Packages", "", "Dimensions", "1080 × 1080 px", "",
+      "Special Instructions", "",
+      "Azerbaijan should be the main destination focus. Use a snow/winter theme with prominent ski/cable-car",
+      "elements and a snow-covered modern architectural background. Use blue and orange branding/text",
+      "elements with a clean, spacious travel-promotion layout. Include the Travel Mart Travels logo and IATA",
+      "Accredited Agent logo.", "",
+      "Company Information", "", "Company", "Travel Mart Travels", "", "Website", "travelmarttravels.com", "",
+      "Email", "amesh@travelmarttravels.com", "", "", "Phone", "+974 4444 12337; +974 4441 2307", "", "WhatsApp", "+974 5119 1007", "",
+      "Not specified: Offer/price, date/deadline, and social media platform. These have intentionally not been invented.",
+    ].join("\n");
+
+    it("regression: Travel Mart — a product listed in the 'Required Content' table is an exact requirement", () => {
+      expect(explicitlyRequired(travelMart, "Customized Azerbaijan Travel Packages", ["Customized Azerbaijan Travel Packages", "Product / Service"])).toBe(true);
+    });
+
+    it("regression: Travel Mart — the same brief's descriptive parts stay description", () => {
+      // The company's name, given under "Company Information" (and in the title), isn't a required product name.
+      expect(explicitlyRequired(travelMart, "Travel Mart Travels")).toBe(false);
+      // The campaign wording above the table.
+      expect(explicitlyRequired(travelMart, "customized travel packages")).toBe(false);
+    });
+
+    it("a descriptive-only brief: names in background, about or company sections — or with no headings — stay description", () => {
+      const descriptive = [
+        "Summer campaign brief",
+        "Background",
+        "We are launching Palm Residence, our new villa collection, with Concierge Plus for owners.",
+        "Required Content",
+        "Headline: Live by the sea",
+        "CTA: Book now",
+        "Additional context",
+        "The Marina Club is our partner for this launch.",
+      ].join("\n");
+      expect(explicitlyRequired(descriptive, "Palm Residence")).toBe(false); // under Background
+      expect(explicitlyRequired(descriptive, "Concierge Plus")).toBe(false);
+      expect(explicitlyRequired(descriptive, "The Marina Club")).toBe(false); // a descriptive section after the required one
+      expect(explicitlyRequired("Service: airport transfers and city tours", "airport transfers")).toBe(false); // no headings at all
+      expect(explicitlyRequired("We sell the Palm Residence collection in Dubai.", "Palm Residence")).toBe(false);
+      expect(explicitlyRequired("Company Information\nProduct: Palm Residence", "Palm Residence")).toBe(false);
+      expect(explicitlyRequired("Optional\nProduct name: Palm Residence", "Palm Residence")).toBe(false);
+    });
+
+    it("other required-content headings are recognised too", () => {
+      for (const heading of ["Mandatory items", "Must include", "Must-have content", "Required copy", "Required elements:"]) {
+        expect(explicitlyRequired(`Brief\n${heading}\nProduct name\nPalm Residence\nNotes\nKeep it light.`, "Palm Residence"), heading).toBe(true);
+      }
+      // A bare "Requirements" title heads the whole brief — it isn't a required-content heading.
+      expect(explicitlyRequired("Requirements\nWe are launching Palm Residence this summer.", "Palm Residence")).toBe(false);
+    });
+
+    it("an exact requirement is recognised from the brief's own words", () => {
+      for (const brief of [
+        "Product name (must appear exactly): Palm Residence",
+        "Product name: Palm Residence — required on the design",
+        "Use the product name exactly as written: Palm Residence",
+        "Mandatory product name: Palm Residence",
+        "Palm Residence (word for word, no abbreviations)",
+      ]) {
+        expect(explicitlyRequired(brief, "Palm Residence"), brief).toBe(true);
+      }
+      // Quoted names are exact text.
+      expect(explicitlyRequired('Show the product name "Palm Residence" under the headline.', "Palm Residence")).toBe(true);
+      expect(explicitlyRequired("Feature “Palm Residence” in the footer.", "Palm Residence")).toBe(true);
+      // …and from the AI's quote or label when the brief's line is split.
+      expect(explicitlyRequired("Palm Residence", "Palm Residence", ["Product name — must match exactly", null])).toBe(true);
+    });
+
+    it("the name's own words don't count as an instruction", () => {
+      expect(explicitlyRequired("Product: Required Gear Co.", "Required Gear Co.")).toBe(false);
+      expect(explicitlyRequired("Service: Exact Clean Services", "Exact Clean Services")).toBe(false);
+      // Wording on another line doesn't make this name exact.
+      expect(explicitlyRequired("All prices must include VAT.\nProduct: Palm Residence", "Palm Residence")).toBe(false);
+    });
   });
 
   describe("information runs", () => {
@@ -174,6 +263,57 @@ describe("reading information files (6.7)", () => {
       const reqs = await listRequirements(db, session.id);
       expect(reqs.every((r) => !r.confirmed)).toBe(true);
       expect(reqs).toHaveLength(2);
+    });
+
+    /** An AI provider that proposes exactly these candidates (the mock's other answers unchanged). */
+    const proposing = (candidates: { type: string; label: string | null; value: string; quote: string }[]): AnalysisProvider => {
+      const mock = new MockProvider();
+      return {
+        ...mock,
+        name: "mock",
+        label: mock.label,
+        readText: mock.readText.bind(mock),
+        judgeImage: mock.judgeImage.bind(mock),
+        transcribe: mock.transcribe.bind(mock),
+        extractRequirements: async () => JSON.stringify({ candidates }),
+      };
+    };
+
+    it("regression: the brief's exact size is read from its own text — even when the AI drops the ×", async () => {
+      // Travel Mart: "Dimensions / 1080 × 1080 px"; the AI proposed "1080  1080 px".
+      await addInfo("brief.txt", "text/plain", "txt", strToU8("Headline\nSnow Has Arrived\nDimensions\n1080 × 1080 px"));
+      const run1 = await run(proposing([{ type: "dimensions", label: "Dimensions", value: "1080  1080 px", quote: "1080 × 1080 px" }]));
+      expect(run1.result).toBe("done");
+      const sizes = (await listRequirements(db, session.id)).filter((r) => r.type === "dimensions");
+      expect(sizes.map((r) => [r.expected_value, r.mandatory, r.confirmed])).toEqual([["1080 × 1080 px", true, false]]); // one, standard, Must have
+    });
+
+    it("regression: an AI size copied without its × is stored the standard way when the text has no clear size line", async () => {
+      await addInfo("brief.txt", "text/plain", "txt", strToU8("Artwork 1080  1080 px for the feed"));
+      await run(proposing([{ type: "dimensions", label: null, value: "1080  1080 px", quote: "Artwork 1080  1080 px" }]));
+      expect((await listRequirements(db, session.id)).filter((r) => r.type === "dimensions").map((r) => r.expected_value)).toEqual(["1080 × 1080 px"]);
+    });
+
+    it("regression: a product name the brief explicitly requires is Must have; a described one stays Optional", async () => {
+      await addInfo(
+        "brief.txt",
+        "text/plain",
+        "txt",
+        strToU8("Product name (must appear exactly as written): Palm Residence\nService: Concierge and airport transfers\nProduct / Service\nCustomized Azerbaijan Travel Packages")
+      );
+      await run(
+        proposing([
+          { type: "product_name", label: "Product name", value: "Palm Residence", quote: "Product name (must appear exactly as written): Palm Residence" },
+          { type: "service_name", label: "Service", value: "Concierge and airport transfers", quote: "Service: Concierge and airport transfers" },
+          { type: "product_name", label: "Product / Service", value: "Customized Azerbaijan Travel Packages", quote: "Customized Azerbaijan Travel Packages" },
+        ])
+      );
+      const names = (await listRequirements(db, session.id)).filter((r) => r.type === "product_name" || r.type === "service_name");
+      expect(names.map((r) => [r.expected_value, r.mandatory, r.confirmed]).sort()).toEqual([
+        ["Concierge and airport transfers", false, false],
+        ["Customized Azerbaijan Travel Packages", false, false],
+        ["Palm Residence", true, false],
+      ]);
     });
 
     it("old .doc files are reported, not guessed; nothing readable → failed with the reason", async () => {

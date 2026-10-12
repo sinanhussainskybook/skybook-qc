@@ -24,15 +24,13 @@ export function SectionCard({
       id={id}
       aria-labelledby={`${id}-title`}
       className={cn(
-        "scroll-mt-24 rounded-2xl bg-card p-5 ring-1 ring-foreground/8 sm:p-7",
+        "scroll-mt-24 rounded-2xl border border-border bg-card p-5 sm:p-7",
         className
       )}
     >
       <div className="flex items-start gap-3">
         {Icon && (
-          <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-secondary text-secondary-foreground">
-            <Icon className="size-4.5" aria-hidden />
-          </span>
+          <Icon className="mt-1 size-5 shrink-0 text-primary" aria-hidden />
         )}
         <div className="min-w-0 flex-1">
           <h2 id={`${id}-title`} className="text-lg font-semibold tracking-tight">

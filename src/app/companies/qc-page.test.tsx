@@ -144,7 +144,7 @@ describe("Start QC page", () => {
       expect(html).toContain(NOTICE_TEXT);
       expect(html.match(/aria-label="Gemini free tier privacy notice"/g)).toHaveLength(1);
       // Placement: before anything is uploaded, immediately before 1. Upload client brief.
-      expect(html.indexOf(NOTICE_TITLE)).toBeLessThan(html.indexOf("1. Upload client brief"));
+      expect(visible(html).indexOf(NOTICE_TITLE)).toBeLessThan(visible(html).indexOf("1. Upload client brief"));
       // The notice is the element right before the brief upload section.
       expect(html).toMatch(/Gemini has no EU data region\.<\/p><\/div><\/aside><section id="information"/);
     });
@@ -154,7 +154,7 @@ describe("Start QC page", () => {
         const html = await page(provider);
         expect(html).not.toContain(NOTICE_TITLE);
         expect(html).not.toContain("Gemini free tier privacy notice");
-        expect(html).toContain("1. Upload client brief"); // the page itself is unchanged
+        expect(visible(html)).toContain("1. Upload client brief"); // the page itself is unchanged
       });
     }
 
@@ -482,7 +482,7 @@ describe("Start QC page", () => {
       expect(text).toContain("need a human check");
       // Phase 7: the result — labelled as sample data; uncounted checks said plainly.
       // No counted issues but a human check → the banner says so (the result itself is still PASS).
-      expect(text).toContain("PASS — HUMAN CHECK REQUIRED No issues to fix in the checks that could be verified — but some items need a human check before it goes to the client. 100 / 100");
+      expect(text).toContain("Result PASS — HUMAN CHECK REQUIRED No issues to fix in the checks that could be verified — but some items need a human check before it goes to the client. Score 100 / 100");
       expect(text).toContain("Sample data — not real AI. This is not a real QC result.");
       // The simplified summary: three counts, short sections, passed checks collapsed into one line.
       expect(text).toContain("0 Issues to fix 1 Human check 11 Checks passed"); // 10 + the confirmed requirement found
@@ -491,7 +491,7 @@ describe("Start QC page", () => {
       expect(text).toContain("Human checks The AI wasn't sure about these. They don't count for or against the result — look at each one before sending. Major Brand fonts Brand Should be Montserrat AI read Sample Sans");
       expect(text).toContain("Passed ✓ 11 checks passed");
       // Technical wording stays out of the summary: it is only in "All checks in detail", after the download.
-      const summary = text.slice(text.indexOf("QC result What's wrong"), text.indexOf("All checks in detail"));
+      const summary = text.slice(text.indexOf("Result PASS"), text.indexOf("All checks in detail"));
       expect(summary).not.toMatch(/not verified|Needs a human check:|Score by category|Detected:|couldn't be verified/);
       expect(text).toContain("All checks in detail Every check with its full explanation, score by category, and anything that couldn't be checked. Score by category");
       // Phase 8: the report download, made from this session and not stored.

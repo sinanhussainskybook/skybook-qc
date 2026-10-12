@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import {
   ArrowLeft,
-  ArrowRight,
   Building2,
+  ChevronDown,
   Image as ImageIcon,
   Palette,
   Phone,
@@ -15,14 +15,13 @@ import { ListEditor } from "@/components/company/list-editor";
 import { LogoManager } from "@/components/company/logo-manager";
 import { SectionCard, SubSection } from "@/components/company/section-card";
 import { Badge } from "@/components/ui/badge";
-import { buttonVariants } from "@/components/ui/button";
+import { StartQcButton } from "@/components/qc/start-qc-button";
 import { requireCompanyAccess } from "@/lib/company/access";
 import { FIELD_SECTIONS } from "@/lib/company/fields";
 import { getDatabase } from "@/lib/db/client";
 import { loadCompanyConfiguration } from "@/lib/db/company-config";
 import { logoImageUrl } from "@/lib/company/logo";
 import { getLogoStorage } from "@/lib/storage/logo-storage";
-import { cn } from "@/lib/utils";
 
 export const metadata: Metadata = { title: "Company · Skybook AI QC" };
 
@@ -35,7 +34,9 @@ const NAV = [
 ];
 
 /**
- * One company's saved configuration. Every value has its own Edit, and
+ * One company: the main action first — Start a QC check — and its saved
+ * configuration (information, contact, logo, brand guidelines, Golden Rules)
+ * folded away under "Company settings". Every value has its own Edit, and
  * every save is checked on the server for this company (D13).
  */
 export default async function CompanyPage({ params }: PageProps<"/companies/[companyId]">) {
@@ -77,30 +78,29 @@ export default async function CompanyPage({ params }: PageProps<"/companies/[com
         All companies
       </Link>
 
-      <header className="mt-5 flex flex-wrap items-start justify-between gap-4">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-2xl font-semibold tracking-tight break-words sm:text-3xl">
-              {company.name}
-            </h1>
-            {!company.active && <Badge variant="outline">Inactive</Badge>}
-          </div>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {[company.category, place].filter(Boolean).join(" · ") ||
-              "Add the company's details below."}
-          </p>
+      <header className="mt-8">
+        <div className="flex flex-wrap items-center gap-3">
+          <h1 className="display text-4xl break-words sm:text-6xl">{company.name}</h1>
+          {!company.active && <Badge variant="outline">Inactive</Badge>}
         </div>
-        <Link
-          href={`/companies/${company.id}/qc/new`}
-          className={cn(
-            buttonVariants(),
-            "h-11 rounded-full bg-foreground px-5 text-sm font-semibold text-background hover:bg-foreground/85"
-          )}
-        >
-          Start QC
-          <ArrowRight aria-hidden />
-        </Link>
+        <p className="mt-4 max-w-xl text-muted-foreground">
+          Upload the client&apos;s brief and the design — the design is checked against the brief and this company&apos;s brand rules.
+        </p>
+        <div className="mt-8">
+          <StartQcButton companyId={company.id} />
+        </div>
       </header>
+
+      <details id="settings" className="group mt-16 border-t border-border pt-6">
+        <summary className="flex cursor-pointer list-none items-center gap-3">
+          <span className="min-w-0 flex-1">
+            <span className="block text-lg font-semibold tracking-tight">Company settings</span>
+            <span className="block text-sm text-muted-foreground">
+              {[company.category, place].filter(Boolean).join(" · ") || "Information"} · contact · logo · brand guidelines · Golden Rules — used in every check
+            </span>
+          </span>
+          <ChevronDown className="size-5 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" aria-hidden />
+        </summary>
 
       <nav aria-label="Company sections" className="mt-6 -mx-4 overflow-x-auto px-4">
         <ul className="flex gap-2">
@@ -108,7 +108,7 @@ export default async function CompanyPage({ params }: PageProps<"/companies/[com
             <li key={item.href}>
               <a
                 href={item.href}
-                className="block rounded-full bg-card px-3.5 py-1.5 text-sm whitespace-nowrap ring-1 ring-border hover:bg-secondary hover:text-secondary-foreground"
+                className="block rounded-full border border-border px-3.5 py-1.5 text-sm whitespace-nowrap hover:border-primary/40 hover:text-primary"
               >
                 {item.label}
               </a>
@@ -204,7 +204,7 @@ export default async function CompanyPage({ params }: PageProps<"/companies/[com
         <SectionCard
           id="golden-rules"
           title="Golden Rules"
-          description={`Non-negotiable rules for this company. ${activeRules.length} switched on, ${mandatoryRules.length} of them mandatory. They will be applied automatically to every QC check (from Phase 5).`}
+          description={`Non-negotiable rules for this company. ${activeRules.length} switched on, ${mandatoryRules.length} of them mandatory. Applied automatically to every QC check.`}
           icon={ShieldCheck}
         >
           <ListEditor
@@ -215,6 +215,7 @@ export default async function CompanyPage({ params }: PageProps<"/companies/[com
           />
         </SectionCard>
       </div>
+      </details>
     </AppShell>
   );
 }

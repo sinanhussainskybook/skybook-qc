@@ -48,8 +48,8 @@
 }
 
 :root {
-  /* Surfaces: white cards on a very light blue-grey page */
-  --background: #f6f8fb;
+  /* Surfaces: a white page; panels are white with hairline borders */
+  --background: #ffffff;
   --foreground: #0f1b2d;
   --card: #ffffff;
   --card-foreground: #0f1b2d;
@@ -62,12 +62,12 @@
 
   --secondary: #eaf2fb;
   --secondary-foreground: #123f73;
-  --muted: #eef1f5;
+  --muted: #f3f5f8;
   --muted-foreground: #5b6778;
   --accent: #eaf2fb;
   --accent-foreground: #123f73;
   --destructive: #c4262e;
-  --border: #dde3ea;
+  --border: #e4e8ee;
   --input: #cfd7e1;
   --ring: #2e8bd0;
 
@@ -80,12 +80,6 @@
   --fail-soft: #fbe9ea;
 
   --radius: 0.75rem;
-
-  /* Sign-in sky. White text on --sky-top is 5.3:1. */
-  --sky-top: #1b6cbd;
-  --sky-middle: #5aa8ea;
-  --sky-bottom: #d4ebfc;
-  --cloud: rgb(255 255 255 / 0.92);
 }
 
 /* Logo preview: a light checkerboard so white or transparent logos stay visible. */
@@ -96,17 +90,23 @@
 }
 
 /*
- * Sign-in backdrop: a blue sky that fades to white, with soft clouds drawn
- * from layered radial gradients (no images).
+ * Display type: large, bold and tightly set — for page titles and the QC
+ * result, so the one thing that matters on a screen is read first.
  */
-.sky-backdrop {
-  background:
-    radial-gradient(55% 28% at 8% 100%, var(--cloud), transparent 70%),
-    radial-gradient(40% 24% at 38% 104%, var(--cloud), transparent 70%),
-    radial-gradient(50% 30% at 92% 98%, var(--cloud), transparent 70%),
-    radial-gradient(28% 12% at 82% 22%, rgb(255 255 255 / 0.35), transparent 70%),
-    radial-gradient(22% 9% at 14% 30%, rgb(255 255 255 / 0.28), transparent 70%),
-    linear-gradient(180deg, var(--sky-top) 0%, var(--sky-middle) 48%, var(--sky-bottom) 100%);
+.display {
+  font-weight: 700;
+  letter-spacing: -0.035em;
+  line-height: 1.02;
+  text-wrap: balance;
+}
+
+/* A small uppercase label above a value ("Result", "Score"). */
+.eyebrow {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
 }
 
 @layer base {

@@ -133,7 +133,7 @@ export function FileUploader({
           {files.map((file) => {
             const Icon = iconFor(file.mime_type);
             return (
-              <li key={file.id} className="flex items-center gap-3 rounded-xl bg-card p-3 ring-1 ring-border">
+              <li key={file.id} className="flex items-center gap-3 rounded-xl border border-border p-3">
                 <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-secondary text-secondary-foreground">
                   <Icon className="size-4" aria-hidden />
                 </span>
@@ -202,7 +202,7 @@ export function FileUploader({
           htmlFor={inputId}
           className={cn(
             buttonVariants({ variant: "outline" }),
-            "h-9 cursor-pointer rounded-full px-4 focus-within:ring-3 focus-within:ring-ring/50",
+            "h-11 cursor-pointer rounded-full px-5 text-sm font-semibold hover:border-primary/40 hover:text-primary focus-within:ring-3 focus-within:ring-ring/50",
             (!storageReady || busy || full) && "pointer-events-none opacity-50"
           )}
         >

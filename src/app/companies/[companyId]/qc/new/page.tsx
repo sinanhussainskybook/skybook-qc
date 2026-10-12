@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { ArrowLeft, ChevronDown, ClipboardCheck, Clock, FileUp, Gauge, ListChecks, Ruler, ScanSearch, TriangleAlert, Upload } from "lucide-react";
+import { ArrowLeft, ChevronDown, ClipboardCheck, ScanSearch, TriangleAlert } from "lucide-react";
 import { AppShell } from "@/components/layout/app-shell";
 import { SectionCard } from "@/components/company/section-card";
 import { AnalysisPanel } from "@/components/qc/analysis-panel";
@@ -12,6 +12,7 @@ import { PlatformCheck } from "@/components/qc/platform-check";
 import { PlatformForm } from "@/components/qc/platform-form";
 import { SessionFooter } from "@/components/qc/session-footer";
 import { StartQcButton } from "@/components/qc/start-qc-button";
+import { Step } from "@/components/qc/step";
 import { requireCompanyAccess } from "@/lib/company/access";
 import { getDatabase } from "@/lib/db/client";
 import { findCurrentSession } from "@/lib/db/qc-sessions";
@@ -67,14 +68,14 @@ export default async function StartQcPage({ params }: PageProps<"/companies/[com
     return (
       <AppShell user={user}>
         {back}
-        <section className="mx-auto mt-8 max-w-2xl rounded-3xl bg-card p-6 ring-1 ring-foreground/8 sm:p-8">
-          <p className="text-sm font-medium text-muted-foreground">{company.name}</p>
-          <h1 className="mt-1 text-2xl font-semibold tracking-tight">Start QC</h1>
-          <p className="mt-2 mb-6 text-sm text-muted-foreground">
+        <section className="mt-8 max-w-2xl">
+          <p className="eyebrow">{company.name}</p>
+          <h1 className="display mt-3 text-4xl sm:text-6xl">Start QC</h1>
+          <p className="mt-4 mb-8 text-muted-foreground">
             Upload the client&apos;s brief and the design, then press Check Design. The design is checked against the
             brief and this company&apos;s brand rules.
           </p>
-          <StartQcButton companyId={company.id} />
+          <StartQcButton companyId={company.id} label="Start QC" />
         </section>
       </AppShell>
     );
@@ -105,34 +106,26 @@ export default async function StartQcPage({ params }: PageProps<"/companies/[com
     <AppShell user={user}>
       {back}
 
-      <header className="mt-5 flex flex-wrap items-start justify-between gap-4">
-        <div className="min-w-0">
-          <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">Start QC</h1>
-          <p className="mt-1 text-sm text-muted-foreground">{company.name}</p>
-        </div>
-        <p className="flex items-center gap-1.5 rounded-full bg-muted px-3 py-1.5 text-xs text-muted-foreground">
-          <Clock className="size-3.5" aria-hidden />
-          Deleted automatically in {hoursLeft} hour{hoursLeft === 1 ? "" : "s"} unless you make a change
+      <header className="mt-8 mb-10">
+        <p className="eyebrow">{company.name}</p>
+        <h1 className="display mt-3 text-4xl sm:text-6xl">Start QC</h1>
+        <p className="mt-4 text-sm text-muted-foreground">
+          Deleted automatically in {hoursLeft} hour{hoursLeft === 1 ? "" : "s"} unless you make a change.
         </p>
       </header>
 
       {!storage && (
-        <p className="mt-5 flex items-start gap-2 rounded-xl bg-revision-soft px-4 py-3 text-sm text-revision">
+        <p className="mb-6 flex items-start gap-2 rounded-xl bg-revision-soft px-4 py-3 text-sm text-revision">
           <TriangleAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
           File storage isn&apos;t set up on this server yet, so files can&apos;t be uploaded. Ask your administrator.
         </p>
       )}
 
-      <div className="mt-6 space-y-6">
+      <div>
         {/* Before any file can reach Google: only when Gemini is the configured provider. */}
         {configuredProvider() === "gemini" && <GeminiFreeTierNotice />}
 
-        <SectionCard
-          id="information"
-          title="1. Upload client brief"
-          description="The client's brief — a document, an email or a spreadsheet. It's read automatically as soon as it's uploaded."
-          icon={FileUp}
-        >
+        <Step id="information" n={1} title="Upload client brief" description="The client's brief — a document, an email or a spreadsheet. It's read automatically as soon as it's uploaded.">
           <FileUploader
             sessionId={session.id}
             kind="information"
@@ -157,17 +150,17 @@ export default async function StartQcPage({ params }: PageProps<"/companies/[com
               />
             </div>
           )}
-        </SectionCard>
+        </Step>
 
-        <SectionCard
+        <Step
           id="content"
-          title="2. Upload design"
+          n={2}
+          title="Upload design"
           description={
             contentMedia(session.content_type) === "video"
               ? "The video you want checked."
               : "The design you want checked. Several images are fine, e.g. a carousel."
           }
-          icon={Upload}
         >
           <FileUploader
             sessionId={session.id}
@@ -179,14 +172,13 @@ export default async function StartQcPage({ params }: PageProps<"/companies/[com
             storageReady={storage !== null}
             buttonLabel="Upload design"
           />
-        </SectionCard>
+        </Step>
 
         {askPlatform && (
-          <SectionCard
+          <Step
             id="platform"
             title="Platform"
             description="The brief doesn't give an exact size, so choose where the design will be published. Its size, ratio, format and file size are checked against that platform's published specification."
-            icon={Ruler}
           >
             <PlatformForm
               key={`${session.content_type}-${session.platform ?? ""}-${session.placement ?? ""}`}
@@ -203,15 +195,10 @@ export default async function StartQcPage({ params }: PageProps<"/companies/[com
                 customMaxBytes: session.custom_max_bytes,
               }}
             />
-          </SectionCard>
+          </Step>
         )}
 
-        <SectionCard
-          id="check"
-          title="3. Check design"
-          description="The design is compared with the brief and the company's brand rules."
-          icon={ScanSearch}
-        >
+        <Step id="check" n={3} title="Check design" description="The design is compared with the brief and the company's brand rules.">
           <div className="space-y-4">
             <SessionFooter sessionId={session.id} status={session.status} problems={problems} />
             {run && (
@@ -228,15 +215,10 @@ export default async function StartQcPage({ params }: PageProps<"/companies/[com
               </div>
             )}
           </div>
-        </SectionCard>
+        </Step>
 
         {showResult && (
-          <SectionCard
-            id="qc-result"
-            title="QC result"
-            description="What's wrong, how serious it is, and how to fix it."
-            icon={Gauge}
-          >
+          <section id="qc-result" aria-label="QC result" className="scroll-mt-24 border-t border-border py-10">
             {noRequirements ? (
               <p className="rounded-xl bg-revision-soft px-4 py-3 text-sm font-medium text-revision">{READINESS_MESSAGES.requirements}</p>
             ) : board ? (
@@ -244,22 +226,21 @@ export default async function StartQcPage({ params }: PageProps<"/companies/[com
             ) : (
               <p className="rounded-xl bg-muted/60 px-4 py-3 text-sm text-muted-foreground">{resultWaitingText(analysisView.analysis.state)}</p>
             )}
-          </SectionCard>
+          </section>
         )}
 
         {showResult && (
-          <details id="all-checks" className="group rounded-2xl bg-card ring-1 ring-foreground/8">
-            <summary className="flex cursor-pointer list-none items-center gap-3 p-5 sm:px-7">
-              <ListChecks className="size-4.5 shrink-0 text-muted-foreground" aria-hidden />
+          <details id="all-checks" className="group border-t border-border py-6">
+            <summary className="flex cursor-pointer list-none items-center gap-3">
               <span className="min-w-0 flex-1">
                 <span className="block text-lg font-semibold tracking-tight">All checks in detail</span>
                 <span className="block text-sm text-muted-foreground">Every check with its full explanation, score by category, and anything that couldn&apos;t be checked.</span>
               </span>
               <ChevronDown className="size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" aria-hidden />
             </summary>
-            <div className="space-y-4 px-3 pb-3 sm:px-4 sm:pb-4">
+            <div className="mt-6 space-y-4">
               {board && (
-                <section aria-label="Score by category" className="px-2 sm:px-3">
+                <section aria-label="Score by category">
                   <CategoryScores board={board} />
                 </section>
               )}
@@ -292,7 +273,7 @@ export default async function StartQcPage({ params }: PageProps<"/companies/[com
         )}
 
         {missing.length > 0 && (
-          <p className="flex items-start gap-2 rounded-xl bg-revision-soft px-4 py-3 text-sm text-foreground">
+          <p className="mt-6 flex items-start gap-2 border-t border-border pt-6 text-sm text-muted-foreground">
             <TriangleAlert className="mt-0.5 size-4 shrink-0 text-revision" aria-hidden />
             <span>
               This company has no {missing.join(", ")} saved yet. Checks that need them will show as{" "}

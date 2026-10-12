@@ -37,7 +37,8 @@ describe("dashboard", () => {
 
   it("greets the user, with one heading, inside the app shell", async () => {
     const html = renderToStaticMarkup(await DashboardPage());
-    expect(html).toContain("Welcome, Dee");
+    expect(html).toContain("Hi Dee");
+    expect(html).toContain("Which company is the design for?");
     expect(html.match(/<h1/g)).toHaveLength(1);
     expect(html).toContain("Sign out");
   });
@@ -61,11 +62,12 @@ describe("dashboard", () => {
     expect(html).toContain('href="/companies/c2"');
     expect(html).toContain("Real estate · Dubai, UAE");
     expect(html).toContain("Inactive");
-    expect(html).toContain("You see the companies you added or were added to.");
   });
 
-  it("tells an admin they see every company", async () => {
+  it("keeps the page to one question and one list — no role explanations", async () => {
     getCompaniesForCurrentUser.mockResolvedValue({ user: { ...dee, role: "admin" }, companies: [] });
-    expect(renderToStaticMarkup(await DashboardPage())).toContain("As an admin you see every company.");
+    const html = renderToStaticMarkup(await DashboardPage());
+    expect(html).toContain("Choose a company to check a design against its brief and brand rules.");
+    expect(html).not.toContain("As an admin");
   });
 });

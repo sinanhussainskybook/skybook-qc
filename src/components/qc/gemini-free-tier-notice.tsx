@@ -14,10 +14,10 @@ export function GeminiFreeTierNotice() {
     <aside
       role="note"
       aria-label="Gemini free tier privacy notice"
-      className="flex gap-3 rounded-2xl bg-revision-soft px-4 py-3 text-sm ring-1 ring-revision/30"
+      className="mb-2 flex gap-3 rounded-2xl border border-revision/25 bg-revision-soft/60 px-4 py-3 text-xs leading-relaxed text-foreground/80"
     >
       <ShieldAlert className="mt-0.5 size-4 shrink-0 text-revision" aria-hidden />
-      <div className="min-w-0 space-y-1">
+      <div className="min-w-0">
         <p className="font-semibold text-revision">{GEMINI_FREE_TIER_TITLE}</p>
         <p>{GEMINI_FREE_TIER_TEXT}</p>
       </div>

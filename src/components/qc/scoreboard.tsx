@@ -1,34 +1,39 @@
-import { ChevronDown, CircleCheck, CircleX, FileDown, TriangleAlert } from "lucide-react";
+import { ChevronDown, FileDown } from "lucide-react";
 import { buttonVariants } from "@/components/ui/button";
 import { isHumanCheck } from "@/lib/analysis/policy";
 import { CATEGORIES, severityLabel, type Finding, type Severity } from "@/lib/qc/findings";
 import { RESULT_DISPLAY_LABEL, RESULT_DISPLAY_SUMMARY, resultDisplay, type ResultDisplay, type Scoreboard as Board } from "@/lib/qc/scoring";
 import { cn } from "@/lib/utils";
 
-const RESULT_STYLE: Record<ResultDisplay, { icon: typeof CircleCheck; box: string; text: string }> = {
-  pass: { icon: CircleCheck, box: "bg-pass-soft ring-pass/30", text: "text-pass" },
+const RESULT_STYLE: Record<ResultDisplay, { text: string; dot: string }> = {
+  pass: { text: "text-pass", dot: "bg-pass" },
   // A pass that still has "Needs a human check" items: amber, so it isn't read as a clean pass.
-  pass_human_check: { icon: CircleCheck, box: "bg-revision-soft ring-revision/30", text: "text-revision" },
-  needs_revision: { icon: TriangleAlert, box: "bg-revision-soft ring-revision/30", text: "text-revision" },
-  fail: { icon: CircleX, box: "bg-fail-soft ring-fail/30", text: "text-fail" },
+  pass_human_check: { text: "text-revision", dot: "bg-revision" },
+  needs_revision: { text: "text-revision", dot: "bg-revision" },
+  fail: { text: "text-fail", dot: "bg-fail" },
 };
 const SEVERITY_STYLE: Record<Severity, string> = {
   critical: "bg-fail-soft text-fail",
   major: "bg-revision-soft text-revision",
-  minor: "bg-muted text-foreground",
+  minor: "bg-secondary text-secondary-foreground",
   suggestion: "bg-muted text-muted-foreground",
 };
 const categoryLabel = (value: string) => CATEGORIES.find((c) => c.value === value)?.label ?? value;
+/** "Required text: Required Text" → "Required text": a label that only repeats its type is said once. */
+const titleOf = (title: string) => {
+  const [head, ...rest] = title.split(": ");
+  return rest.length && rest.join(": ").trim().toLowerCase() === head.trim().toLowerCase() ? head : title;
+};
 /** Keeps every line short in the summary (the full text stays in "All checks in detail"). */
 const short = (text: string | undefined, max = 140) => (text && text.length > max ? `${text.slice(0, max - 1).trimEnd()}…` : text);
 
 /**
- * The QC result (Phase 7), as a short checklist: the result and score, then
- * what to fix (issue · severity · what was found · what to fix), the items
- * that need a human check, and how many checks passed (details collapsed),
- * with the PDF download. Display only — the findings, scoring and result are
- * computed elsewhere and unchanged; every check's full detail stays in
- * "All checks in detail" further down the page.
+ * The QC result (Phase 7), readable in seconds: the result in large type and
+ * the score, one line of counts, the PDF download, then what to fix (each
+ * issue: what's wrong → how to fix it), the items that need a human check,
+ * and the passed checks (collapsed). Display only — the findings, scoring and
+ * result are computed elsewhere and unchanged; every check's full detail stays
+ * in "All checks in detail" further down the page.
  */
 export function Scoreboard({ board, findings = [], mock = false, reportHref }: { board: Board; findings?: Finding[]; mock?: boolean; reportHref?: string }) {
   const shown = resultDisplay(board);
@@ -36,26 +41,44 @@ export function Scoreboard({ board, findings = [], mock = false, reportHref }: {
     return <p className="rounded-xl bg-muted/60 px-4 py-3 text-sm text-muted-foreground">No result yet: none of the checks could be verified.</p>;
   }
   const style = RESULT_STYLE[shown];
-  const Icon = style.icon;
   const toFix = board.counting.filter((f) => f.severity !== "suggestion");
   const suggestions = board.counting.filter((f) => f.severity === "suggestion");
   const human = findings.filter(isHumanCheck);
   const passed = findings.filter((f) => f.status === "passed");
 
   return (
-    <div className="space-y-6">
-      {/* 1 — the result */}
-      <div className={cn("flex flex-wrap items-center gap-4 rounded-2xl px-5 py-5 ring-1", style.box)} role="status" aria-label={`QC result: ${RESULT_DISPLAY_LABEL[shown]}`}>
-        <Icon className={cn("size-10 shrink-0", style.text)} aria-hidden />
-        <div className="min-w-0 flex-1">
-          <p className={cn("text-2xl font-bold tracking-tight", style.text)}>{RESULT_DISPLAY_LABEL[shown]}</p>
-          <p className="text-sm">{RESULT_DISPLAY_SUMMARY[shown]}</p>
+    <div className="space-y-10">
+      {/* 1 — the result, the score, the counts, the report */}
+      <div className="animate-in fade-in slide-in-from-bottom-2 duration-500" role="status" aria-label={`QC result: ${RESULT_DISPLAY_LABEL[shown]}`}>
+        <div className="flex flex-wrap items-end justify-between gap-x-8 gap-y-4">
+          <div className="min-w-0">
+            <p className="eyebrow">Result</p>
+            <p className={cn("display mt-2 text-5xl break-words sm:text-7xl", style.text)}>{RESULT_DISPLAY_LABEL[shown]}</p>
+            <p className="mt-3 max-w-xl text-base">{RESULT_DISPLAY_SUMMARY[shown]}</p>
+          </div>
+          {board.score !== null && (
+            <p className="shrink-0 text-right">
+              <span className="eyebrow block">Score</span>
+              <span className="display text-6xl tabular-nums sm:text-7xl">{board.score}</span>
+              <span className="text-lg text-muted-foreground"> / 100</span>
+            </p>
+          )}
         </div>
-        {board.score !== null && (
-          <p className="text-right">
-            <span className="text-3xl font-semibold tabular-nums">{board.score}</span>
-            <span className="text-sm text-muted-foreground"> / 100</span>
-          </p>
+
+        <ul className="mt-6 flex flex-wrap gap-x-6 gap-y-2 text-sm" aria-label="At a glance">
+          <Count n={toFix.length} label="Issues to fix" dot={toFix.length ? style.dot : "bg-border"} />
+          <Count n={human.length} label={human.length === 1 ? "Human check" : "Human checks"} dot={human.length ? "bg-revision" : "bg-border"} />
+          <Count n={passed.length} label={passed.length === 1 ? "Check passed" : "Checks passed"} dot="bg-pass" />
+        </ul>
+
+        {reportHref && (
+          <div className="mt-8 flex flex-wrap items-center gap-x-4 gap-y-2">
+            <a href={reportHref} download className={buttonVariants({ className: "h-12 gap-2 rounded-full px-6 text-base font-semibold" })}>
+              <FileDown className="size-4" aria-hidden />
+              Download QC report (PDF)
+            </a>
+            <p className="text-xs text-muted-foreground">Made from this check when you download it. It isn&apos;t saved anywhere — keep the file.</p>
+          </div>
         )}
       </div>
 
@@ -65,44 +88,42 @@ export function Scoreboard({ board, findings = [], mock = false, reportHref }: {
         </p>
       )}
 
-      {/* At a glance: three equal cards */}
-      <ul className="grid grid-cols-3 gap-2 sm:gap-3" aria-label="At a glance">
-        <Tile n={toFix.length} label="Issues to fix" tone={toFix.length ? "bg-fail-soft text-fail" : "bg-muted/60 text-muted-foreground"} />
-        <Tile n={human.length} label={human.length === 1 ? "Human check" : "Human checks"} tone={human.length ? "bg-revision-soft text-revision" : "bg-muted/60 text-muted-foreground"} />
-        <Tile n={passed.length} label={passed.length === 1 ? "Check passed" : "Checks passed"} tone="bg-pass-soft text-pass" />
-      </ul>
-
-      {/* 2 — issues to fix */}
-      <section aria-labelledby="issues-to-fix" className="space-y-3">
+      {/* 2 — what to fix */}
+      <section aria-labelledby="issues-to-fix">
         <Heading id="issues-to-fix">Issues to fix</Heading>
         {toFix.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No issues to fix.</p>
+          <p className="mt-3 text-sm text-muted-foreground">No issues to fix.</p>
         ) : (
-          <ul className="grid gap-3">
+          <ol className="mt-2 divide-y divide-border">
             {toFix.map((f, i) => (
-              <li key={`${f.ruleId}-${f.fileId ?? ""}-${i}`} className="rounded-xl bg-card p-4 ring-1 ring-border">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className={cn("rounded-full px-2.5 py-0.5 text-xs font-semibold", SEVERITY_STYLE[f.severity])}>{severityLabel(f.severity)}</span>
-                  <span className="font-semibold">{f.title}</span>
-                  <span className="text-xs text-muted-foreground">{categoryLabel(f.category)}</span>
+              <li key={`${f.ruleId}-${f.fileId ?? ""}-${i}`} className="grid gap-x-4 py-4 sm:grid-cols-[2rem_1fr]">
+                <span className="hidden text-lg font-bold text-primary tabular-nums sm:block" aria-hidden>
+                  {i + 1}
+                </span>
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                    <span className={cn("rounded-full px-2.5 py-0.5 text-xs font-semibold", SEVERITY_STYLE[f.severity])}>{severityLabel(f.severity)}</span>
+                    <span className="font-semibold">{titleOf(f.title)}</span>
+                    <span className="text-xs text-muted-foreground">{categoryLabel(f.category)}</span>
+                  </div>
+                  <dl className="mt-2 grid gap-x-4 gap-y-1 text-sm sm:grid-cols-[4.5rem_1fr]">
+                    {f.detected && (
+                      <>
+                        <dt className="text-muted-foreground">Found</dt>
+                        <dd className="min-w-0 break-words">{short(f.detected)}</dd>
+                      </>
+                    )}
+                    {(f.suggestedFix || f.expected) && (
+                      <>
+                        <dt className="font-medium text-primary">Fix</dt>
+                        <dd className="min-w-0 font-medium break-words">{short(f.suggestedFix ?? `Make it: ${f.expected}`)}</dd>
+                      </>
+                    )}
+                  </dl>
                 </div>
-                <dl className="mt-2 grid gap-x-4 gap-y-1 text-sm sm:grid-cols-[7rem_1fr]">
-                  {f.detected && (
-                    <>
-                      <dt className="text-muted-foreground">Found</dt>
-                      <dd className="min-w-0 break-words">{short(f.detected)}</dd>
-                    </>
-                  )}
-                  {(f.suggestedFix || f.expected) && (
-                    <>
-                      <dt className="text-muted-foreground">Fix</dt>
-                      <dd className="min-w-0 break-words">{short(f.suggestedFix ?? `Make it: ${f.expected}`)}</dd>
-                    </>
-                  )}
-                </dl>
               </li>
             ))}
-          </ul>
+          </ol>
         )}
         {suggestions.length > 0 && (
           <Collapsed summary={`${suggestions.length} optional suggestion${suggestions.length === 1 ? "" : "s"}`}>
@@ -120,20 +141,20 @@ export function Scoreboard({ board, findings = [], mock = false, reportHref }: {
 
       {/* 3 — human checks */}
       {human.length > 0 && (
-        <section aria-labelledby="human-checks" className="space-y-3">
+        <section aria-labelledby="human-checks">
           <Heading id="human-checks">Human checks</Heading>
-          <p className="text-sm text-muted-foreground">The AI wasn&apos;t sure about these. They don&apos;t count for or against the result — look at each one before sending.</p>
-          <ul className="grid gap-3">
+          <p className="mt-2 text-sm text-muted-foreground">The AI wasn&apos;t sure about these. They don&apos;t count for or against the result — look at each one before sending.</p>
+          <ul className="mt-2 divide-y divide-border">
             {human.map((f, i) => (
-              <li key={`${f.ruleId}-${i}`} className="rounded-xl bg-revision-soft/50 p-4 ring-1 ring-revision/25">
-                <div className="flex flex-wrap items-center gap-2">
+              <li key={`${f.ruleId}-${i}`} className="py-4">
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                   <span className={cn("rounded-full px-2.5 py-0.5 text-xs font-semibold", f.severity === "critical" ? "bg-fail-soft text-fail" : "bg-revision-soft text-revision")}>
                     {f.severity === "critical" ? "Possible critical" : severityLabel(f.severity)}
                   </span>
-                  <span className="font-semibold">{f.title}</span>
+                  <span className="font-semibold">{titleOf(f.title)}</span>
                   <span className="text-xs text-muted-foreground">{categoryLabel(f.category)}</span>
                 </div>
-                <dl className="mt-2 grid gap-x-4 gap-y-1 text-sm sm:grid-cols-[7rem_1fr]">
+                <dl className="mt-2 grid gap-x-4 gap-y-1 text-sm sm:grid-cols-[4.5rem_1fr]">
                   {f.expected && (
                     <>
                       <dt className="text-muted-foreground">Should be</dt>
@@ -154,10 +175,10 @@ export function Scoreboard({ board, findings = [], mock = false, reportHref }: {
       )}
 
       {/* 4 — passed checks */}
-      <section aria-labelledby="passed-checks" className="space-y-2">
+      <section aria-labelledby="passed-checks">
         <Heading id="passed-checks">Passed</Heading>
         {passed.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No checks passed yet.</p>
+          <p className="mt-3 text-sm text-muted-foreground">No checks passed yet.</p>
         ) : (
           <Collapsed summary={`✓ ${passed.length} check${passed.length === 1 ? "" : "s"} passed`} summaryClass="text-pass">
             <ul className="grid gap-x-6 gap-y-1 text-sm sm:grid-cols-2">
@@ -171,17 +192,6 @@ export function Scoreboard({ board, findings = [], mock = false, reportHref }: {
           </Collapsed>
         )}
       </section>
-
-      {/* 5 — the report */}
-      {reportHref && (
-        <div className="flex flex-wrap items-center gap-3 border-t pt-5">
-          <a href={reportHref} download className={buttonVariants({ size: "lg", className: "gap-2 rounded-full" })}>
-            <FileDown className="size-4" aria-hidden />
-            Download QC report (PDF)
-          </a>
-          <p className="text-xs text-muted-foreground">Made from this check when you download it. It isn&apos;t saved anywhere — keep the file.</p>
-        </div>
-      )}
     </div>
   );
 }
@@ -189,7 +199,7 @@ export function Scoreboard({ board, findings = [], mock = false, reportHref }: {
 /** Score by category — moved out of the summary into "All checks in detail". */
 export function CategoryScores({ board }: { board: Board }) {
   return (
-    <div className="overflow-x-auto rounded-xl ring-1 ring-border">
+    <div className="overflow-x-auto rounded-xl border border-border">
       <table className="w-full text-sm">
         <caption className="sr-only">Score by category</caption>
         <thead className="bg-muted/50 text-left text-xs text-muted-foreground">
@@ -220,18 +230,19 @@ export function CategoryScores({ board }: { board: Board }) {
   );
 }
 
-function Tile({ n, label, tone }: { n: number; label: string; tone: string }) {
+function Count({ n, label, dot }: { n: number; label: string; dot: string }) {
   return (
-    <li className={cn("min-w-0 rounded-xl px-3 py-3 sm:px-4 sm:py-4", tone)}>
-      <p className="text-2xl font-semibold tabular-nums leading-none sm:text-3xl">{n}</p>
-      <p className="mt-2 text-xs font-medium text-foreground sm:text-sm">{label}</p>
+    <li className="flex items-center gap-2">
+      <span className={cn("size-2 rounded-full", dot)} aria-hidden />
+      <span className="font-semibold tabular-nums">{n}</span>
+      <span className="text-muted-foreground">{label}</span>
     </li>
   );
 }
 
 function Heading({ id, children }: { id: string; children: React.ReactNode }) {
   return (
-    <h3 id={id} className="border-t pt-4 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+    <h3 id={id} className="text-lg font-semibold tracking-tight">
       {children}
     </h3>
   );
@@ -239,7 +250,7 @@ function Heading({ id, children }: { id: string; children: React.ReactNode }) {
 
 function Collapsed({ summary, summaryClass, children }: { summary: string; summaryClass?: string; children: React.ReactNode }) {
   return (
-    <details className="group rounded-xl bg-muted/40 px-4 py-3">
+    <details className="group mt-3 rounded-xl bg-muted/60 px-4 py-3">
       <summary className={cn("flex cursor-pointer list-none items-center gap-2 text-sm font-medium", summaryClass)}>
         <span className="flex-1">{summary}</span>
         <ChevronDown className="size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" aria-hidden />
@@ -256,10 +267,10 @@ export function resultWaitingText(state: string | undefined): string {
       return "The result appears when the analysis finishes.";
     case "failed":
     case "unsupported":
-      return "No result: the analysis didn't finish. Try again in Analysis above.";
+      return "No result: the check didn't finish. Use Try again under Check design above.";
     case "not_configured":
       return "No result: content analysis isn't set up on this server.";
     default:
-      return "The result appears after the content is analysed.";
+      return "The result appears after the design is checked.";
   }
 }

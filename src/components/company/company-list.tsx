@@ -1,29 +1,22 @@
 import Link from "next/link";
-import { Building2, ChevronRight, Plus } from "lucide-react";
+import { ArrowUpRight, Plus } from "lucide-react";
 import type { CompanySummary } from "@/lib/company/types";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
-export const addCompanyButtonClass = cn(
-  buttonVariants(),
-  "h-10 rounded-full bg-foreground px-4 text-background hover:bg-foreground/85"
-);
+export const addCompanyButtonClass = cn(buttonVariants({ variant: "outline" }), "h-10 rounded-full px-4");
 
-/** The dashboard's list of companies the user may open. */
+/** The home page's list of companies the user may open. */
 export function CompanyList({ companies }: { companies: CompanySummary[] }) {
   if (companies.length === 0) {
     return (
-      <div className="rounded-2xl border border-dashed border-border bg-card px-6 py-14 text-center">
-        <span className="mx-auto flex size-12 items-center justify-center rounded-2xl bg-secondary text-secondary-foreground">
-          <Building2 className="size-5" aria-hidden />
-        </span>
-        <h2 className="mt-4 text-lg font-semibold">No companies yet</h2>
-        <p className="mx-auto mt-1 max-w-sm text-sm text-muted-foreground">
-          Add the first company, then fill in its information, brand guidelines and Golden
-          Rules. They are saved for every future QC check.
+      <div className="rounded-3xl border border-dashed border-border px-6 py-16 text-center">
+        <h2 className="text-xl font-semibold tracking-tight">No companies yet</h2>
+        <p className="mx-auto mt-2 max-w-sm text-sm text-muted-foreground">
+          Add the first company, then fill in its information, brand guidelines and Golden Rules. They are saved for every future QC check.
         </p>
-        <Link href="/companies/new" className={cn(addCompanyButtonClass, "mt-6")}>
+        <Link href="/companies/new" className={cn(buttonVariants(), "mt-6 h-10 rounded-full px-5")}>
           <Plus aria-hidden />
           Add company
         </Link>
@@ -39,9 +32,9 @@ export function CompanyList({ companies }: { companies: CompanySummary[] }) {
           <li key={company.id}>
             <Link
               href={`/companies/${company.id}`}
-              className="group flex h-full items-start gap-3 rounded-2xl bg-card p-5 ring-1 ring-foreground/8 transition-shadow outline-none hover:shadow-[0_12px_32px_-16px_rgb(15_27_45/0.25)] hover:ring-primary/30 focus-visible:ring-3 focus-visible:ring-ring/50"
+              className="group flex h-full items-center gap-4 rounded-2xl border border-border p-5 transition-all outline-none hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-[0_16px_40px_-24px_rgb(15_27_45/0.35)] focus-visible:ring-3 focus-visible:ring-ring/50"
             >
-              <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-secondary text-sm font-semibold text-secondary-foreground uppercase">
+              <span className="flex size-11 shrink-0 items-center justify-center rounded-full bg-secondary text-base font-bold text-secondary-foreground uppercase">
                 {company.name.slice(0, 1)}
               </span>
               <span className="min-w-0 flex-1">
@@ -53,10 +46,7 @@ export function CompanyList({ companies }: { companies: CompanySummary[] }) {
                   {[company.category, place].filter(Boolean).join(" · ") || "No details yet"}
                 </span>
               </span>
-              <ChevronRight
-                className="mt-2.5 size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5"
-                aria-hidden
-              />
+              <ArrowUpRight className="size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:text-primary" aria-hidden />
             </Link>
           </li>
         );

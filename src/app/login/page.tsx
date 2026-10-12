@@ -1,8 +1,7 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
-import { LockKeyhole } from "lucide-react";
 import { LoginForm } from "@/components/auth/login-form";
-import { SkybookMark } from "@/components/layout/skybook-mark";
+import { SkybookLogo } from "@/components/layout/skybook-mark";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import { safeRedirectPath } from "@/lib/auth/route-access";
 
@@ -19,39 +18,29 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
   const nextPath = safeRedirectPath(typeof next === "string" ? next : undefined);
 
   return (
-    <main className="sky-backdrop flex min-h-dvh flex-1 flex-col items-center px-4 pt-12 pb-10 sm:pt-20">
-      <div className="flex items-center gap-2.5 rounded-full bg-white/95 py-1.5 pr-4 pl-2 shadow-sm">
-        <SkybookMark className="h-7 w-7" />
-        <span className="text-sm font-semibold tracking-[0.14em]">SKYBOOK</span>
-        <span className="rounded-full bg-secondary px-2 py-0.5 font-mono text-[10px] tracking-[0.2em] text-secondary-foreground">
-          AI QC
-        </span>
+    <main className="flex min-h-dvh flex-1 flex-col px-4 py-8 sm:px-8">
+      <SkybookLogo sub="AI QC" />
+
+      <div className="mx-auto grid w-full max-w-5xl flex-1 items-center gap-12 py-12 lg:grid-cols-[1.15fr_1fr] lg:gap-20">
+        <div className="animate-in fade-in slide-in-from-bottom-2 duration-500">
+          <h1 className="display text-5xl sm:text-6xl lg:text-7xl">
+            Check it before <span className="text-primary">the client does.</span>
+          </h1>
+          <p className="mt-6 max-w-md text-lg text-muted-foreground">
+            Upload the brief and the design. Get a clear result and what to fix — in seconds.
+          </p>
+        </div>
+
+        <section aria-labelledby="sign-in-heading" className="w-full max-w-sm rounded-3xl border border-border p-6 sm:p-8 lg:justify-self-end">
+          <h2 id="sign-in-heading" className="text-xl font-semibold tracking-tight">
+            Sign in
+          </h2>
+          <p className="mt-1 mb-6 text-sm text-muted-foreground">Use the email and password your administrator gave you.</p>
+          <LoginForm next={nextPath} />
+        </section>
       </div>
 
-      <h1 className="mt-8 max-w-xl text-center text-3xl font-semibold tracking-tight text-balance text-white sm:text-5xl">
-        Check it before the client does.
-      </h1>
-      <p className="mt-3 max-w-md text-center text-base text-pretty text-white/90">
-        Quality control for Skybook&apos;s design team. Sign in to continue.
-      </p>
-
-      <section
-        aria-labelledby="sign-in-heading"
-        className="mt-10 w-full max-w-sm rounded-3xl bg-card p-6 shadow-[0_24px_60px_-20px_rgb(15_27_45/0.35)] ring-1 ring-black/5 sm:p-8"
-      >
-        <h2 id="sign-in-heading" className="text-lg font-semibold">
-          Sign in
-        </h2>
-        <p className="mt-1 mb-6 text-sm text-muted-foreground">
-          Use the email and password your administrator gave you.
-        </p>
-        <LoginForm next={nextPath} />
-      </section>
-
-      <p className="mt-6 flex items-center gap-1.5 text-xs text-foreground/70">
-        <LockKeyhole className="size-3.5" aria-hidden />
-        Internal tool · Skybook staff only
-      </p>
+      <p className="text-center text-xs text-muted-foreground">Internal tool · Skybook staff only</p>
     </main>
   );
 }

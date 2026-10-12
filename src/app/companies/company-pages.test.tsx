@@ -19,6 +19,8 @@ vi.mock("@/lib/auth/current-user", () => ({ requireUser }));
 vi.mock("@/lib/db/company-config", () => ({ loadCompanyConfiguration }));
 vi.mock("@/lib/db/client", () => ({ getDatabase: () => ({}) }));
 vi.mock("@/lib/auth/actions", () => ({ signOutAction: vi.fn() }));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }) }));
+vi.mock("@/lib/qc/actions", () => ({ startSessionAction: vi.fn(async () => ({ ok: true })) }));
 vi.mock("@/lib/company/actions", () => ({
   createCompanyAction: vi.fn(),
   saveCompanyFieldAction: vi.fn(),
@@ -165,10 +167,15 @@ describe("company page", () => {
     });
   });
 
-  it("offers Start QC as a link to the QC entry route", async () => {
+  it("leads with one action — Start a QC check (it starts the check for this company) — and folds the settings away", async () => {
     const html = renderToStaticMarkup(await CompanyPage(props));
-    expect(html).toContain(`href="/companies/${ID}/qc/new"`);
-    expect(html).toContain("Start QC");
+    expect(html).toContain("Start a QC check");
+    expect(html).toContain(`name="companyId" value="${ID}"`);
+    expect(html).toContain('name="contentType" value="design_poster"');
+    // Settings are still all there, in one collapsed "Company settings" area after the action.
+    expect(html.indexOf("Start a QC check")).toBeLessThan(html.indexOf("Company settings"));
+    expect(html).toMatch(/<details id="settings"[^>]*>/);
+    expect(html).not.toMatch(/<details id="settings"[^>]*open/);
   });
 });
 

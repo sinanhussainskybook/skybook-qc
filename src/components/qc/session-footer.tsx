@@ -27,7 +27,7 @@ export function SessionFooter({
   return (
     <div className="space-y-4">
       {blocked && (
-        <ul className="space-y-1 rounded-xl bg-muted/60 p-4 text-sm">
+        <ul className="space-y-1 text-sm">
           {problems.map((problem) => (
             <li key={problem} className="text-muted-foreground">
               · {problem}
@@ -48,7 +48,7 @@ export function SessionFooter({
           <Button
             type="submit"
             disabled={saving || blocked || status === "ready"}
-            className="h-11 rounded-full bg-foreground px-6 text-sm font-semibold text-background hover:bg-foreground/85"
+            className="h-12 rounded-full px-7 text-base font-semibold"
           >
             <ScanSearch aria-hidden />
             {saving ? "Starting…" : "Check Design"}

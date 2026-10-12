@@ -5,7 +5,8 @@ import { ALL_TYPES, findingFor, NEEDS_ANALYSIS, notApplicable, notVerified, VIDE
 /**
  * Design & Layout QC (plan 5.7), from the positions of what was detected:
  * overlapping text and text too close to the edge (measured: facts), then
- * the subjective ones — headline hierarchy and the Rule of Thirds — which are
+ * the subjective ones — headline hierarchy and the Rule of Thirds (the main
+ * subject in a 3×3 grid; a centred composition is never flagged) — which are
  * ALWAYS a SUGGESTION worded as a judgement, never a failure that blocks PASS. Video adds
  * on-screen text shown too briefly to read (5.14).
  */
@@ -16,6 +17,7 @@ const CATEGORY = "design_layout" as const;
 export const EDGE_MARGIN = 0.02; // text within 2 % of an edge
 export const OVERLAP_SHARE = 0.1; // boxes overlapping by >10 % of the smaller one
 export const THIRDS_DISTANCE = 0.1; // focal point within 10 % of a thirds crossing
+export const CENTRE_TOLERANCE = 0.08; // focal point within 8 % of the vertical centre line: a centred composition
 export const READ_MS_PER_WORD = 300; // ~3 words a second…
 export const MIN_ON_SCREEN_MS = 1500; // …and never under 1.5 s
 
@@ -131,6 +133,23 @@ const hierarchyRule: Rule<QcContext> = {
   },
 };
 
+/** Where a point falls in a conceptual 3×3 grid: "top-left" … "middle-centre" … "bottom-right". */
+export function gridCell(point: { x: number; y: number }): string {
+  const third = (v: number) => (v < 1 / 3 ? 0 : v < 2 / 3 ? 1 : 2);
+  return `${["top", "middle", "bottom"][third(point.y)]}-${["left", "centre", "right"][third(point.x)]}`;
+}
+
+/**
+ * Rule of Thirds (composition): where the main subject — the focal point the
+ * existing analysis already returns — sits in a 3×3 grid. Always a soft
+ * SUGGESTION worded as a judgement; never a failure that blocks a PASS.
+ *   on or near a thirds crossing      → passed
+ *   on the vertical centre line       → passed: a centred, symmetrical
+ *                                       composition is a deliberate choice,
+ *                                       not an error
+ *   anywhere else (off-centre, away   → a suggestion with an optional
+ *   from every crossing)                improvement
+ */
 const thirdsRule: Rule<QcContext> = {
   id: "layout.rule_of_thirds",
   category: CATEGORY,
@@ -145,20 +164,20 @@ const thirdsRule: Rule<QcContext> = {
     const make = findingFor(this.id, CATEGORY, "Rule of Thirds");
     const lines = [1 / 3, 2 / 3];
     const distance = Math.min(...lines.flatMap((x) => lines.map((y) => Math.hypot(point.x - x, point.y - y))));
+    const centred = Math.abs(point.x - 0.5) <= CENTRE_TOLERANCE;
     const pct = (v: number) => `${Math.round(v * 100)}%`;
+    const where = `Main subject in the ${gridCell(point)} of the 3×3 grid (${pct(point.x)} across, ${pct(point.y)} down)`;
+    const base = { severity: "suggestion" as const, kind: "judgement" as const, expected: "Main subject on a thirds crossing, or deliberately centred", detected: where, confidence: point.confidence };
+    if (distance <= THIRDS_DISTANCE) return [make({ ...base, status: "passed", explanation: "The main subject sits on a thirds crossing." })];
+    if (centred) {
+      return [make({ ...base, status: "passed", explanation: "The main subject is centred — a balanced, deliberate composition, so the Rule of Thirds isn't needed." })];
+    }
     return [
       make({
-        severity: "suggestion",
-        kind: "judgement",
-        status: distance <= THIRDS_DISTANCE ? "passed" : "failed",
-        expected: "Main subject near a thirds crossing",
-        detected: `Main subject at ${pct(point.x)} across, ${pct(point.y)} down`,
-        explanation:
-          distance <= THIRDS_DISTANCE
-            ? "The main subject sits on a thirds crossing."
-            : "A suggestion only: placing the main subject on a thirds crossing often makes the layout feel more balanced. Centred layouts can be intentional.",
-        suggestedFix: "Consider moving the main subject towards one of the thirds crossings.",
-        confidence: point.confidence,
+        ...base,
+        status: "failed",
+        explanation: "A suggestion only: the main subject is off-centre but not on a thirds crossing, so the layout can feel unplanned. It doesn't affect the result.",
+        suggestedFix: "Optional: move the main subject onto a thirds crossing, or centre it deliberately.",
       }),
     ];
   },

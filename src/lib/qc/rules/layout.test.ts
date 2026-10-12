@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { byRule, detections, only, run, text } from "../../../../test/qc-fixtures";
+import { gridCell } from "@/lib/qc/rules/layout";
+import { scoreFindings } from "@/lib/qc/scoring";
 
 /** Plan 5.7 — Design & Layout. Rule of Thirds is always a SUGGESTION. */
 describe("Design & Layout rules", () => {
@@ -30,14 +32,44 @@ describe("Design & Layout rules", () => {
     expect(only(run({ detections: d(40) }), "layout.hierarchy")).toMatchObject({ status: "failed", severity: "suggestion", kind: "judgement" });
   });
 
-  it("Rule of Thirds: never more than a SUGGESTION", () => {
+  describe("Rule of Thirds — the main subject in a 3×3 grid, a soft suggestion only", () => {
     const at = (x: number, y: number) => only(run({ detections: detections({ focalPoint: { x, y, confidence: 0.9 } }) }), "layout.rule_of_thirds");
-    expect(at(0.34, 0.66).status).toBe("passed");
-    const centred = at(0.5, 0.5);
-    expect(centred).toMatchObject({ status: "failed", severity: "suggestion", kind: "judgement" });
-    expect(at(0.34, 0.66).kind).toBe("judgement"); // even when the detection is confident
-    expect(centred.explanation).toMatch(/suggestion only/i);
-    expect(only(run(), "layout.rule_of_thirds")).toMatchObject({ status: "unverified", severity: "suggestion" });
+
+    it("on or near a thirds crossing → passed, naming the grid cell", () => {
+      expect(at(0.34, 0.66)).toMatchObject({ status: "passed", severity: "suggestion", kind: "judgement" }); // a judgement, even when confident
+      expect(at(0.34, 0.66).detected).toBe("Main subject in the middle-centre of the 3×3 grid (34% across, 66% down)");
+      expect(at(0.7, 0.3)).toMatchObject({ status: "passed", explanation: "The main subject sits on a thirds crossing." });
+    });
+
+    it("a centred composition is deliberate — never flagged, at the centre or anywhere on the vertical centre line", () => {
+      for (const [x, y] of [[0.5, 0.5], [0.51, 0.26], [0.45, 0.8], [0.57, 0.5]]) {
+        const f = at(x, y);
+        expect([x, y, f.status, f.suggestedFix]).toEqual([x, y, "passed", undefined]);
+        expect(f.explanation).toMatch(/centred — a balanced, deliberate composition/);
+      }
+      expect(at(0.51, 0.26).detected).toBe("Main subject in the top-centre of the 3×3 grid (51% across, 26% down)"); // the real Travel Mart poster
+    });
+
+    it("off-centre and away from every crossing → a suggestion with a short reason and an optional improvement; never counted", () => {
+      for (const [x, y] of [[0.15, 0.5], [0.85, 0.1], [0.2, 0.9], [0.62, 0.5]]) {
+        const f = at(x, y);
+        expect([x, y, f.status, f.severity, f.kind]).toEqual([x, y, "failed", "suggestion", "judgement"]);
+        expect(f.explanation).toMatch(/^A suggestion only: .*It doesn't affect the result\.$/);
+        expect(f.suggestedFix).toBe("Optional: move the main subject onto a thirds crossing, or centre it deliberately.");
+      }
+      expect(at(0.15, 0.5).detected).toBe("Main subject in the middle-left of the 3×3 grid (15% across, 50% down)");
+      // A suggestion never changes the result or the score.
+      const board = scoreFindings([at(0.15, 0.5)]);
+      expect([board.result, board.score, board.issues.suggestion]).toEqual(["pass", 100, 1]);
+    });
+
+    it("no focal point from the analysis → not verified (a suggestion, never counted)", () => {
+      expect(only(run(), "layout.rule_of_thirds")).toMatchObject({ status: "unverified", severity: "suggestion" });
+    });
+
+    it("the 3×3 grid cells", () => {
+      expect([gridCell({ x: 0.1, y: 0.1 }), gridCell({ x: 0.5, y: 0.5 }), gridCell({ x: 0.9, y: 0.9 }), gridCell({ x: 0.34, y: 0.66 })]).toEqual(["top-left", "middle-centre", "bottom-right", "middle-centre"]);
+    });
   });
 
   it("video: on-screen text must stay up long enough to read (5.14) — not run for images", () => {

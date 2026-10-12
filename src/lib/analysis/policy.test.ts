@@ -88,7 +88,7 @@ describe("confidence policy", () => {
   });
 
   it("suggestions are untouched and never become checks", () => {
-    const f = byId(policy(detections({ focalPoint: { x: 0.5, y: 0.5, confidence: 0.4 } })), "layout.rule_of_thirds");
+    const f = byId(policy(detections({ focalPoint: { x: 0.15, y: 0.5, confidence: 0.4 } })), "layout.rule_of_thirds");
     expect(f).toMatchObject({ status: "failed", severity: "suggestion" });
   });
 

@@ -152,7 +152,7 @@ describe("findings feed the PASS / NEEDS REVISION / FAIL rule correctly", () => 
   });
 
   it("suggestions only (subjective checks) → PASS", () => {
-    const findings = clean({ focalX: 0.5, texts: [text("Our rooms", { role: "body", fontSizePx: 95, box: { x: 0.1, y: 0.4, w: 0.8, h: 0.1 } })] });
+    const findings = clean({ focalX: 0.15, texts: [text("Our rooms", { role: "body", fontSizePx: 95, box: { x: 0.1, y: 0.4, w: 0.8, h: 0.1 } })] });
     expect(failed(findings)).toEqual(["suggestion", "suggestion"]); // Rule of Thirds + headline hierarchy
     expect(findings.filter((f) => f.status === "failed").every((f) => f.kind === "judgement")).toBe(true);
     expect(planRule(findings)).toBe("PASS");
@@ -177,7 +177,7 @@ describe("findings feed the PASS / NEEDS REVISION / FAIL rule correctly", () => 
   });
 
   it("critical + suggestions → FAIL", () => {
-    const findings = clean({ price: "AED 1,399", focalX: 0.5 });
+    const findings = clean({ price: "AED 1,399", focalX: 0.15 });
     expect(failed(findings)).toEqual(expect.arrayContaining(["critical", "suggestion"]));
     expect(planRule(findings)).toBe("FAIL");
   });

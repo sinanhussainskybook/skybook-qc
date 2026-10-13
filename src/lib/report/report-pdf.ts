@@ -1,6 +1,6 @@
 import { LineCapStyle, PDFDocument, rgb, type PDFImage, type PDFPage, type RGB } from "pdf-lib";
 import type { ReportData, ReportItem } from "@/lib/report/report-data";
-import { loadReportFonts, reportFaces, type Face, type FontFiles } from "@/lib/report/report-fonts";
+import { isRightToLeft, loadReportFonts, reportFaces, type Face, type FontFiles } from "@/lib/report/report-fonts";
 import { resultDisplay } from "@/lib/qc/scoring";
 import { alsoNote, NOT_CHECKED, splitNotChecked, verifyNote } from "@/lib/qc/golden-rules-view";
 
@@ -80,13 +80,17 @@ const REPLACEMENTS: [RegExp, string][] = [
   [/✗|✕/g, "x"],
   [/[   ]/g, " "],
   [/[\u0000-\u0008\u000b-\u001f\u007f]/g, ""],
+  // Invisible format characters OCR can pass on (zero-width, direction marks / embeddings / isolates,
+  // byte-order mark): no font draws them, so they'd show as "?" — they carry no visible text.
+  [/[\u200b-\u200f\u202a-\u202e\u2060-\u2069\ufeff]/g, ""],
 ];
 
-/** A run of text within a line: its own weight and colour. */
-type Span = { text: string; bold?: boolean; color?: RGB };
+/** A run of text within a line: its own weight and colour. `keep`: one value — kept whole on a line when it fits. */
+type Span = { text: string; bold?: boolean; color?: RGB; keep?: boolean };
 /** A block: one or more spans, wrapped together to a width. */
 type Block = { spans: Span[]; size: number; gapBefore?: number };
-type Laid = { size: number; gapBefore: number; lines: Span[][] };
+/** `rtl`: the paragraph's direction — decided once for the whole block, so each line and span is drawn the same way. */
+type Laid = { size: number; gapBefore: number; lines: Span[][]; rtl: boolean };
 
 const lineHeight = (size: number) => size * 1.36;
 
@@ -148,7 +152,12 @@ class Doc {
     return this.font(bold).width(this.clean(text), size);
   }
 
-  /** Wraps spans to `width`; a span may break across lines, a too-long word is cut. */
+  /**
+   * Wraps spans to `width`; a span may break across lines, a too-long word is
+   * cut. A `keep` span (one value, e.g. '3.40 : 1 — "Packages" (#67EDF7 on
+   * #0B7AB0)') moves to the next line whole rather than splitting — unless it
+   * is longer than a whole line, when it wraps like any text. Nothing is dropped.
+   */
   wrap(spans: Span[], size: number, width: number): Span[][] {
     const lines: Span[][] = [];
     let line: Span[] = [];
@@ -168,6 +177,12 @@ class Doc {
     };
     for (const span of spans) {
       const font = this.font(span.bold);
+      const whole = span.keep ? this.clean(span.text).replace(/ +/g, " ").trim() : "";
+      if (whole && font.width(whole, size) <= width) {
+        if (line.length && used + font.width(` ${whole}`, size) > width) push();
+        add(span, whole);
+        continue;
+      }
       for (let word of this.clean(span.text).split(/ +/).filter(Boolean)) {
         // A single word longer than the line is broken.
         while (font.width(word, size) > width) {
@@ -187,7 +202,12 @@ class Doc {
   }
 
   lay(blocks: Block[], width: number): { laid: Laid[]; height: number } {
-    const laid = blocks.map((b) => ({ size: b.size, gapBefore: b.gapBefore ?? 0, lines: this.wrap(b.spans, b.size, width) }));
+    const laid = blocks.map((b) => ({
+      size: b.size,
+      gapBefore: b.gapBefore ?? 0,
+      lines: this.wrap(b.spans, b.size, width),
+      rtl: isRightToLeft(this.clean(b.spans.map((s) => s.text).join(" "))),
+    }));
     const height = laid.reduce((h, b) => h + b.gapBefore + b.lines.length * lineHeight(b.size), 0);
     return { laid, height };
   }
@@ -202,7 +222,7 @@ class Doc {
         let cx = x;
         for (const span of line) {
           const font = this.font(span.bold);
-          font.draw(this.page, span.text, { x: cx, y: y + b.size * 0.3, size: b.size, color: span.color ?? C.ink });
+          font.draw(this.page, span.text, { x: cx, y: y + b.size * 0.3, size: b.size, color: span.color ?? C.ink, rtl: b.rtl });
           cx += font.width(span.text, b.size);
         }
         this.lines.push(line.map((s) => s.text).join("").trim());
@@ -410,7 +430,7 @@ const MANDATORY = /\bmandatory\b/i;
 /** Every value found: joined with "·" so a long list wraps compactly. */
 function valueSpans(values: string[]): Span[] {
   const spans: Span[] = [];
-  values.forEach((v, i) => spans.push(...(i ? [{ text: "·", color: C.muted }] : []), { text: v, color: C.ink }));
+  values.forEach((v, i) => spans.push(...(i ? [{ text: "·", color: C.muted }] : []), { text: v, color: C.ink, keep: true }));
   return spans;
 }
 

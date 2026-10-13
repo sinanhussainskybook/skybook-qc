@@ -13,9 +13,15 @@ import { StandardFonts, type PDFDocument, type PDFFont, type PDFPage, type RGB }
  * right to left. If the font files can't be loaded, the built-in Helvetica is
  * used exactly as before.
  *
- * Simple bidi: a line with Arabic and no Latin letters reads right to left
- * (its runs are reversed); a mixed line ("Expected: <Arabic>") reads left to
- * right with each Arabic phrase shaped right to left.
+ * Simple bidi: a paragraph with Arabic and no Latin letters reads right to
+ * left (its runs are reversed); a mixed paragraph ("Found: 3.94 : 1 —
+ * "<Arabic>"") reads left to right with each Arabic phrase — its words, and
+ * any number that follows them ("عرض الصيف 20%") — laid out right to left;
+ * quotes, separators and anything before the phrase stay where they are.
+ * Every number keeps its own digits in reading order (Western or
+ * Arabic-Indic). The direction is decided for the WHOLE paragraph
+ * (isRightToLeft), never for one styled piece of it: a value after a bold
+ * label is part of the label's left-to-right line.
  */
 
 export type FontFiles = { regular: Uint8Array[]; bold: Uint8Array[] };
@@ -23,7 +29,8 @@ export type FontFiles = { regular: Uint8Array[]; bold: Uint8Array[] };
 export interface Face {
   canDraw(ch: string): boolean;
   width(text: string, size: number): number;
-  draw(page: PDFPage, text: string, o: { x: number; y: number; size: number; color: RGB }): void;
+  /** `rtl`: the paragraph's direction (isRightToLeft of the whole paragraph); by default, this text's own. */
+  draw(page: PDFPage, text: string, o: { x: number; y: number; size: number; color: RGB; rtl?: boolean }): void;
 }
 
 const FONT_DIR = (pkg: string) => path.join(process.cwd(), "node_modules", "@fontsource", pkg, "files");
@@ -159,6 +166,18 @@ export function shapeArabic(text: string): string {
 }
 const LATIN_LETTER = /[A-Za-zÀ-ɏ]/;
 
+/**
+ * A number — Western or Arabic-Indic digits with their separators, and a
+ * percent sign: one unit, its digits always in reading order.
+ */
+const NUMBER = /^[0-9٠-٩۰-۹](?:[0-9٠-٩۰-۹.,٫٬]*[0-9٠-٩۰-۹])?[%٪‰]?$/;
+/** A line's pieces: numbers, runs of spaces, Arabic words (digits apart), and single other characters. */
+const TOKENS =
+  /[0-9٠-٩۰-۹](?:[0-9٠-٩۰-۹.,٫٬]*[0-9٠-٩۰-۹])?[%٪‰]?| +|[؀-ٟ٪-ۯۺ-ۿݐ-ݿࢠ-ࣿﭐ-﷿ﹰ-﻿]+|[\s\S]/g;
+
+/** A paragraph reads right to left when it has Arabic and no Latin letters at all. */
+export const isRightToLeft = (text: string) => ARABIC.test(text) && !LATIN_LETTER.test(text);
+
 /** The built-in Helvetica (Western characters only). */
 export async function standardFaces(doc: PDFDocument): Promise<{ regular: Face; bold: Face }> {
   const make = (font: PDFFont): Face => {
@@ -178,7 +197,7 @@ export async function standardFaces(doc: PDFDocument): Promise<{ regular: Face; 
         return ok;
       },
       width: (text, size) => font.widthOfTextAtSize(text, size),
-      draw: (page, text, o) => page.drawText(text, { ...o, font }),
+      draw: (page, text, o) => page.drawText(text, { x: o.x, y: o.y, size: o.size, color: o.color, font }),
     };
   };
   return { regular: make(await doc.embedFont(StandardFonts.Helvetica)), bold: make(await doc.embedFont(StandardFonts.HelveticaBold)) };
@@ -205,38 +224,52 @@ export async function unicodeFaces(doc: PDFDocument, files: FontFiles): Promise<
     /**
      * Splits a line into runs that share a font. Each Arabic word is one
      * shaped run (fontkit draws it right to left); spaces use the Latin font.
-     * Word order: the words of an Arabic phrase inside a left-to-right line
-     * are reversed; a line with Arabic and no Latin letters is reversed whole.
+     * Word order: in a left-to-right paragraph each Arabic phrase (its words
+     * and any numbers that follow them) is reversed; in a right-to-left
+     * paragraph (`rtl`, decided for the whole paragraph) every run is reversed.
      */
-    const runs = (raw: string): { font: PDFFont; text: string }[] => {
-      type Item = { index: number; text: string; arabic: boolean };
+    const runs = (raw: string, rtl = isRightToLeft(raw)): { font: PDFFont; text: string }[] => {
+      type Item = { index: number; text: string; kind: "arabic" | "number" | "space" | "other" };
       const items: Item[] = [];
-      for (const token of raw.match(/[؀-ۿݐ-ݿࢠ-ࣿﭐ-﷿ﹰ-﻿]+| +|[^ ؀-ۿݐ-ݿࢠ-ࣿﭐ-﷿ﹰ-﻿]+/g) ?? []) {
-        if (ARABIC.test(token)) {
+      for (const token of raw.match(TOKENS) ?? []) {
+        if (/^ +$/.test(token)) {
+          items.push({ index: Math.max(0, pick(" ")), text: token, kind: "space" });
+        } else if (NUMBER.test(token)) {
+          // A number keeps its digits in reading order. The font engine lays out Arabic-script
+          // characters (Arabic-Indic digits, ٪) right to left, so those are handed over reversed.
+          const text = ARABIC.test(token) ? [...token].reverse().join("") : token;
+          items.push({ index: Math.max(0, pick([...token][0])), text, kind: "number" });
+        } else if (ARABIC.test(token)) {
           const shaped = shapeArabic(token);
-          items.push({ index: Math.max(0, pick([...shaped][0])), text: shaped, arabic: true });
-          continue;
-        }
-        for (const ch of token) {
-          const index = Math.max(0, pick(ch));
-          const last = items[items.length - 1];
-          if (last && !last.arabic && last.index === index) last.text += ch;
-          else items.push({ index, text: ch, arabic: false });
+          items.push({ index: Math.max(0, pick([...shaped][0])), text: shaped, kind: "arabic" });
+        } else {
+          for (const ch of token) {
+            const index = Math.max(0, pick(ch));
+            const last = items[items.length - 1];
+            if (last && last.kind === "other" && last.index === index) last.text += ch;
+            else items.push({ index, text: ch, kind: "other" });
+          }
         }
       }
       let ordered: Item[];
-      if (ARABIC.test(raw) && !LATIN_LETTER.test(raw)) {
-        ordered = [...items].reverse(); // a right-to-left line
+      if (rtl) {
+        ordered = [...items].reverse(); // a right-to-left paragraph
       } else {
         ordered = [];
+        const inPhrase = (it: Item | undefined) => it !== undefined && (it.kind === "arabic" || it.kind === "number");
         for (let i = 0; i < items.length; ) {
-          if (!items[i].arabic) {
+          if (items[i].kind !== "arabic") {
             ordered.push(items[i++]);
             continue;
           }
-          // An Arabic phrase: Arabic words with single spaces between them.
+          // An Arabic phrase: Arabic words — and numbers that follow them ("عرض الصيف 20%") — with single
+          // spaces between; read right to left as a whole. A number BEFORE the Arabic stays where it is.
           let j = i + 1;
-          while (j + 1 < items.length && items[j].text.trim() === "" && items[j + 1].arabic) j += 2;
+          while (j < items.length) {
+            if (inPhrase(items[j])) j++;
+            else if (items[j].kind === "space" && items[j].text.length === 1 && inPhrase(items[j + 1])) j += 2;
+            else break;
+          }
           ordered.push(...items.slice(i, j).reverse());
           i = j;
         }
@@ -246,9 +279,9 @@ export async function unicodeFaces(doc: PDFDocument, files: FontFiles): Promise<
     return {
       canDraw: (ch) => pick(ch) >= 0,
       width: (text, size) => runs(text).reduce((sum, r) => sum + r.font.widthOfTextAtSize(r.text, size), 0),
-      draw(page, text, o) {
+      draw(page, text, { rtl, ...o }) {
         let x = o.x;
-        for (const r of runs(text)) {
+        for (const r of runs(text, rtl)) {
           page.drawText(r.text, { ...o, x, font: r.font });
           x += r.font.widthOfTextAtSize(r.text, o.size);
         }

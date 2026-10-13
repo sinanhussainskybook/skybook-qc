@@ -152,49 +152,50 @@
         <div class="brand-sub">AI QC · TRACKER</div>
       </div>
     </div>
-    <p class="updated">Updated 7 Oct 2026</p>
+    <p class="updated">Updated 13 Oct 2026</p>
   </header>
 
   <section class="summary" aria-label="Overall progress">
     <div class="ring">
       <svg viewBox="0 0 120 120" aria-hidden="true">
         <circle cx="60" cy="60" r="52" fill="none" stroke="var(--track)" stroke-width="12"/>
-        <circle cx="60" cy="60" r="52" fill="none" stroke="var(--accent)" stroke-width="12" stroke-linecap="round" stroke-dasharray="266.9 326.7"/>
+        <circle cx="60" cy="60" r="52" fill="none" stroke="var(--accent)" stroke-width="12" stroke-linecap="round" stroke-dasharray="270.2 326.7"/>
       </svg>
-      <div class="ring-label"><div class="ring-pct num">82%</div><div class="ring-sub num">85 of 104 tasks</div></div>
+      <div class="ring-label"><div class="ring-pct num">83%</div><div class="ring-sub num">86 of 104 tasks</div></div>
     </div>
     <div>
-      <h1>Gemini is live: the first real QC check passed.</h1>
-      <p class="summary-text">A synthetic design went through sign-in, requirements, upload, Gemini, the QC rules, the score and the PDF report on the real database — NEEDS REVISION, 94 / 100, nothing left behind. Still to confirm live: a wrong mandatory price becomes “needs a human check”, not FAIL.</p>
+      <h1>Simpler QC: upload the brief, upload the design, Check Design — and a report designers can scan.</h1>
+      <p class="summary-text">The app runs on Railway (web + worker) with Gemini. The latest work makes the result and PDF short and clear: one findings table by severity, “PASS — PLEASE VERIFY” with a short note on what to check, Golden Rules with the other issues, and the same mistake never shown or counted twice. Pushed to GitHub; the Railway deployment of it is still to confirm.</p>
       <div class="checks">
-        <span class="check num">637 / 637 tests</span>
+        <span class="check num">745 / 745 tests</span>
         <span class="check">Typecheck</span>
         <span class="check">Lint · 0 warnings</span>
         <span class="check">Production build</span>
-        <span class="check">Real Supabase: migration 0008 + a live Gemini run</span>
-        <span class="check">0 secrets in the build</span>
+        <span class="check">Pushed: 85e0447</span>
+        <span class="check">Hosted on Railway</span>
       </div>
     </div>
   </section>
 
   <section class="now" aria-labelledby="now-title">
     <div class="now-head">
-      <h3 id="now-title">Gemini live testing (7 Oct)</h3>
-      <span class="now-count num">5 of 7 steps done</span>
+      <h3 id="now-title">Simpler QC and reports (8–13 Oct)</h3>
+      <span class="now-count num">6 of 8 steps done</span>
     </div>
-    <div class="bar" role="progressbar" aria-valuemin="0" aria-valuemax="7" aria-valuenow="5" aria-label="Steps done"><span style="width:71%"></span></div>
+    <div class="bar" role="progressbar" aria-valuemin="0" aria-valuemax="8" aria-valuenow="6" aria-label="Steps done"><span style="width:75%"></span></div>
     <ol class="steps">
-      <li class="step done"><span class="dot"></span><span class="what">Real-key smoke test passed; newer AI Studio keys (with dots) accepted</span><span class="who claude">Claude</span></li>
-      <li class="step done"><span class="dot"></span><span class="what">Gemini’s “invalid argument” fixed; every error now shows the HTTP status and Google’s reason, never the key</span><span class="who claude">Claude</span></li>
-      <li class="step done"><span class="dot"></span><span class="what">First live end-to-end check passed: NEEDS REVISION, 94 / 100; logo, Golden Rule, banned word and wrong date caught; PDF correct</span><span class="who claude">Claude</span></li>
-      <li class="step done"><span class="dot"></span><span class="what">Bad text positions from Gemini no longer fail a check: kept when valid, dropped when clearly wrong, position checks then <code>not verified</code></span><span class="who claude">Claude</span></li>
-      <li class="step done"><span class="dot"></span><span class="what">Secrets found in the build cache inside OneDrive — cache switched off, rebuilt, 0 secrets; never reached a browser</span><span class="who claude">Claude</span></li>
-      <li class="step current"><span class="dot"></span><span class="what">Check OneDrive (and its recycle bin) for <code>skybook-qc/.next</code>; if it was synced, rotate the Supabase service key</span><span class="who you">You</span></li>
-      <li class="step"><span class="dot"></span><span class="what">Live run of the wrong-price design (Version 2) — last try hit Gemini “high demand”</span><span class="who claude">Claude</span></li>
+      <li class="step done"><span class="dot"></span><span class="what">The brief is read automatically; QC runs only against the requirements confirmed from it</span><span class="who claude">Claude</span></li>
+      <li class="step done"><span class="dot"></span><span class="what">Three-step flow: upload brief, upload design, Check Design</span><span class="who claude">Claude</span></li>
+      <li class="step done"><span class="dot"></span><span class="what">Interface redesigned; result and PDF simplified</span><span class="who claude">Claude</span></li>
+      <li class="step done"><span class="dot"></span><span class="what">Rule of Thirds: a centred composition is no longer flagged; still only a suggestion — pushed <code>8da515d</code></span><span class="who claude">Claude</span></li>
+      <li class="step done"><span class="dot"></span><span class="what">Compact PDF (Severity | Issue | Suggested fix), <code>PASS — PLEASE VERIFY</code>, Golden Rules with the issues, settings missing vs not checked</span><span class="who claude">Claude</span></li>
+      <li class="step done"><span class="dot"></span><span class="what">Duplicates merged: Golden Rule + brief, brief + contact details, company name + terms — shown and counted once — pushed <code>85e0447</code></span><span class="who claude">Claude</span></li>
+      <li class="step current"><span class="dot"></span><span class="what">Confirm Railway deployed <code>85e0447</code> (Deployments tab: Success, web and worker)</span><span class="who you">You</span></li>
+      <li class="step"><span class="dot"></span><span class="what">Password-reset tool (<code>npm run user:reset-password</code>) — built locally, not committed: keep it?</span><span class="who you">You</span></li>
     </ol>
     <div class="turn" role="note">
       <span aria-hidden="true">→</span>
-      <p><strong>Next:</strong> the OneDrive check, then the Version 2 live run, then the page that jumps home during analysis. After that, Phase 9 and choosing a host.</p>
+      <p><strong>Next:</strong> confirm the Railway deployment, decide on the password-reset tool, then the wrong-price live run (it should now read “Please verify”, not FAIL) and the rest of Phase 9.</p>
     </div>
   </section>
 
@@ -205,11 +206,11 @@
       <li class="phase"><span class="phase-no">02</span><div class="phase-name">Sign-in<div class="phase-note">Working on real Supabase; admin created</div></div><div class="mini"><div class="bar"><span class="full" style="width:100%"></span></div><span class="n num">12/12</span></div><span class="pill done">Done</span></li>
       <li class="phase"><span class="phase-no">03</span><div class="phase-name">Company and logo<div class="phase-note">Verified on real Supabase</div></div><div class="mini"><div class="bar"><span class="full" style="width:100%"></span></div><span class="n num">10/10</span></div><span class="pill done">Done</span></li>
       <li class="phase"><span class="phase-no">04</span><div class="phase-name">Requirements + Upload<div class="phase-note">Verified on real Supabase · text reading and extracted-item review moved to Phase 6, platform sizes built in Phase 5</div></div><div class="mini"><div class="bar"><span class="full" style="width:100%"></span></div><span class="n num">8/8</span></div><span class="pill done">Done</span></li>
-      <li class="phase"><span class="phase-no">05</span><div class="phase-name">QC rule engine<div class="phase-note">All nine categories on one engine · verified on real Supabase · frozen · real detections come in Phase 6</div></div><div class="mini"><div class="bar"><span class="full" style="width:100%"></span></div><span class="n num">16/16</span></div><span class="pill done">Done</span></li>
-      <li class="phase"><span class="phase-no">06</span><div class="phase-name">AI analysis<div class="phase-note">Gemini API for static designs · first live end-to-end run passed · wrong-price design still to confirm live · Local AI and video paused</div></div><div class="mini"><div class="bar"><span style="width:80%"></span></div><span class="n num">12/15</span></div><span class="pill progress">In progress</span></li>
-      <li class="phase"><span class="phase-no">07</span><div class="phase-name">Score and result<div class="phase-note">PASS / NEEDS REVISION / FAIL, score and issue counts · score weights to confirm (D7)</div></div><div class="mini"><div class="bar"><span class="full" style="width:100%"></span></div><span class="n num">8/8</span></div><span class="pill done">Done</span></li>
-      <li class="phase"><span class="phase-no">08</span><div class="phase-name">QC report<div class="phase-note">PDF download with Arabic support, never stored · issue boxes on the image and human review deferred</div></div><div class="mini"><div class="bar"><span class="full" style="width:100%"></span></div><span class="n num">6/6</span></div><span class="pill done">Done</span></li>
-      <li class="phase"><span class="phase-no">09</span><div class="phase-name">Testing and polish<div class="phase-note">Started: one live end-to-end test passed, build-cache secret leak fixed</div></div><div class="mini"><div class="bar"><span style="width:0"></span></div><span class="n num">0/10</span></div><span class="pill waiting">Needs <b>host choice</b></span></li>
+      <li class="phase"><span class="phase-no">05</span><div class="phase-name">QC rule engine<div class="phase-note">All nine categories on one engine · frozen · since: a centred Rule of Thirds isn’t flagged; the same issue from two checks counts once</div></div><div class="mini"><div class="bar"><span class="full" style="width:100%"></span></div><span class="n num">16/16</span></div><span class="pill done">Done</span></li>
+      <li class="phase"><span class="phase-no">06</span><div class="phase-name">AI analysis<div class="phase-note">Gemini API for static designs · the brief read automatically · wrong-price design still to confirm live · Local AI and video paused</div></div><div class="mini"><div class="bar"><span style="width:80%"></span></div><span class="n num">12/15</span></div><span class="pill progress">In progress</span></li>
+      <li class="phase"><span class="phase-no">07</span><div class="phase-name">Score and result<div class="phase-note">PASS / NEEDS REVISION / FAIL, or PASS — PLEASE VERIFY · uncertain items never counted · score weights to confirm (D7)</div></div><div class="mini"><div class="bar"><span class="full" style="width:100%"></span></div><span class="n num">8/8</span></div><span class="pill done">Done</span></li>
+      <li class="phase"><span class="phase-no">08</span><div class="phase-name">QC report<div class="phase-note">One-page PDF for simple checks · Severity | Issue | Suggested fix · “Please verify” notes · Arabic supported, never stored</div></div><div class="mini"><div class="bar"><span class="full" style="width:100%"></span></div><span class="n num">6/6</span></div><span class="pill done">Done</span></li>
+      <li class="phase"><span class="phase-no">09</span><div class="phase-name">Testing and polish<div class="phase-note">Hosted on Railway (web + worker) · live tests and the security review still open</div></div><div class="mini"><div class="bar"><span style="width:10%"></span></div><span class="n num">1/10</span></div><span class="pill progress">In progress</span></li>
     </ol>
   </section>
 
@@ -225,10 +226,10 @@
           <li><span class="code">D4</span><span>Platform values from Meta, LinkedIn, YouTube and Google Ads pages; typed size for banners, print, slides, other</span></li>
           <li><span class="code">D5</span><span>Gemini API (Google AI Studio, free tier) for static designs, one call per design; Local AI and Google Cloud kept in the code, paused</span></li>
           <li><span class="code">D6</span><span>Video read with FFmpeg on our server; first 15 min, up to 120 frames</span></li>
-          <li><span class="code">D10</span><span>A persistent Node host running the app + a worker; database queue (the host itself chosen in Phase 9)</span></li>
+          <li><span class="code">D10</span><span>Railway: the app and a worker on a persistent Node host; database queue</span></li>
           <li><span class="code">D8</span><span>Report: a PDF made on download, never stored; Arabic supported (Noto fonts); dates in Dubai time</span></li>
           <li><span class="code">D11</span><span>QC sessions are temporary: deleted 24 h after the last change; video up to 50 MB (Free plan)</span></li>
-          <li><span class="code">D12</span><span>Golden Rules saved per company, used in every QC check</span></li>
+          <li><span class="code">D12</span><span>Golden Rules saved per company, used in every QC check; reported with the other issues, only when broken</span></li>
           <li><span class="code">D13</span><span>Company access by membership; admins see every company</span></li>
         </ul>
       </div>
@@ -236,8 +237,8 @@
         <h3><span class="tag" style="background:var(--wait)"></span>Still to decide</h3>
         <ul class="list">
           <li><span class="code">D7</span><span>Score weights</span></li>
-          <li><span class="code">D9</span><span>Human review of findings (later)</span></li>
-          <li><span class="code">D10</span><span>Which host (Phase 9)</span></li>
+          <li><span class="code">D9</span><span>Human review of findings — for now, uncertain items show “Please verify”</span></li>
+          <li><span class="code">Reset</span><span>Commit the password-reset tool?</span></li>
           <li><span class="code">Keys</span><span>Rotate the Supabase service key (and Gemini key)? Depends on the OneDrive check</span></li>
           <li><span class="code">Rule</span><span>A wrong date counts twice (“Date” and “Unexpected offer details”) — count it once?</span></li>
           <li><span class="code">Data</span><span>Gemini free tier may use what is sent — non-confidential designs only, or a paid tier</span></li>
@@ -274,6 +275,11 @@
   <section class="section" aria-labelledby="history-title">
     <h2 id="history-title">History</h2>
     <ol class="history">
+      <li><span class="date">13 Oct 2026</span><span class="rail"></span><span class="event">QC report and results simplified; “PASS — PLEASE VERIFY”; Golden Rules with the issues; duplicate findings shown and counted once — pushed (85e0447)</span></li>
+      <li><span class="date">12 Oct 2026</span><span class="rail"></span><span class="event">Rule of Thirds: centred compositions no longer flagged — pushed (8da515d)</span></li>
+      <li><span class="date">12 Oct 2026</span><span class="rail"></span><span class="event">Interface redesigned; QC result and PDF simplified (271c9a3)</span></li>
+      <li><span class="date">11 Oct 2026</span><span class="rail"></span><span class="event">QC flow simplified: upload brief, upload design, Check Design (af0431e)</span></li>
+      <li><span class="date">8 Oct 2026</span><span class="rail"></span><span class="event">The brief is read automatically; QC runs only against confirmed requirements. QC result and PDF simplified</span></li>
       <li><span class="date">7 Oct 2026</span><span class="rail"></span><span class="event">Secrets found in the Turbopack build cache inside the OneDrive folder; cache switched off, rebuilt, 0 secrets. Key rotation waits on an OneDrive check</span></li>
       <li><span class="date">7 Oct 2026</span><span class="rail"></span><span class="event">Gemini text positions made optional: clearly wrong boxes are dropped instead of failing the check; position checks become not verified</span></li>
       <li><span class="date">7 Oct 2026</span><span class="rail"></span><span class="event">First live end-to-end QC check on real Supabase with Gemini: NEEDS REVISION, 94 / 100, PDF with logo, no history left</span></li>

@@ -558,3 +558,151 @@ describe("QC report — Arabic text", () => {
     expect(woffToSfnt(notWoff)).toBe(notWoff);
   });
 });
+
+/**
+ * Regression: the deployed report of 13 Oct 2026 (Travel Mart, "WhatsApp Image 2026-10-08 at 12.02.30 PM.jpeg").
+ * Its text-contrast and text-colour rows mix Arabic ("ترافيل مارت"), ratios, hex colours and quotes.
+ */
+describe("QC report — the 13 Oct Travel Mart report", () => {
+  const flat = (text: string) => text.replace(/\n/g, " ");
+  /** What is DRAWN on each line, left to right (Arabic presentation forms back to letters), as MuPDF sees it. */
+  async function drawnLines(bytes: Uint8Array, page = 0): Promise<string[]> {
+    const mupdf = await import("mupdf");
+    const doc = mupdf.Document.openDocument(bytes, "application/pdf");
+    const chars: { c: string; x: number; y: number }[] = [];
+    doc.loadPage(page).toStructuredText("preserve-whitespace").walk({ onChar: (c: string, origin: [number, number]) => chars.push({ c, x: origin[0], y: Math.round(origin[1]) }) } as never);
+    const rows = new Map<number, typeof chars>();
+    for (const ch of chars) rows.set(ch.y, [...(rows.get(ch.y) ?? []), ch]);
+    return [...rows].sort((a, b) => a[0] - b[0]).map(([, row]) => row.sort((a, b) => a.x - b.x).map((c) => c.c).join("").normalize("NFKC"));
+  }
+  /** "ترافيل مارت" laid out right to left, as it appears on the page read left to right. */
+  const TRAVEL_MART_DRAWN = [..."ترافيل مارت"].reverse().join("");
+
+  const CONTRAST = [
+    '4.48 : 1 — "Accredited" (#3F75A1 on #ECF6F9)',
+    '3.40 : 1 — "Customised Packages" (#67EDF7 on #0B7AB0)',
+    '4.06 : 1 — "> Tours + Transfers" (#D7EFF6 on #1378AE)',
+    '3.94 : 1 — "ترافيل مارت" (#9E6F5E on #F7F5F0)',
+    '2.37 : 1 — "TRAVELS" (#A4A4A4 on #F9F9F9)',
+  ];
+  const COLOURS = [
+    '#3F75A1 — "Accredited"', '#3974A1 — "Agent"', '#B87547 — "Snow Has Arrived in"', '#0C6BA5 — "Azerbaijan!"',
+    '#67EDF7 — "Customised Packages"', '#D7EFF6 — "> Flights + Hotels"', '#D7EFF6 — "> Tours + Transfers"', '#485875 — "*T&C Apply"',
+    '#30496F — "travelmarttravels.com"', '#38547B — "amesh@travelmarttravels.com"', '#284062 — "+974 4444 12337, +974 4441 2307"',
+    '#2C4366 — "+974 5119 1007"', '#9E6F5E — "ترافيل مارت"', '#8F6E60 — "TRAVEL MART"',
+  ];
+  const SIZES = ['18px — "*T&C Apply"', '18px — "travelmarttravels.com"', '18px — "amesh@travelmarttravels.com"', '18px — "+974 4444 12337, +974 4441 2307"', '18px — "+974 5119 1007"', '14px — "TRAVELS"'];
+  /** The report's findings: 9 major, 22 minor, 1 to verify, 34 passed. */
+  const findings = (): Finding[] => [
+    f("brief", "unverified", "critical", { ruleId: "brief.requirement.product_name", title: "Product name: Product / Service", expected: "Customized Azerbaijan Travel Packages", detected: "Not found", explanation: `${HUMAN_CHECK_CRITICAL}: the AI wasn't sure.` }),
+    ...CONTRAST.map((detected) => f("accessibility", "failed", "major", { title: "Text contrast", expected: "At least 4.5 : 1", detected, suggestedFix: "Darken the text or lighten the background (or the other way round)." })),
+    f("brief", "failed", "major", { ruleId: "brief.requirement.dimensions", title: "Dimensions", expected: "1080 × 1080 px", detected: "1254 × 1254 px", explanation: "Wrong size. The brief marks it as mandatory.", suggestedFix: "Export the design at exactly 1080 × 1080 px.", fileName: "WhatsApp Image 2026-10-08 at 12.02.30 PM.jpeg" }),
+    f("brief", "failed", "major", { ruleId: "brief.requirement.required_text", title: "Required text", expected: "Customized Packages", detected: "customised packages", suggestedFix: 'Write it exactly as "Customized Packages".' }),
+    f("brief", "failed", "major", { ruleId: "brief.requirement.required_text", title: "Required text", expected: "Ready for a Snowy Escape?", detected: "ready for a snowy ecsape", suggestedFix: 'Write it exactly as "Ready for a Snowy Escape?".' }),
+    f("design_layout", "failed", "major", { title: "Overlapping text", expected: "Text blocks don't overlap", detected: '"Snow Has Arrived in" overlaps "Azerbaijan!"', suggestedFix: "Move or resize one of them so they don't overlap." }),
+    ...SIZES.map((detected) => f("accessibility", "failed", "minor", { title: "Text size", expected: "At least 19px (1.5% of 1254px)", detected, suggestedFix: "Make it at least 19px tall." })),
+    ...COLOURS.map((detected) => f("brand", "failed", "minor", { title: "Text colour", expected: "A brand colour (Blue #0066B2, Orange #FF6600), black, white or grey", detected, suggestedFix: "Change the text to a brand colour or a neutral." })),
+    f("design_layout", "failed", "minor", { title: "Text near the edge", expected: "At least 2% from every edge", detected: '"+974 5119 1007" touches the edge', suggestedFix: "Move the text further in from the edge." }),
+    f("legal", "failed", "minor", { ruleId: "legal.disclaimer", title: "Disclaimer", expected: "T&C apply", detected: "T&C Apply", suggestedFix: 'Show the disclaimer exactly as: "T&C apply".' }),
+    ...Array.from({ length: 34 }, () => f("content", "passed")),
+  ];
+
+  it("text contrast and text colour: every ratio, colour pair and text value is shown whole on one line — none split, none lost", async () => {
+    const r = await report(findings());
+    for (const value of [...CONTRAST, ...COLOURS, ...SIZES]) {
+      // Each value sits on a single line (the line may also hold other values).
+      expect([value, r.text.split("\n").some((l) => l.includes(value))]).toEqual([value, true]);
+    }
+    // e.g. the 13 Oct report broke "3.40 :" / "1 —" across two lines.
+    expect(r.text).not.toMatch(/ :\n1 /);
+  });
+
+  it("Arabic in a mixed line is laid out right to left between its quotes; the ratio and colours stay in place", async () => {
+    const r = await report(findings());
+    const drawn = (await drawnLines(r.bytes)).join("\n");
+    expect(drawn).toContain(`3.94 : 1 — "${TRAVEL_MART_DRAWN}" (#9E6F5E on #F7F5F0)`);
+    const drawn2 = (await drawnLines(r.bytes, 1)).join("\n");
+    expect(drawn2).toContain(`#9E6F5E — "${TRAVEL_MART_DRAWN}"`);
+  });
+
+  it("a Found line with only Arabic, digits and punctuation reads left to right — no reversed numbers, quotes or separators", async () => {
+    const arabicOnly = [
+      f("accessibility", "failed", "major", { title: "Text contrast", expected: "At least 4.5 : 1", detected: '3.94 : 1 — "ترافيل مارت"', suggestedFix: "Darken the text." }),
+      f("accessibility", "failed", "major", { title: "Text contrast", expected: "At least 4.5 : 1", detected: '2.10 : 1 — "عرض الصيف 20%"', suggestedFix: "Darken the text." }),
+      f("content", "passed"),
+    ];
+    const r = await report(arabicOnly);
+    expect(r.text).toContain('Found: 3.94 : 1 — "ترافيل مارت" · 2.10 : 1 — "عرض الصيف 20%"'); // the data, in order
+    const offer = [..."عرض الصيف"].reverse().join("");
+    // Before the fix this was drawn: Found:"<Arabic> 3.94 : 1 — " · 20%"<Arabic> 2.10 : 1 — "
+    // The number belongs to the Arabic phrase: drawn on its left, so it reads "عرض الصيف 20%" right to left.
+    expect((await drawnLines(r.bytes)).join("\n")).toContain(`Found: 3.94 : 1 — "${TRAVEL_MART_DRAWN}" · 2.10 : 1 — "20% ${offer}"`);
+  });
+
+  it("Arabic with numbers: a number after Arabic words is read with them; every number keeps its digits in order", async () => {
+    const rev = (t: string) => [...t].reverse().join("");
+    const r = await report([
+      f("brief", "failed", "major", { title: "Offer", expected: "x", detected: '"عرض الصيف 20%"', suggestedFix: "Fix." }),
+      f("brief", "failed", "major", { title: "Offer AR", expected: "x", detected: '"عرض ٢٠٪"', suggestedFix: "Fix." }),
+      f("brief", "failed", "major", { title: "Words", expected: "x", detected: '"خصم 20 بالمئة"', suggestedFix: "Fix." }),
+      f("content", "passed"),
+    ]);
+    const drawn = (await drawnLines(r.bytes)).join("\n");
+    expect(drawn).toContain(`Found: "20% ${rev("الصيف")} ${rev("عرض")}"`); // reads right to left: عرض الصيف 20%
+    expect(drawn).toContain(`Found: "٢٠٪ ${rev("عرض")}"`); // Arabic-Indic digits in order — before the fix, "٠٢"
+    expect(drawn).toContain(`Found: "${rev("بالمئة")} 20 ${rev("خصم")}"`); // reads: خصم 20 بالمئة
+  });
+
+  it("an item to verify stays with its group heading, its 'PLEASE VERIFY' tag and its note — wherever the page breaks", async () => {
+    const verify = f("brand", "unverified", "major", { title: "Logo placement", expected: "The company's logo", detected: "No logo", explanation: "Needs a human check: unsure." });
+    for (let n = 0; n < 16; n++) {
+      // n critical rows push the Major group (holding only the item to verify) down to every possible position.
+      const fillers = Array.from({ length: n }, (_, i) => f("brief", "failed", "critical", { title: `Filler ${i}`, expected: `AED ${i}00`, detected: `AED ${i}99`, suggestedFix: `Fix ${i}.` }));
+      const r = await report([...fillers, verify, f("content", "passed")]);
+      const pages = await pageTexts(r.bytes);
+      const at = (s: string) => pages.findIndex((p) => p.includes(s));
+      const title = at("Logo placement");
+      expect([n, at("1 to verify"), at("PLEASE VERIFY"), at('Please verify: Check the design for "The company\'s logo"')]).toEqual([n, title, title, title]);
+    }
+  });
+
+  it("the PDF and the website agree on every count, the score and the result", async () => {
+    const all = findings();
+    const r = await report(all);
+    const board = scoreFindings(all);
+    expect(r.data.issues).toEqual({ critical: 0, major: 9, minor: 22, suggestion: 0 });
+    expect(r.data.issues).toEqual(board.issues);
+    const lines = r.text.split("\n");
+    for (const c of ["0 Critical", "9 Major", "22 Minor", "0 Suggestions", "1 To verify", "34 Passed"]) expect(lines).toContain(c);
+    // Group headings carry the same numbers.
+    expect(r.text).toContain("CRITICAL\n1 to verify");
+    expect(r.text).toContain("MAJOR\n9");
+    expect(r.text).toContain("MINOR\n22");
+    expect([r.data.score, r.data.resultLabel]).toEqual([board.score, "NEEDS REVISION"]);
+    const { Scoreboard } = await import("@/components/qc/scoreboard");
+    const { createElement } = await import("react");
+    const { renderToStaticMarkup } = await import("react-dom/server");
+    const web = renderToStaticMarkup(createElement(Scoreboard, { board, findings: all }))
+      .replace(/<[^>]+>/g, " ").replace(/&#x27;/g, "'").replace(/&quot;/g, '"').replace(/&amp;/g, "&").replace(/\s+/g, " ");
+    expect(web).toContain("NEEDS REVISION");
+    expect(web).toContain(`${board.score} / 100`);
+    expect(web).toContain("31 Issues to fix 1 To verify 34 Checks passed"); // 9 major + 22 minor
+  });
+
+  it("malformed OCR text never breaks the layout and nothing visible is dropped", async () => {
+    const long = "ABCDEFGHIJ".repeat(40); // 400 characters, no spaces
+    const messy = [
+      f("brand", "failed", "minor", { title: "Text colour", expected: "A brand colour", detected: '#GGGGGG — "Bad​ colour‮ value"', suggestedFix: "Change it." }),
+      f("brand", "failed", "minor", { title: "Text colour", expected: "A brand colour", detected: 'rgb(12, 34, 56) — "line\nbreak\tand\u0007bell"', suggestedFix: "Change it." }),
+      f("content", "failed", "minor", { title: "Repeated word", expected: "once", detected: long, suggestedFix: "Remove it." }),
+      f("content", "passed"),
+    ];
+    const r = await report(messy);
+    expect(r.pages).toBe(1);
+    const text = flat(r.text);
+    expect(text).toContain('#GGGGGG — "Bad colour value"'); // invisible zero-width / direction marks removed, letters kept
+    expect(text).toContain('rgb(12, 34, 56) — "line break andbell"'); // a newline or tab becomes a space; a control character is removed
+    expect(r.text).not.toContain("?"); // no "?" placeholders for invisible characters
+    expect(r.text.replace(/\n/g, "")).toContain(long); // a value longer than a line wraps — every character kept
+  });
+});

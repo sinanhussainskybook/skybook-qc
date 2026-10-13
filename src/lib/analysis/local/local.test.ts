@@ -17,7 +17,9 @@ import { judgement } from "../../../../test/analysis-fixtures";
 
 /** The LOCAL provider (Local AI plan) — no models, no network: fakes on loopback only. */
 
-const ENV = { QC_LOCAL_MODELS_DIR: "C:/qc-models", QC_LOCAL_WHISPER_BIN: "C:/qc-models/whisper/whisper-cli.exe" };
+// An absolute folder on whichever system runs the tests (C:\qc-models on Windows, /qc-models on Linux CI).
+const MODELS_DIR = path.resolve("/qc-models");
+const ENV = { QC_LOCAL_MODELS_DIR: MODELS_DIR, QC_LOCAL_WHISPER_BIN: path.join(MODELS_DIR, "whisper", "whisper-cli.exe") };
 const cfg = (over: Record<string, string> = {}): LocalConfig => {
   const c = readLocalConfig({ ...ENV, ...over });
   if (!c.ok) throw new Error(c.error);

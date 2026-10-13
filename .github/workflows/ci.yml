@@ -1,0 +1,60 @@
+# Skybook AI QC — continuous integration.
+#
+# Runs the same checks as `npm run check` plus the production build, on every
+# push to main and on pull requests. Uses NO secrets and never touches the
+# production database: database tests run on PGlite (PostgreSQL in memory),
+# and the app builds without DATABASE_URL (see README).
+#
+# Railway's "Wait for CI" (service Settings) can hold a deploy until this
+# workflow passes; it needs the `push` trigger below.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# Read-only: this workflow never writes to the repository.
+permissions:
+  contents: read
+
+# A newer push to the same branch cancels the older, still-running check.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Typecheck, lint, test and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm test
+
+      - name: Production build
+        run: npm run build

@@ -19,7 +19,7 @@ vi.mock("@/lib/auth/current-user", () => ({ requireUser }));
 vi.mock("@/lib/db/company-config", () => ({ loadCompanyConfiguration }));
 vi.mock("@/lib/db/client", () => ({ getDatabase: () => ({}) }));
 vi.mock("@/lib/auth/actions", () => ({ signOutAction: vi.fn() }));
-vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }) }));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }), usePathname: () => "/" }));
 vi.mock("@/lib/qc/actions", () => ({ startSessionAction: vi.fn(async () => ({ ok: true })) }));
 vi.mock("@/lib/company/actions", () => ({
   createCompanyAction: vi.fn(),

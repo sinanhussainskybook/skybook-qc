@@ -41,7 +41,7 @@ vi.mock("@/lib/qc/actions", () => ({
   startAnalysisAction: vi.fn(),
   analysisStatusAction: vi.fn(),
 }));
-vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }), usePathname: () => "/" }));
 
 const { default: StartQcPage } = await import("@/app/companies/[companyId]/qc/new/page");
 

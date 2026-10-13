@@ -2,11 +2,13 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import { SkybookLogo } from "@/components/layout/skybook-mark";
 import { UserMenu } from "@/components/auth/user-menu";
+import { MainNav } from "@/components/layout/main-nav";
 import type { User } from "@/lib/db/users";
 
 /**
  * The frame every signed-in page sits in: the Skybook mark on the left, the
- * signed-in user and Sign out on the right, and the page below — nothing else.
+ * main navigation (Home, Add company, Users for admins) in the middle, the
+ * signed-in user and Sign out on the right, and the page below.
  *
  * The page passes in the user it got from requireUser(); the shell does no
  * checking of its own.
@@ -25,7 +27,10 @@ export function AppShell({
           <Link href="/" aria-label="Skybook AI QC, home" className="shrink-0 rounded-md transition-opacity hover:opacity-75">
             <SkybookLogo sub="AI QC" />
           </Link>
-          <div className="ml-auto">
+          <div className="flex flex-1 justify-center">
+            <MainNav role={user.role} />
+          </div>
+          <div className="shrink-0">
             <UserMenu user={user} />
           </div>
         </div>

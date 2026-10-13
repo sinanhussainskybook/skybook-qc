@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 
+const nav = vi.hoisted(() => ({ path: "/" }));
 vi.mock("@/lib/auth/actions", () => ({ signOutAction: vi.fn() }));
+vi.mock("next/navigation", () => ({ usePathname: () => nav.path }));
 const { AppShell } = await import("@/components/layout/app-shell");
 
 describe("AppShell", () => {
@@ -30,14 +32,40 @@ describe("AppShell", () => {
     expect(header).toContain("Sign out");
   });
 
-  it("links Users for an admin only (the page checks the role again on the server)", () => {
-    expect(html).toContain('href="/admin/users"');
-    const designer = renderToStaticMarkup(
-      <AppShell user={{ name: "Dee Designer", role: "designer" }}>
+  const render = (role: "admin" | "designer", path: string) => {
+    nav.path = path;
+    const out = renderToStaticMarkup(
+      <AppShell user={{ name: "Someone", role }}>
         <p>Page</p>
       </AppShell>
     );
+    return out.slice(out.indexOf('<nav aria-label="Main"'), out.indexOf("</nav>"));
+  };
+  const current = (navHtml: string) => navHtml.match(/<a [^>]*aria-current="page"[^>]*aria-label="([^"]+)"/)?.[1];
+
+  it("has the main navigation in the header: Home, Add company, and Users for admins only", () => {
+    const header = html.slice(html.indexOf("<header"), html.indexOf("</header>"));
+    expect(header).toContain('<nav aria-label="Main"');
+    const admin = render("admin", "/");
+    expect(admin).toContain('href="/"');
+    expect(admin).toContain('href="/companies/new"');
+    expect(admin).toContain('href="/admin/users"');
+    const designer = render("designer", "/");
+    expect(designer).toContain('href="/"');
+    expect(designer).toContain('href="/companies/new"');
     expect(designer).not.toContain('href="/admin/users"');
-    expect(designer).toContain('href="/account/password"');
+  });
+
+  it("marks the current page (Home also covers a company's pages)", () => {
+    expect(current(render("admin", "/"))).toBe("Home");
+    expect(current(render("admin", "/companies/0b6d0f0e-8c1a-4a57-9a4e-2a6f1d6c9e01/qc/new"))).toBe("Home");
+    expect(current(render("admin", "/companies/new"))).toBe("Add company");
+    expect(current(render("admin", "/admin/users"))).toBe("Users");
+    expect(current(render("admin", "/account/password"))).toBeUndefined();
+  });
+
+  it("no password link in the header (it's on the Users page)", () => {
+    expect(html).not.toContain('href="/account/password"');
+    expect(render("designer", "/")).not.toContain('href="/account/password"');
   });
 });

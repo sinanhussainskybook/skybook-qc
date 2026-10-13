@@ -159,19 +159,19 @@
     <div class="ring">
       <svg viewBox="0 0 120 120" aria-hidden="true">
         <circle cx="60" cy="60" r="52" fill="none" stroke="var(--track)" stroke-width="12"/>
-        <circle cx="60" cy="60" r="52" fill="none" stroke="var(--accent)" stroke-width="12" stroke-linecap="round" stroke-dasharray="270.2 326.7"/>
+        <circle cx="60" cy="60" r="52" fill="none" stroke="var(--accent)" stroke-width="12" stroke-linecap="round" stroke-dasharray="273.8 326.7"/>
       </svg>
-      <div class="ring-label"><div class="ring-pct num">83%</div><div class="ring-sub num">86 of 104 tasks</div></div>
+      <div class="ring-label"><div class="ring-pct num">84%</div><div class="ring-sub num">88 of 105 tasks</div></div>
     </div>
     <div>
       <h1>Simpler QC: upload the brief, upload the design, Check Design — and a report designers can scan.</h1>
-      <p class="summary-text">The app runs on Railway (web + worker) with Gemini. The latest work makes the result and PDF short and clear: one findings table by severity, “PASS — PLEASE VERIFY” with a short note on what to check, Golden Rules with the other issues, and the same mistake never shown or counted twice. Pushed to GitHub; the Railway deployment of it is still to confirm.</p>
+      <p class="summary-text">The app runs on Railway (web + worker) with Gemini. The latest work makes the result and PDF short and clear: one findings table by severity, “PASS — PLEASE VERIFY” with a short note on what to check, Golden Rules with the other issues, the same mistake never shown or counted twice, and Arabic text in the PDF in the right reading order. Pushed to GitHub and live on Railway.</p>
       <div class="checks">
-        <span class="check num">745 / 745 tests</span>
+        <span class="check num">752 / 752 tests</span>
         <span class="check">Typecheck</span>
         <span class="check">Lint · 0 warnings</span>
         <span class="check">Production build</span>
-        <span class="check">Pushed: 85e0447</span>
+        <span class="check">Pushed: 0894876</span>
         <span class="check">Hosted on Railway</span>
       </div>
     </div>
@@ -180,9 +180,9 @@
   <section class="now" aria-labelledby="now-title">
     <div class="now-head">
       <h3 id="now-title">Simpler QC and reports (8–13 Oct)</h3>
-      <span class="now-count num">6 of 8 steps done</span>
+      <span class="now-count num">8 of 9 steps done</span>
     </div>
-    <div class="bar" role="progressbar" aria-valuemin="0" aria-valuemax="8" aria-valuenow="6" aria-label="Steps done"><span style="width:75%"></span></div>
+    <div class="bar" role="progressbar" aria-valuemin="0" aria-valuemax="9" aria-valuenow="8" aria-label="Steps done"><span style="width:89%"></span></div>
     <ol class="steps">
       <li class="step done"><span class="dot"></span><span class="what">The brief is read automatically; QC runs only against the requirements confirmed from it</span><span class="who claude">Claude</span></li>
       <li class="step done"><span class="dot"></span><span class="what">Three-step flow: upload brief, upload design, Check Design</span><span class="who claude">Claude</span></li>
@@ -190,12 +190,13 @@
       <li class="step done"><span class="dot"></span><span class="what">Rule of Thirds: a centred composition is no longer flagged; still only a suggestion — pushed <code>8da515d</code></span><span class="who claude">Claude</span></li>
       <li class="step done"><span class="dot"></span><span class="what">Compact PDF (Severity | Issue | Suggested fix), <code>PASS — PLEASE VERIFY</code>, Golden Rules with the issues, settings missing vs not checked</span><span class="who claude">Claude</span></li>
       <li class="step done"><span class="dot"></span><span class="what">Duplicates merged: Golden Rule + brief, brief + contact details, company name + terms — shown and counted once — pushed <code>85e0447</code></span><span class="who claude">Claude</span></li>
-      <li class="step current"><span class="dot"></span><span class="what">Confirm Railway deployed <code>85e0447</code> (Deployments tab: Success, web and worker)</span><span class="who you">You</span></li>
-      <li class="step"><span class="dot"></span><span class="what">Password-reset tool (<code>npm run user:reset-password</code>) — built locally, not committed: keep it?</span><span class="who you">You</span></li>
+      <li class="step done"><span class="dot"></span><span class="what">Arabic in the PDF reads correctly: whole-paragraph direction, numbers and Arabic-Indic digits in order, values kept on one line, no “?” from hidden characters — pushed <code>0894876</code></span><span class="who claude">Claude</span></li>
+      <li class="step done"><span class="dot"></span><span class="what">Railway deployed <code>0894876</code> — Success, web and worker</span><span class="who you">You</span></li>
+      <li class="step current"><span class="dot"></span><span class="what">Password-reset tool (<code>npm run user:reset-password</code>) — built locally, not committed: keep it?</span><span class="who you">You</span></li>
     </ol>
     <div class="turn" role="note">
       <span aria-hidden="true">→</span>
-      <p><strong>Next:</strong> confirm the Railway deployment, decide on the password-reset tool, then the wrong-price live run (it should now read “Please verify”, not FAIL) and the rest of Phase 9.</p>
+      <p><strong>Next:</strong> decide on the password-reset tool, then the wrong-price live run (it should now read “Please verify”, not FAIL) and the rest of Phase 9.</p>
     </div>
   </section>
 
@@ -275,6 +276,8 @@
   <section class="section" aria-labelledby="history-title">
     <h2 id="history-title">History</h2>
     <ol class="history">
+      <li><span class="date">13 Oct 2026</span><span class="rail"></span><span class="event">Railway deployed 0894876 (web + worker): the Arabic PDF fix is live</span></li>
+      <li><span class="date">13 Oct 2026</span><span class="rail"></span><span class="event">Arabic in the PDF report fixed: right reading order for words, numbers, Arabic-Indic digits and percentages; Found values kept whole; 7 regression tests — pushed (0894876)</span></li>
       <li><span class="date">13 Oct 2026</span><span class="rail"></span><span class="event">QC report and results simplified; “PASS — PLEASE VERIFY”; Golden Rules with the issues; duplicate findings shown and counted once — pushed (85e0447)</span></li>
       <li><span class="date">12 Oct 2026</span><span class="rail"></span><span class="event">Rule of Thirds: centred compositions no longer flagged — pushed (8da515d)</span></li>
       <li><span class="date">12 Oct 2026</span><span class="rail"></span><span class="event">Interface redesigned; QC result and PDF simplified (271c9a3)</span></li>

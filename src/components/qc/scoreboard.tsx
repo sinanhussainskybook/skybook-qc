@@ -1,7 +1,7 @@
 import { ChevronDown, FileDown } from "lucide-react";
 import { buttonVariants } from "@/components/ui/button";
-import { isHumanCheck } from "@/lib/analysis/policy";
 import { CATEGORIES, severityLabel, type Finding, type Severity } from "@/lib/qc/findings";
+import { alsoCoversText, alsoNote, isGoldenRule, needsVerifying, NOT_CHECKED, ruleName, splitNotChecked, verifyNote } from "@/lib/qc/golden-rules-view";
 import { RESULT_DISPLAY_LABEL, RESULT_DISPLAY_SUMMARY, resultDisplay, type ResultDisplay, type Scoreboard as Board } from "@/lib/qc/scoring";
 import { cn } from "@/lib/utils";
 
@@ -30,8 +30,9 @@ const short = (text: string | undefined, max = 140) => (text && text.length > ma
 /**
  * The QC result (Phase 7), readable in seconds: the result in large type and
  * the score, one line of counts, the PDF download, then what to fix (each
- * issue: what's wrong → how to fix it), the items that need a human check,
- * and the passed checks (collapsed). Display only — the findings, scoring and
+ * issue: what's wrong → how to fix it; a broken Golden Rule is one of them,
+ * marked Mandatory / Optional), the items to verify by eye, and the passed
+ * checks (collapsed; followed Golden Rules aren't listed). Display only — the findings, scoring and
  * result are computed elsewhere and unchanged; every check's full detail stays
  * in "All checks in detail" further down the page.
  */
@@ -43,8 +44,12 @@ export function Scoreboard({ board, findings = [], mock = false, reportHref }: {
   const style = RESULT_STYLE[shown];
   const toFix = board.counting.filter((f) => f.severity !== "suggestion");
   const suggestions = board.counting.filter((f) => f.severity === "suggestion");
-  const human = findings.filter(isHumanCheck);
+  const toVerify = findings.filter(needsVerifying);
   const passed = findings.filter((f) => f.status === "passed");
+  // Followed Golden Rules are counted as passed, not listed.
+  const passedList = passed.filter((f) => !isGoldenRule(f));
+  // What couldn't be checked: missing company settings, and design checks that couldn't be confirmed.
+  const unchecked = splitNotChecked(findings.filter((f) => f.status === "unverified" && !needsVerifying(f)));
 
   return (
     <div className="space-y-10">
@@ -67,7 +72,7 @@ export function Scoreboard({ board, findings = [], mock = false, reportHref }: {
 
         <ul className="mt-6 flex flex-wrap gap-x-6 gap-y-2 text-sm" aria-label="At a glance">
           <Count n={toFix.length} label="Issues to fix" dot={toFix.length ? style.dot : "bg-border"} />
-          <Count n={human.length} label={human.length === 1 ? "Human check" : "Human checks"} dot={human.length ? "bg-revision" : "bg-border"} />
+          <Count n={toVerify.length} label="To verify" dot={toVerify.length ? "bg-revision" : "bg-border"} />
           <Count n={passed.length} label={passed.length === 1 ? "Check passed" : "Checks passed"} dot="bg-pass" />
         </ul>
 
@@ -103,8 +108,9 @@ export function Scoreboard({ board, findings = [], mock = false, reportHref }: {
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                     <span className={cn("rounded-full px-2.5 py-0.5 text-xs font-semibold", SEVERITY_STYLE[f.severity])}>{severityLabel(f.severity)}</span>
-                    <span className="font-semibold">{titleOf(f.title)}</span>
-                    <span className="text-xs text-muted-foreground">{categoryLabel(f.category)}</span>
+                    <span className="font-semibold">{nameOf(f)}</span>
+                    <span className="text-xs text-muted-foreground">{whereOf(f)}</span>
+                    <Marker f={f} />
                   </div>
                   <dl className="mt-2 grid gap-x-4 gap-y-1 text-sm sm:grid-cols-[4.5rem_1fr]">
                     {f.detected && (
@@ -120,6 +126,7 @@ export function Scoreboard({ board, findings = [], mock = false, reportHref }: {
                       </>
                     )}
                   </dl>
+                  <AlsoNote f={f} />
                 </div>
               </li>
             ))}
@@ -130,7 +137,7 @@ export function Scoreboard({ board, findings = [], mock = false, reportHref }: {
             <ul className="space-y-1.5 text-sm">
               {suggestions.map((f, i) => (
                 <li key={`${f.ruleId}-${i}`}>
-                  <span className="font-medium">{f.title}</span>
+                  <span className="font-medium">{nameOf(f)}</span>
                   {f.suggestedFix && <span className="text-muted-foreground"> — {short(f.suggestedFix, 110)}</span>}
                 </li>
               ))}
@@ -139,35 +146,38 @@ export function Scoreboard({ board, findings = [], mock = false, reportHref }: {
         )}
       </section>
 
-      {/* 3 — human checks */}
-      {human.length > 0 && (
-        <section aria-labelledby="human-checks">
-          <Heading id="human-checks">Human checks</Heading>
-          <p className="mt-2 text-sm text-muted-foreground">The AI wasn&apos;t sure about these. They don&apos;t count for or against the result — look at each one before sending.</p>
+      {/* 3 — items to verify by eye */}
+      {toVerify.length > 0 && (
+        <section aria-labelledby="items-to-verify">
+          <Heading id="items-to-verify">Items to verify</Heading>
+          <p className="mt-2 text-sm text-muted-foreground">Please check these by eye before sending. They don&apos;t count for or against the result.</p>
           <ul className="mt-2 divide-y divide-border">
-            {human.map((f, i) => (
+            {toVerify.map((f, i) => (
               <li key={`${f.ruleId}-${i}`} className="py-4">
                 <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                  <span className={cn("rounded-full px-2.5 py-0.5 text-xs font-semibold", f.severity === "critical" ? "bg-fail-soft text-fail" : "bg-revision-soft text-revision")}>
-                    {f.severity === "critical" ? "Possible critical" : severityLabel(f.severity)}
-                  </span>
-                  <span className="font-semibold">{titleOf(f.title)}</span>
-                  <span className="text-xs text-muted-foreground">{categoryLabel(f.category)}</span>
+                  <span className={cn("rounded-full px-2.5 py-0.5 text-xs font-semibold", SEVERITY_STYLE[f.severity])}>{severityLabel(f.severity)}</span>
+                  <span className="rounded-full bg-revision-soft px-2.5 py-0.5 text-xs font-semibold text-revision">Please verify</span>
+                  <span className="font-semibold">{nameOf(f)}</span>
+                  <span className="text-xs text-muted-foreground">{whereOf(f)}</span>
+                  <Marker f={f} />
                 </div>
                 <dl className="mt-2 grid gap-x-4 gap-y-1 text-sm sm:grid-cols-[4.5rem_1fr]">
-                  {f.expected && (
+                  {f.expected && f.expected !== ruleName(f.title) && (
                     <>
-                      <dt className="text-muted-foreground">Should be</dt>
+                      <dt className="text-muted-foreground">Expected</dt>
                       <dd className="min-w-0 break-words">{short(f.expected)}</dd>
                     </>
                   )}
-                  {f.detected && (
+                  {f.detected && f.detected !== "Not checked" && (
                     <>
-                      <dt className="text-muted-foreground">AI read</dt>
+                      <dt className="text-muted-foreground">Found</dt>
                       <dd className="min-w-0 break-words">{short(f.detected)}</dd>
                     </>
                   )}
+                  <dt className="font-medium text-revision">Check</dt>
+                  <dd className="min-w-0 break-words">{verifyNote(f)}</dd>
                 </dl>
+                <AlsoNote f={f} toVerify />
               </li>
             ))}
           </ul>
@@ -182,7 +192,7 @@ export function Scoreboard({ board, findings = [], mock = false, reportHref }: {
         ) : (
           <Collapsed summary={`✓ ${passed.length} check${passed.length === 1 ? "" : "s"} passed`} summaryClass="text-pass">
             <ul className="grid gap-x-6 gap-y-1 text-sm sm:grid-cols-2">
-              {passed.map((f, i) => (
+              {passedList.map((f, i) => (
                 <li key={`${f.ruleId}-${f.fileId ?? ""}-${i}`} className="min-w-0 truncate">
                   <span className="text-muted-foreground">{categoryLabel(f.category)} · </span>
                   {f.title}
@@ -191,9 +201,37 @@ export function Scoreboard({ board, findings = [], mock = false, reportHref }: {
             </ul>
           </Collapsed>
         )}
+        {(["settings", "auto"] as const).map((kind) =>
+          unchecked[kind].length ? (
+            <p key={kind} className="mt-3 text-sm">
+              <span className="font-semibold">
+                {NOT_CHECKED[kind].label} ({unchecked[kind].length}):
+              </span>{" "}
+              {unchecked[kind].map((f) => `${nameOf(f)}${isGoldenRule(f) ? " (Golden Rule)" : ""}`).join(" · ")}
+              <span className="text-muted-foreground"> — {NOT_CHECKED[kind].note}</span>
+            </p>
+          ) : null
+        )}
       </section>
     </div>
   );
+}
+
+/** A Golden Rule by its rule ("Always use Book now"); anything else by its title. */
+const nameOf = (f: Finding) => (isGoldenRule(f) ? ruleName(f.title) : titleOf(f.title));
+/** "Golden Rule" for a company rule, otherwise the check's category. */
+const whereOf = (f: Finding) => (isGoldenRule(f) ? "Golden Rule" : categoryLabel(f.category));
+
+/** A merged finding's one line — the same words as the PDF ("Also required by the brief — counted once."). */
+function AlsoNote({ f, toVerify = false }: { f: Finding; toVerify?: boolean }) {
+  const also = alsoCoversText(f, categoryLabel);
+  return also ? <p className="mt-2 text-sm text-muted-foreground">{alsoNote(also, toVerify)}</p> : null;
+}
+
+/** Mandatory / Optional, for a Golden Rule. */
+function Marker({ f }: { f: Finding }) {
+  if (!isGoldenRule(f) || f.mandatory === undefined) return null;
+  return <span className="rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground">{f.mandatory ? "Mandatory" : "Optional"}</span>;
 }
 
 /** Score by category — moved out of the summary into "All checks in detail". */
@@ -219,7 +257,7 @@ export function CategoryScores({ board }: { board: Board }) {
                 <td className="px-4 py-2 tabular-nums">{c.score === null ? <span className="text-muted-foreground">Not checked</span> : c.score}</td>
                 <td className="px-4 py-2">{issues.length ? issues.map((s) => `${c.issues[s]} ${severityLabel(s).toLowerCase()}`).join(", ") : <span className="text-muted-foreground">None</span>}</td>
                 <td className="px-4 py-2 text-muted-foreground">
-                  {[c.humanChecks ? `${c.humanChecks} need a human check` : "", c.notVerified ? `${c.notVerified} not verified` : ""].filter(Boolean).join(", ") || "—"}
+                  {[c.humanChecks ? `${c.humanChecks} to verify` : "", c.notVerified ? `${c.notVerified} not verified` : ""].filter(Boolean).join(", ") || "—"}
                 </td>
               </tr>
             );

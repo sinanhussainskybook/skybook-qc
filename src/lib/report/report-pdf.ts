@@ -2,26 +2,31 @@ import { LineCapStyle, PDFDocument, rgb, type PDFImage, type PDFPage, type RGB }
 import type { ReportData, ReportItem } from "@/lib/report/report-data";
 import { loadReportFonts, reportFaces, type Face, type FontFiles } from "@/lib/report/report-fonts";
 import { resultDisplay } from "@/lib/qc/scoring";
+import { alsoNote, NOT_CHECKED, splitNotChecked, verifyNote } from "@/lib/qc/golden-rules-view";
 
 /**
  * Draws the QC report (Phase 8) as an A4 PDF with pdf-lib — pure
  * JavaScript, no native parts, so it runs the same on the production
  * server. Built in memory on download; nothing is written to disk or stored.
  *
- * A short document, not a dashboard — usually one or two pages:
- *   QC summary      company, date, design file; the result in large type and
- *                   the score; one line of counts
- *   What to fix first / Other issues
- *                   compact rows: the issue | what was found | how to fix it.
- *                   Repeats of the same issue (same severity, check, place,
- *                   expected value and fix) share one row with every value
- *                   found; anything else is its own row. Each issue appears once.
- *   Check summary   always shown, even on a PASS: Passed · Needs human review ·
- *                   Not verified, each in its own colour, with the brief's
- *                   requirements in the right one
- * Every row is kept together (never split across pages) and a heading is
- * never left at the bottom of a page without its first row. Presentation
- * only: the data is exactly ReportData.
+ * Short and scannable — one page for a simple report, two with many findings:
+ *   Header          a blue band with the Skybook mark and "AI Design QC
+ *                   Report"; company, design file and report date; the
+ *                   result in large type with the score in a ring; one line
+ *                   of counts (issues, to verify, passed)
+ *   Findings        one table — Severity | Issue | Suggested fix — grouped
+ *                   Critical · Major · Minor · Suggestions. A broken Golden
+ *                   Rule is one of them (marked Golden Rule, Mandatory /
+ *                   Optional); followed rules aren't listed. Anything a person
+ *                   has to look at sits beside the issues of its severity with
+ *                   a short "Please verify" note — never its own section;
+ *                   Expected / Found inside the issue when there is
+ *                   something to compare. Repeats of the same issue share a
+ *                   row with every value found.
+ *   In short        passed as a count; what couldn't be verified, by name
+ * A row never splits across pages, and when the table continues on a new
+ * page its column headings are repeated. Presentation only: the data is
+ * exactly ReportData.
  *
  * Text uses embedded Noto Sans + Noto Sans Arabic (report-fonts.ts), so
  * Arabic is readable. A character no font has is shown as "?", and if the
@@ -45,6 +50,7 @@ const C = {
   line: hex("#e2e8f0"),
   brand: hex("#1a64b4"),
   white: hex("#ffffff"),
+  wash: hex("#f8fafc"),
 };
 
 type Tone = { strong: RGB; soft: RGB };
@@ -56,17 +62,6 @@ const TONE = {
   human: { strong: hex("#6d28d9"), soft: hex("#f2edfd") },
   grey: { strong: hex("#64748b"), soft: hex("#f1f5f9") },
 } satisfies Record<string, Tone>;
-
-/** One colour per severity, used the same way everywhere. */
-const SEVERITY_TONE: Record<string, Tone> = {
-  Critical: TONE.critical,
-  "Possible critical": TONE.critical,
-  Major: TONE.major,
-  Minor: TONE.minor,
-  Suggestion: TONE.grey,
-  "Not verified": TONE.grey,
-};
-const toneOf = (severity: string) => SEVERITY_TONE[severity] ?? TONE.grey;
 
 const RESULT_TONE: Record<string, Tone> = {
   pass: TONE.pass,
@@ -278,93 +273,226 @@ export function groupRelated(items: ReportItem[]): Related[] {
   return [...out.values()];
 }
 
-/** A small rounded tag; returns its width. (x, y) = bottom-left. */
-function tag(d: Doc, text: string, x: number, y: number, tone: Tone, size = 6.6): number {
-  const label = d.clean(text.toUpperCase());
-  const w = d.font(true).width(label, size) + 10;
-  const h = size + 6;
-  const r = h / 2;
-  const path = `M ${r} 0 H ${w - r} A ${r} ${r} 0 0 1 ${w - r} ${h} H ${r} A ${r} ${r} 0 0 1 ${r} 0 Z`;
-  d.page.drawSvgPath(path, { x, y: y + h, color: tone.soft });
-  d.write(label, x + 5, y + 3.5, size, { bold: true, color: tone.strong });
-  return w;
+/** A rounded rectangle; (x, top) is its top-left corner. */
+function roundRect(d: Doc, x: number, top: number, w: number, h: number, r: number, o: { fill: RGB; border?: RGB }) {
+  const path = `M ${r} 0 H ${w - r} A ${r} ${r} 0 0 1 ${w} ${r} V ${h - r} A ${r} ${r} 0 0 1 ${w - r} ${h} H ${r} A ${r} ${r} 0 0 1 0 ${h - r} V ${r} A ${r} ${r} 0 0 1 ${r} 0 Z`;
+  d.page.drawSvgPath(path, { x, y: top, color: o.fill, ...(o.border ? { borderColor: o.border, borderWidth: 0.7 } : {}) });
+}
+
+/** The score out of 100 as a ring — the share of the ring in the result's colour — with the number inside. */
+function scoreRing(d: Doc, score: number, cx: number, cy: number, r: number, width: number, tone: Tone, numberSize = 19) {
+  d.page.drawCircle({ x: cx, y: cy, size: r, borderColor: C.line, borderWidth: width });
+  const share = Math.max(0, Math.min(100, score)) / 100;
+  if (share >= 1) d.page.drawCircle({ x: cx, y: cy, size: r, borderColor: tone.strong, borderWidth: width });
+  else if (share > 0) {
+    // Clockwise from the top (SVG y points down).
+    const a = share * 2 * Math.PI;
+    const ex = r * Math.sin(a);
+    const ey = -r * Math.cos(a);
+    d.page.drawSvgPath(`M 0 ${-r} A ${r} ${r} 0 ${share > 0.5 ? 1 : 0} 1 ${ex.toFixed(2)} ${ey.toFixed(2)}`, {
+      x: cx,
+      y: cy,
+      borderColor: tone.strong,
+      borderWidth: width,
+      borderLineCap: LineCapStyle.Round,
+    });
+  }
+  const n = String(score);
+  d.write(n, cx - d.width(n, numberSize, true) / 2, cy - numberSize * 0.12, numberSize, { bold: true });
+  d.write("/ 100", cx - d.width("/ 100", 7.5) / 2, cy - numberSize * 0.12 - 13, 7.5, { color: C.muted });
 }
 
 /** A section heading, kept with the first `follow` points of what comes after it. */
-function heading(d: Doc, title: string, count: number | null, follow: number) {
-  d.ensure(30 + follow);
+function heading(d: Doc, title: string, count: number | null, follow: number, color: RGB = C.brand) {
+  d.ensure(32 + follow);
   if (d.y < TOP - 30) d.y -= 8;
-  d.write(title, M, d.y - 13, 12.5, { bold: true });
-  if (count !== null) d.write(String(count), M + d.width(title, 12.5, true) + 7, d.y - 13, 9, { color: C.muted });
+  const w = tracked(d, title.toUpperCase(), M, d.y - 12, 10.5, 1.1, color);
+  if (count !== null) d.write(String(count), M + w + 6, d.y - 12, 9, { bold: true, color: C.muted });
+  d.page.drawLine({ start: { x: M, y: d.y - 17 }, end: { x: PAGE.width - M, y: d.y - 17 }, thickness: 0.6, color: C.line });
   d.y -= 22;
 }
 
-// Issue rows: three columns — the issue, what was found, how to fix it.
-const NUM_W = 18;
-const GAP = 12;
-const ISSUE_W = 178;
-const FOUND_W = 150;
-const FIX_W = W - NUM_W - ISSUE_W - FOUND_W - GAP * 2;
-const colX = { issue: M + NUM_W, found: M + NUM_W + ISSUE_W + GAP, fix: M + NUM_W + ISSUE_W + GAP + FOUND_W + GAP };
-
-/** The small column labels above a list of rows (kept with its first row). */
-function columnLabels(d: Doc, labels: [string, string, string], follow: number) {
-  d.ensure(14 + follow);
-  d.write(labels[0], colX.issue, d.y - 7, 6.3, { bold: true, color: C.muted });
-  d.write(labels[1], colX.found, d.y - 7, 6.3, { bold: true, color: C.muted });
-  d.write(labels[2], colX.fix, d.y - 7, 6.3, { bold: true, color: C.muted });
-  d.y -= 12;
+/** Bold text drawn with extra space between letters; returns its width. Recorded as plain text. */
+function tracked(d: Doc, text: string, x: number, baseline: number, size: number, spacing: number, color: RGB): number {
+  let cx = x;
+  for (const ch of d.clean(text)) {
+    d.font(true).draw(d.page, ch, { x: cx, y: baseline, size, color });
+    cx += d.font(true).width(ch, size) + spacing;
+  }
+  d.lines.push(d.clean(text));
+  return cx - x - spacing;
 }
 
-type RowLabels = { expected: string; found: string };
+// Findings as ONE compact table — Severity | Issue | Suggested fix — grouped by
+// severity under a thin divider row. A row never splits; when the table continues
+// on a new page its column headings are repeated.
+type Col = { label: string; width: number };
+const PAD = 6; // inside each cell, left and right
+const ROW_PAD = 6; // above and below each row's text
+const HEAD_H = 19;
+const COLS: Col[] = [
+  { label: "Severity", width: 82 },
+  { label: "Issue", width: 250 },
+  { label: "Suggested fix", width: W - 82 - 250 },
+];
 
-/** Lays out one row (no drawing) — so its height is known before it is placed. */
-function layRow(d: Doc, g: Related, o: { labels: RowLabels; third: "fix" | "why" }) {
-  const it = g.item;
-  // The severity tag sits beside the title; where it is and why go underneath.
-  const tagW = d.font(true).width(d.clean(it.severity.toUpperCase()), 6.6) + 10;
-  const title = d.lay([{ spans: [{ text: `${displayTitle(it.title)}${g.count > 1 ? ` (${g.count})` : ""}`, bold: true }], size: 9.6 }], ISSUE_W - tagW - 6);
-  const under = d.lay(
-    [
-      { spans: [{ text: [it.category, it.file].filter(Boolean).join(" · "), color: C.muted }], size: 7.8, gapBefore: 0 },
-      // The reason, unless it is the third column.
-      ...(o.third === "fix" ? g.reasons.map((r) => ({ spans: [{ text: r, color: C.text }], size: 8, gapBefore: 3 })) : []),
-    ],
-    ISSUE_W
-  );
-  const foundBlocks: Block[] = [];
-  for (const p of g.pairs) {
-    if (p.expected) foundBlocks.push({ spans: [{ text: `${o.labels.expected}:`, bold: true, color: C.muted }, { text: p.expected, color: C.ink }], size: 8.2, gapBefore: foundBlocks.length ? 4 : 0 });
-    if (p.found.length) {
-      const spans: Span[] = [{ text: `${o.labels.found}:`, bold: true, color: C.muted }];
-      p.found.forEach((v, i) => spans.push(...(i ? [{ text: "·", color: C.muted }] : []), { text: v, color: C.ink }));
-      foundBlocks.push({ spans, size: 8.2, gapBefore: p.expected ? 1 : foundBlocks.length ? 4 : 0 });
+type TableRow = { cells: Block[][] };
+/** `count`: how many findings (a row can hold several repeats of one issue) — the same number as the counts at the top. */
+type TableGroup = { title: string; tone: Tone; count: number; verify?: number; rows: TableRow[] };
+type LaidRow = { cells: { laid: Laid[]; height: number }[]; h: number };
+
+function layRow(d: Doc, cells: Block[][]): LaidRow {
+  const laid = cells.map((blocks, i) => d.lay(blocks.length ? blocks : [{ spans: [{ text: "—", color: C.muted }], size: 8.6 }], COLS[i].width - PAD * 2));
+  return { cells: laid, h: Math.max(...laid.map((c) => c.height)) + ROW_PAD * 2 };
+}
+
+/** The column headings on a light band. */
+function tableHead(d: Doc) {
+  d.page.drawRectangle({ x: M, y: d.y - HEAD_H, width: W, height: HEAD_H, color: C.wash });
+  d.page.drawLine({ start: { x: M, y: d.y - HEAD_H }, end: { x: PAGE.width - M, y: d.y - HEAD_H }, thickness: 0.6, color: C.line });
+  let x = M;
+  for (const c of COLS) {
+    d.write(c.label.toUpperCase(), x + PAD, d.y - 12.5, 6.8, { bold: true, color: C.muted });
+    x += c.width;
+  }
+  d.y -= HEAD_H;
+}
+
+const DIVIDER_H = 18;
+/** A thin divider row naming the severity group and how many. */
+function groupDivider(d: Doc, g: TableGroup) {
+  d.page.drawRectangle({ x: M, y: d.y - DIVIDER_H, width: W, height: DIVIDER_H, color: g.tone.soft });
+  const w = tracked(d, g.title.toUpperCase(), M + PAD, d.y - 12, 7.2, 1, g.tone.strong);
+  // "7" alone; with items to verify, both said in words: "2 issues · 2 to verify".
+  const n = g.verify ? [g.count ? `${g.count} ${g.count === 1 ? "issue" : "issues"}` : "", `${g.verify} to verify`].filter(Boolean).join(" · ") : String(g.count);
+  d.write(n, M + PAD + w + 6, d.y - 12, 7.2, { bold: true, color: C.muted });
+  d.y -= DIVIDER_H;
+}
+
+/**
+ * The table under a heading. The heading, the column headings, the first group's
+ * divider and its first row stay together; each divider stays with its first row.
+ */
+function findingsTable(d: Doc, title: string, groups: TableGroup[], o: { heading?: boolean; dividers?: boolean } = {}) {
+  const dividers = o.dividers ?? true;
+  const laid = groups.map((g) => ({ g, rows: g.rows.map((r) => layRow(d, r.cells)) }));
+  const first = HEAD_H + (dividers ? DIVIDER_H : 0) + (laid[0]?.rows[0]?.h ?? 0);
+  if (o.heading ?? true) heading(d, title, null, first);
+  else d.ensure(first);
+  tableHead(d);
+  const continueOnNewPage = () => {
+    d.newPage();
+    tracked(d, `${title} (continued)`.toUpperCase(), M, d.y - 9, 7.5, 1.1, C.brand);
+    d.y -= 16;
+    tableHead(d);
+  };
+  for (const { g, rows } of laid) {
+    if (dividers) {
+      if (d.y - DIVIDER_H - (rows[0]?.h ?? 0) < BOTTOM) continueOnNewPage();
+      groupDivider(d, g);
+    }
+    for (const row of rows) {
+      if (d.y - row.h < BOTTOM) continueOnNewPage();
+      let x = M;
+      row.cells.forEach((cell, i) => {
+        d.draw(cell.laid, x + PAD, d.y - ROW_PAD + 2);
+        x += COLS[i].width;
+      });
+      d.y -= row.h;
+      d.page.drawLine({ start: { x: M, y: d.y }, end: { x: PAGE.width - M, y: d.y }, thickness: 0.4, color: C.line });
     }
   }
-  const found = d.lay(foundBlocks.length ? foundBlocks : [{ spans: [{ text: "—", color: C.muted }], size: 8.2 }], FOUND_W);
-  const thirdBlocks: Block[] =
-    o.third === "fix"
-      ? g.fixes.map((f, i) => ({ spans: [{ text: f, bold: true, color: C.ink }], size: 8.6, gapBefore: i ? 3 : 0 }))
-      : g.reasons.map((r, i) => ({ spans: [{ text: r, color: C.text }], size: 8, gapBefore: i ? 3 : 0 }));
-  const third = d.lay(thirdBlocks.length ? thirdBlocks : [{ spans: [{ text: "—", color: C.muted }], size: 8.6 }], FIX_W);
-  const head = Math.max(title.height, 14);
-  const h = 6 + Math.max(head + 1 + under.height, found.height, third.height) + 8;
-  return { tagW, title, under, head, found, third, h };
+  d.y -= 8;
 }
 
-/** One row, kept together; a hairline above it. */
-function row(d: Doc, g: Related, o: { index?: number; tone?: Tone; labels: RowLabels; third: "fix" | "why" }) {
-  const laid = layRow(d, g, o);
-  d.ensure(laid.h);
-  const top = d.y;
-  d.page.drawLine({ start: { x: M, y: top }, end: { x: PAGE.width - M, y: top }, thickness: 0.4, color: C.line });
-  if (o.index !== undefined) d.write(String(o.index), M, top - 14.5, 10, { bold: true, color: C.brand });
-  tag(d, g.item.severity, colX.issue, top - 17.5, o.tone ?? toneOf(g.item.severity));
-  d.draw(laid.title.laid, colX.issue + laid.tagW + 6, top - 4);
-  d.draw(laid.under.laid, colX.issue, top - 5 - laid.head);
-  d.draw(laid.found.laid, colX.found, top - 5);
-  d.draw(laid.third.laid, colX.fix, top - 5);
-  d.y = top - laid.h;
+const MANDATORY = /\bmandatory\b/i;
+
+/** Every value found: joined with "·" so a long list wraps compactly. */
+function valueSpans(values: string[]): Span[] {
+  const spans: Span[] = [];
+  values.forEach((v, i) => spans.push(...(i ? [{ text: "·", color: C.muted }] : []), { text: v, color: C.ink }));
+  return spans;
+}
+
+/** The severity cell: the severity in its colour, and a Mandatory / Optional marker when there is one. */
+function severityCell(label: string, tone: Tone, marker: string | null): Block[] {
+  const cell: Block[] = [{ spans: [{ text: label.toUpperCase(), bold: true, color: tone.strong }], size: 7.4 }];
+  if (marker) cell.push({ spans: [{ text: marker.toUpperCase(), bold: true, color: marker === "Mandatory" ? TONE.critical.strong : C.muted }], size: 6.6, gapBefore: 3 });
+  return cell;
+}
+
+/**
+ * One issue row: severity (+ Mandatory / Optional) | what the issue is, where,
+ * and — when there is something to compare — what was expected and found | the fix.
+ */
+function issueRow(g: Related, tone: Tone): TableRow {
+  const it = g.item;
+  const marker = it.marker ?? (MANDATORY.test(it.explanation) ? "Mandatory" : null);
+  const issue: Block[] = [{ spans: [{ text: `${displayTitle(it.title)}${g.count > 1 ? ` (${g.count})` : ""}`, bold: true }], size: 9 }];
+  const where = [it.marker ? "Golden Rule" : it.category, it.file].filter(Boolean).join(" · ");
+  if (where) issue.push({ spans: [{ text: where, color: C.muted }], size: 7.6, gapBefore: 1 });
+  for (const p of g.pairs) {
+    if (p.expected && p.found.length) issue.push({ spans: [{ text: "Expected:", bold: true, color: C.muted }, { text: p.expected, color: C.ink }], size: 8.2, gapBefore: 3 });
+    if (p.found.length) issue.push({ spans: [{ text: "Found:", bold: true, color: C.muted }, ...valueSpans(p.found)], size: 8.2, gapBefore: p.expected ? 1 : 3 });
+  }
+  if (it.alsoCovers) issue.push({ spans: [{ text: alsoNote(it.alsoCovers), color: C.muted }], size: 7.6, gapBefore: 3 });
+  const fix: Block[] = g.fixes.map((f, i) => ({ spans: [{ text: f, bold: true }], size: 8.6, gapBefore: i ? 3 : 0 }));
+  return { cells: [severityCell(it.severity, tone, marker), issue, fix] };
+}
+
+/**
+ * Something a person has to look at, beside the issues of its severity: what it
+ * is, what was expected and found, and a short "Please verify" note saying why
+ * — never a separate section, never counted.
+ */
+function verifyRow(g: Related, tone: Tone, severity: string): TableRow {
+  const it = g.item;
+  const issue: Block[] = [{ spans: [{ text: `${displayTitle(it.title)}${g.count > 1 ? ` (${g.count})` : ""}`, bold: true }], size: 9 }];
+  const where = [it.marker ? "Golden Rule" : it.category, it.file].filter(Boolean).join(" · ");
+  issue.push({ spans: [{ text: where, color: C.muted }], size: 7.6, gapBefore: 1 });
+  for (const p of g.pairs) {
+    const found = p.found.filter((v) => v !== "Not checked");
+    if (p.expected && p.expected !== it.title) issue.push({ spans: [{ text: "Expected:", bold: true, color: C.muted }, { text: p.expected, color: C.ink }], size: 8.2, gapBefore: 3 });
+    if (found.length) issue.push({ spans: [{ text: "Found:", bold: true, color: C.muted }, ...valueSpans(found)], size: 8.2, gapBefore: 1 });
+  }
+  if (it.alsoCovers) issue.push({ spans: [{ text: alsoNote(it.alsoCovers, true), color: C.muted }], size: 7.6, gapBefore: 3 });
+  const cell: Block[] = [
+    { spans: [{ text: severity.toUpperCase(), bold: true, color: tone.strong }], size: 7.4 },
+    { spans: [{ text: "PLEASE VERIFY", bold: true, color: TONE.human.strong }], size: 6.6, gapBefore: 3 },
+    ...(it.marker ? [{ spans: [{ text: it.marker.toUpperCase(), bold: true, color: it.marker === "Mandatory" ? TONE.critical.strong : C.muted }], size: 6.6, gapBefore: 2 }] : []),
+  ];
+  const note: Block[] = [{ spans: [{ text: "Please verify:", bold: true, color: TONE.human.strong }, { text: verifyNote(it), color: C.text }], size: 8.4 }];
+  return { cells: [cell, issue, note] };
+}
+
+/** The Skybook mark (components/layout/skybook-mark.tsx), in flat colours; `size` is its height. */
+function skybookMark(d: Doc, x: number, top: number, size: number) {
+  const scale = size / 112;
+  const at = { x, y: top, scale };
+  d.page.drawSvgPath("M14 24 C15 15 19 9 25 6 C21 12 20 18 21 24 Z", { ...at, color: hex("#2E8BD0") });
+  d.page.drawSvgPath("M17 22 H73 A11 11 0 0 1 84 33 V97 A11 11 0 0 1 73 108 H17 A11 11 0 0 1 6 97 V33 A11 11 0 0 1 17 22 Z", { ...at, color: hex("#1F5BAA") });
+  d.page.drawSvgPath("M2 104 C32 96 60 72 94 20 L104 28 C70 84 36 106 2 114 Z", { ...at, color: C.white });
+  d.page.drawSvgPath("M78 40 C84 33 89 26 94 20 L104 28 C99 34 94 40 89 46 Z", { ...at, color: C.white });
+  d.page.drawSvgPath("M92 46 L124 8 L110 52 Z", { ...at, color: hex("#27A6E3") });
+  d.page.drawSvgPath("M92 46 L104 28 L106 44 Z", { ...at, color: hex("#15607F") });
+}
+
+/**
+ * Findings of the same check in the same place (e.g. two "Required text"
+ * corrections) under ONE header. Each correction keeps its own expected,
+ * found and fix lines — combined for reading, never merged into one claim.
+ */
+export type Section = { item: ReportItem; count: number; groups: Related[] };
+export function groupSections(items: ReportItem[]): Section[] {
+  const out = new Map<string, Section>();
+  for (const g of groupRelated(items)) {
+    const key = [g.item.severity, g.item.category, displayTitle(g.item.title), g.item.file ?? ""].join("\u0000");
+    const s = out.get(key) ?? { item: g.item, count: 0, groups: [] };
+    s.count += g.count;
+    s.groups.push(g);
+    out.set(key, s);
+  }
+  return [...out.values()];
 }
 
 /** A compact paragraph (label + text), kept together. */
@@ -372,24 +500,6 @@ function paragraph(d: Doc, spans: Span[], size = 8.6, gapAfter = 6, x = M, width
   const p = d.lay([{ spans, size }], width);
   d.ensure(p.height + gapAfter);
   d.y -= d.draw(p.laid, x, d.y) + gapAfter;
-}
-
-/**
- * One row of the check summary: a coloured bar and label on the left (with
- * its count), its content on the right. Passed, human review and not verified
- * always look different — even on a PASS.
- */
-function summaryRow(d: Doc, label: string, count: number, tone: Tone, blocks: Block[]) {
-  const labelW = 118;
-  const body = d.lay(blocks, W - labelW);
-  const h = Math.max(body.height, 24) + 12;
-  d.ensure(h);
-  const top = d.y;
-  d.page.drawRectangle({ x: M, y: top - h + 8, width: 3, height: h - 12, color: count ? tone.strong : C.line });
-  d.write(label, M + 10, top - 11, 9.4, { bold: true, color: count ? tone.strong : C.muted });
-  d.write(String(count), M + 10, top - 26, 14, { bold: true, color: count ? C.ink : C.muted });
-  d.draw(body.laid, M + labelW, top - 2);
-  d.y = top - h;
 }
 
 async function embedLogo(doc: PDFDocument, logo: ReportLogo): Promise<PDFImage | null> {
@@ -428,197 +538,149 @@ export async function renderReportPdf(
   const d = new Doc(doc, faces.regular, faces.bold, `Skybook AI QC report · ${data.companyName}`);
   d.newPage();
 
-  // --- Header ----------------------------------------------------------------------
+  // --- Header band: the Skybook mark and the title, on a blue gradient --------------------
   const image = await embedLogo(doc, logo);
-  d.write("SKYBOOK AI QC", M, d.y - 8, 7.5, { bold: true, color: C.brand });
-  d.write("QC report", M, d.y - 30, 22, { bold: true });
-  if (image) {
-    const scale = Math.min(140 / image.width, 34 / image.height, 1);
-    d.page.drawImage(image, { x: PAGE.width - M - image.width * scale, y: d.y - 4 - image.height * scale, width: image.width * scale, height: image.height * scale });
+  const bandH = 92;
+  const bandBottom = PAGE.height - bandH;
+  const from = [0x0f, 0x2c, 0x57];
+  const to = [0x1d, 0x63, 0xb8];
+  const strips = 120;
+  for (let i = 0; i < strips; i++) {
+    const t = i / (strips - 1);
+    const c = from.map((v, k) => Math.round(v + (to[k] - v) * t) / 255);
+    d.page.drawRectangle({ x: (PAGE.width / strips) * i, y: bandBottom, width: PAGE.width / strips + 0.5, height: bandH, color: rgb(c[0], c[1], c[2]) });
   }
-  d.y -= 48;
+  d.page.drawSvgPath(`M ${PAGE.width * 0.55} ${bandH} C ${PAGE.width * 0.75} ${bandH - 8} ${PAGE.width * 0.9} ${bandH * 0.5} ${PAGE.width} 0 L ${PAGE.width} ${bandH} Z`, {
+    x: 0,
+    y: PAGE.height,
+    color: C.white,
+    opacity: 0.08,
+  });
+  roundRect(d, M, PAGE.height - 24, 44, 44, 9, { fill: C.white });
+  skybookMark(d, M + 5, PAGE.height - 29, 34);
+  tracked(d, "SKYBOOK AI QC", M + 58, PAGE.height - 38, 7.2, 1.6, hex("#9CC3EE"));
+  d.write("AI Design QC Report", M + 58, PAGE.height - 62, 21, { bold: true, color: C.white });
+  if (image) {
+    // The client's logo on a white tile, right of the title.
+    const scale = Math.min(96 / image.width, 30 / image.height, 1);
+    const w = image.width * scale + 16;
+    roundRect(d, PAGE.width - M - w, PAGE.height - 24, w, 44, 9, { fill: C.white });
+    d.page.drawImage(image, { x: PAGE.width - M - w + 8, y: PAGE.height - 46 - (image.height * scale) / 2, width: image.width * scale, height: image.height * scale });
+  }
+  d.y = bandBottom - 18;
 
+  // The details: company, design file, report date.
   const facts: [string, string][] = [
     ["Company", data.companyName],
-    ["QC date", data.generatedAt],
     [data.files.length > 1 ? "Design files" : "Design file", data.files.length ? data.files.join(", ") : "—"],
-    ["Checked as", [data.contentType, data.platform].filter(Boolean).join(" · ")],
+    ["Report date", data.generatedAt],
   ];
-  const shares = [0.24, 0.24, 0.32, 0.2];
-  const cells = facts.map(([label, value], i) => ({ label, v: d.lay([{ spans: [{ text: value, bold: true }], size: 8.8 }], W * shares[i] - 12) }));
-  const factsH = 12 + Math.max(...cells.map((c) => c.v.height));
+  const shares = [0.3, 0.38, 0.32];
+  const cells = facts.map(([label, value], i) => ({ label, v: d.lay([{ spans: [{ text: value, bold: true }], size: 9.2 }], W * shares[i] - 14) }));
   cells.forEach((c, i) => {
     const x = M + W * shares.slice(0, i).reduce((a, b) => a + b, 0);
-    d.write(c.label.toUpperCase(), x, d.y - 7, 6.5, { bold: true, color: C.muted });
+    d.write(c.label.toUpperCase(), x, d.y - 7, 6.6, { bold: true, color: C.muted });
     d.draw(c.v.laid, x, d.y - 10);
   });
-  d.y -= factsH;
-  if (data.providerNote) paragraph(d, [{ text: `Analysed by: ${data.providerNote}`, color: C.muted }], 8, 0);
-  d.rule(10, 18);
+  d.y -= 12 + Math.max(...cells.map((c) => c.v.height));
+  const kind = [data.contentType, data.platform].filter(Boolean).join(" · ");
+  paragraph(d, [{ text: `Checked as ${kind}${data.providerNote ? ` · analysed by ${data.providerNote}` : ""}`, color: C.muted }], 8, 0);
+  d.rule(10, 16);
 
   if (data.sampleData) paragraph(d, [{ text: "SAMPLE DATA — NOT REAL AI. This is not a real QC result.", bold: true, color: TONE.major.strong }], 9.5, 10);
 
-  // --- Result: the word, the summary, the score ------------------------------------
+  // --- The result and score, prominently; one line of counts ------------------------------
   const shown = resultDisplay({ result: data.result, humanChecks: data.humanCheckCount });
   const tone = shown ? RESULT_TONE[shown] : TONE.grey;
-  const scoreW = 120;
-  let size = 30;
-  while (size > 15 && d.width(data.resultLabel, size, true) > W - scoreW - 10) size--;
-  const summary = d.lay([{ spans: [{ text: data.resultSummary, color: C.text }], size: 10 }], W - scoreW - 10);
-  const resultTop = d.y;
-  d.write("RESULT", M, resultTop - 6, 6.5, { bold: true, color: C.muted });
-  d.write(data.resultLabel, M, resultTop - 10 - size * 0.95, size, { bold: true, color: tone.strong });
-  const afterWord = resultTop - 16 - size * 1.05;
-  d.draw(summary.laid, M, afterWord);
-  if (data.score !== null) {
-    const score = String(data.score);
-    const sx = PAGE.width - M - d.width(score, 38, true) - d.width(" / 100", 10) ;
-    d.write("SCORE", PAGE.width - M - d.width("SCORE", 6.5, true), resultTop - 6, 6.5, { bold: true, color: C.muted });
-    d.write(score, sx, resultTop - 44, 38, { bold: true });
-    d.write("/ 100", sx + d.width(score, 38, true) + d.width(" ", 10), resultTop - 44, 10, { color: C.muted });
-  }
-  d.y = Math.min(afterWord - summary.height, resultTop - 52) - 14;
+  const ringR = 31;
+  const ringW = 7;
+  const textX = data.score !== null ? M + ringR * 2 + ringW + 20 : M;
+  const textW = PAGE.width - M - textX;
+  let size = 26;
+  while (size > 14 && d.width(data.resultLabel, size, true) > textW) size--;
+  const summary = d.lay([{ spans: [{ text: data.resultSummary, color: C.text }], size: 10 }], textW);
+  const top = d.y;
+  if (data.score !== null) scoreRing(d, data.score, M + ringR + ringW / 2, top - ringR - ringW / 2, ringR, ringW, tone, 21);
+  d.write("RESULT", textX, top - 6, 6.6, { bold: true, color: C.muted });
+  d.write(data.resultLabel, textX, top - 10 - size * 0.92, size, { bold: true, color: tone.strong });
+  d.draw(summary.laid, textX, top - 15 - size * 1.08);
+  d.y = Math.min(top - 15 - size * 1.08 - summary.height, data.score !== null ? top - ringR * 2 - ringW : Infinity) - 14;
 
-  // One line of counts.
-  const counts: { n: number; label: string; tone: Tone; counted: boolean }[] = [
-    { n: data.issues.critical, label: "Critical", tone: TONE.critical, counted: true },
-    { n: data.issues.major, label: "Major", tone: TONE.major, counted: true },
-    { n: data.issues.minor, label: "Minor", tone: TONE.minor, counted: true },
-    { n: data.issues.suggestion, label: data.issues.suggestion === 1 ? "Suggestion" : "Suggestions", tone: TONE.grey, counted: false },
-    { n: data.passedCount, label: "Passed", tone: TONE.pass, counted: true },
-    { n: data.humanCheckCount, label: "Human review", tone: TONE.human, counted: false },
-    { n: data.notVerifiedCount, label: "Not verified", tone: TONE.grey, counted: false },
+  const counts: { n: number; label: string; tone: Tone }[] = [
+    { n: data.issues.critical, label: "Critical", tone: TONE.critical },
+    { n: data.issues.major, label: "Major", tone: TONE.major },
+    { n: data.issues.minor, label: "Minor", tone: TONE.minor },
+    { n: data.issues.suggestion, label: data.issues.suggestion === 1 ? "Suggestion" : "Suggestions", tone: TONE.grey },
+    { n: data.humanChecks.length, label: "To verify", tone: TONE.human },
+    { n: data.passedCount, label: "Passed", tone: TONE.pass },
   ];
   let cx = M;
-  let cy = d.y;
   for (const c of counts) {
-    const label = `${c.n} ${c.label}`;
-    const w = 10 + d.width(String(c.n), 9.5, true) + d.width(` ${c.label}`, 9) + 12;
-    if (cx + w > PAGE.width - M) {
-      cx = M;
-      cy -= 16;
-    }
-    d.page.drawCircle({ x: cx + 3, y: cy - 7, size: 3, color: c.n ? c.tone.strong : C.line });
-    d.font(true).draw(d.page, String(c.n), { x: cx + 10, y: cy - 10.2, size: 9.5, color: c.n ? C.ink : C.muted });
-    d.font(false).draw(d.page, ` ${c.label}`, { x: cx + 10 + d.width(String(c.n), 9.5, true), y: cy - 10.2, size: 9, color: C.text });
-    d.lines.push(label);
+    const w = 10 + d.width(String(c.n), 9.5, true) + d.width(` ${c.label}`, 9) + 14;
+    d.page.drawCircle({ x: cx + 3, y: d.y - 7, size: 3, color: c.n ? c.tone.strong : C.line });
+    d.font(true).draw(d.page, String(c.n), { x: cx + 10, y: d.y - 10.2, size: 9.5, color: c.n ? C.ink : C.muted });
+    d.font(false).draw(d.page, ` ${c.label}`, { x: cx + 10 + d.width(String(c.n), 9.5, true), y: d.y - 10.2, size: 9, color: C.text });
+    d.lines.push(`${c.n} ${c.label}`);
     cx += w;
   }
-  d.y = cy - 16;
-  d.rule(4, 16);
+  d.y -= 16;
+  d.rule(4, 6);
 
-  // --- What to fix first ----------------------------------------------------------
-  const { priority, remaining } = splitIssues(data.issuesToFix);
-  const first = groupRelated(priority);
-  const others = groupRelated(remaining);
-  const issueLabels: [string, string, string] = ["ISSUE", "WHAT WAS FOUND", "HOW TO FIX"];
-  const fixRow = { labels: { expected: "Expected", found: "Found" }, third: "fix" as const };
-  if (first.length) {
-    heading(d, "What to fix first", priority.length, 60);
-    columnLabels(d, issueLabels, layRow(d, first[0], fixRow).h);
-    first.forEach((g, i) => row(d, g, { ...fixRow, index: i + 1 }));
-  } else {
-    heading(d, "What to fix", null, 20);
-    paragraph(d, [{ text: "No issues to fix.", bold: true, color: TONE.pass.strong }, { text: " Nothing that counts against the result was found.", color: C.text }], 9.5, 4);
-  }
-
-  // --- Other issues (each issue appears once: not repeated from above) ---------------
-  if (others.length) {
-    heading(d, "Other issues", remaining.length, 60);
-    columnLabels(d, issueLabels, layRow(d, others[0], fixRow).h);
-    others.forEach((g) => row(d, g, fixRow));
-  }
-
-  // --- Check summary: passed · needs human review · not verified (always shown) ------------
-  heading(d, "Check summary", null, 70);
-  paragraph(
-    d,
-    [{ text: `Based on ${data.answered} of ${data.applicable} checks that could be answered. Human review and not verified checks never count for or against the result.`, color: C.muted }],
-    8.2,
-    6
-  );
-
-  // The brief's requirements, split by state; those that are issues or human checks are already listed — never twice.
-  const listedAbove = (status: string) => status.startsWith("To fix") || status === "Needs a human check";
-  const met = data.requirements.filter((r) => r.status === "Passed");
-  const notChecked = data.requirements.filter((r) => r.status !== "Passed" && !listedAbove(r.status));
-  const above = data.requirements.filter((r) => listedAbove(r.status)).length;
-
-  // Passed.
-  const passedBlocks: Block[] = [{ spans: [{ text: `${data.passedCount} ${data.passedCount === 1 ? "check" : "checks"} passed.`, color: C.text }], size: 8.6 }];
-  if (met.length) {
-    const counts = new Map<string, number>();
-    for (const r of met) counts.set(requirementName(r.type), (counts.get(requirementName(r.type)) ?? 0) + 1);
-    passedBlocks.push({
-      spans: [{ text: `Brief requirements met (${met.length}):`, bold: true }, { text: [...counts].map(([name, n]) => (n > 1 ? `${name} (${n})` : name)).join(" · "), color: C.text }],
-      size: 8.4,
-      gapBefore: 3,
-    });
-  }
-  if (data.categories.length) {
-    const spans: Span[] = [{ text: "Score by category:", bold: true }];
-    data.categories.forEach((c, i) =>
-      spans.push({ text: `${i ? "· " : ""}${c.label}`, color: C.text }, { text: c.score === "Not checked" ? "not checked" : c.score, bold: c.score !== "Not checked", color: c.score === "Not checked" ? C.muted : C.ink })
-    );
-    passedBlocks.push({ spans, size: 8.4, gapBefore: 3 });
-  }
-  summaryRow(d, "Passed", data.passedCount, TONE.pass, passedBlocks);
-
-  // Needs human review: each item (related ones together) — what it should be, what the AI read, why.
-  const humanBlocks: Block[] = [];
-  for (const g of groupRelated(data.humanChecks)) {
-    const spans: Span[] = [
-      { text: g.item.severity.toUpperCase(), bold: true, color: TONE.human.strong },
-      { text: `${displayTitle(g.item.title)}${g.count > 1 ? ` (${g.count})` : ""} · ${g.item.category}`, bold: true },
-    ];
-    humanBlocks.push({ spans, size: 8.6, gapBefore: humanBlocks.length ? 6 : 0 });
-    for (const p of g.pairs) {
-      const pair: Span[] = [];
-      if (p.expected) pair.push({ text: "Should be:", bold: true, color: C.muted }, { text: p.expected, color: C.ink });
-      if (p.expected && p.found.length) pair.push({ text: "·", color: C.muted });
-      if (p.found.length) pair.push({ text: "AI read:", bold: true, color: C.muted }, { text: p.found.join(" · "), color: C.ink });
-      if (pair.length) humanBlocks.push({ spans: pair, size: 8.4, gapBefore: 2 });
+  // --- Findings: one table, grouped by severity — each issue once ------------------------
+  const groups: TableGroup[] = [];
+  for (const [severity, title, t] of [
+    ["Critical", "Critical", TONE.critical],
+    ["Major", "Major", TONE.major],
+    ["Minor", "Minor", TONE.minor],
+    ["Suggestion", "Suggestions", TONE.grey],
+  ] as const) {
+    const items = data.issuesToFix.filter((it) => it.severity === severity);
+    const verify = data.humanChecks.filter((it) => it.severity === severity);
+    if (items.length || verify.length) {
+      groups.push({
+        title,
+        tone: t,
+        count: items.length,
+        verify: verify.length,
+        rows: [...groupRelated(items).map((g) => issueRow(g, t)), ...groupRelated(verify).map((g) => verifyRow(g, t, severity))],
+      });
     }
-    for (const r of g.reasons) humanBlocks.push({ spans: [{ text: r, color: C.text }], size: 8.2, gapBefore: 2 });
   }
-  if (!humanBlocks.length) {
-    humanBlocks.push({ spans: [{ text: "Nothing needs a human check.", color: C.muted }], size: 8.6 });
+  if (groups.length) {
+    findingsTable(d, "Findings", groups);
   } else {
-    humanBlocks[0].gapBefore = 4;
-    humanBlocks.unshift({ spans: [{ text: "The AI wasn't sure about these — check each one before sending.", color: C.muted }], size: 8.2, gapBefore: 0 });
+    heading(d, "Findings", null, 20);
+    paragraph(d, [{ text: "No issues to fix.", bold: true, color: TONE.pass.strong }, { text: " Nothing to fix or verify.", color: C.text }], 9.5, 6);
   }
-  summaryRow(d, "Needs human review", data.humanCheckCount, TONE.human, humanBlocks);
 
-  // Not verified: grouped by reason (the reason said once), and the brief's requirements that couldn't be checked.
-  const nvBlocks: Block[] = [];
-  const byReason = new Map<string, ReportItem[]>();
-  for (const it of data.notVerified) {
-    const reason = it.explanation.replace(/^\s*Not verified:\s*/i, "").replace(/\s*Not counted for or against the result\.?\s*$/i, "");
-    byReason.set(reason, [...(byReason.get(reason) ?? []), it]);
+  // --- In short: passed as a count; what couldn't be checked, by name ---------------------
+  const listedAbove = (status: string) => status.startsWith("To fix") || status === "Needs a human check";
+  const notChecked = data.requirements.filter((r) => r.status !== "Passed" && !listedAbove(r.status));
+  const notes: Span[][] = [
+    [{ text: `${data.passedCount} ${data.passedCount === 1 ? "check" : "checks"} passed.`, bold: true, color: TONE.pass.strong }],
+  ];
+  const unanswered = notChecked.filter((r) => r.status === "Not checked"); // brief items with no check at all
+  // What couldn't be checked: missing company settings apart from design checks that couldn't be confirmed.
+  const unchecked = splitNotChecked(data.notVerified);
+  for (const kind of ["settings", "auto"] as const) {
+    const names = unchecked[kind].map((it) => `${displayTitle(it.title)}${it.marker ? " (Golden Rule)" : ""}`);
+    if (!names.length) continue;
+    notes.push([
+      { text: `${NOT_CHECKED[kind].label} (${names.length}):`, bold: true, color: C.text },
+      { text: names.join(" · "), color: C.text },
+      { text: `— ${NOT_CHECKED[kind].note}`, color: C.muted },
+    ]);
   }
-  for (const [reason, items] of byReason) {
-    const names = items.map((it) => `${displayTitle(it.title)} · ${it.category}${it.expected ? ` (expected: ${it.expected})` : ""}`).join(", ");
-    nvBlocks.push({ spans: [{ text: names, bold: true }, { text: "—", color: C.muted }, { text: reason, color: C.text }], size: 8.4, gapBefore: nvBlocks.length ? 3 : 0 });
+  if (unanswered.length) {
+    notes.push([
+      { text: `Not checked from the brief (${unanswered.length}):`, bold: true, color: C.text },
+      { text: unanswered.map((r) => requirementName(r.type)).join(" · "), color: C.text },
+    ]);
   }
-  if (notChecked.length) {
-    const spans: Span[] = [{ text: "Brief requirements not checked:", bold: true }];
-    notChecked.forEach((r, i) =>
-      spans.push({ text: `${i ? " · " : ""}${requirementName(r.type)} "${r.value}"${r.status !== "Not checked" ? ` (${r.status.toLowerCase()})` : ""}`, color: C.text })
-    );
-    nvBlocks.push({ spans, size: 8.4, gapBefore: nvBlocks.length ? 3 : 0 });
-  }
-  if (!nvBlocks.length) nvBlocks.push({ spans: [{ text: "Everything could be checked.", color: C.muted }], size: 8.6 });
-  summaryRow(d, "Not verified", data.notVerifiedCount, TONE.grey, nvBlocks);
-
-  // What else about the brief: where its other requirements are, and any not part of this check.
-  const notes: Span[] = [];
-  if (!data.requirements.length) notes.push({ text: "No confirmed requirements.", color: C.muted });
-  else if (above) notes.push({ text: `${above} brief requirement${above === 1 ? " is" : "s are"} listed above as ${above === 1 ? "an issue or human check" : "issues or human checks"}.`, color: C.muted });
-  if (data.unconfirmedRequirements) notes.push({ text: `${data.unconfirmedRequirements} requirement(s) from the brief weren't part of this check — press Check Design again to include them.`, color: C.muted });
-  if (notes.length) {
-    d.y -= 4;
-    paragraph(d, notes, 8.2, 4);
-  }
+  if (!data.requirements.length) notes.push([{ text: "No requirements from the brief were checked.", color: C.muted }]);
+  if (data.unconfirmedRequirements) notes.push([{ text: `${data.unconfirmedRequirements} requirement(s) from the brief weren't part of this check — press Check Design again to include them.`, color: C.muted }]);
+  heading(d, "In short", null, 30);
+  for (const n of notes) paragraph(d, n, 8.4, 3);
 
   // --- Footer on every page ------------------------------------------------------------
   const pages = doc.getPages();

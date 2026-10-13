@@ -68,7 +68,7 @@ describe("result", () => {
   });
 });
 
-describe("result display: PASS — HUMAN CHECK REQUIRED", () => {
+describe("result display: PASS — PLEASE VERIFY", () => {
   const shown = (findings: Finding[]) => {
     const board = scoreFindings(findings);
     const display = resultDisplay(board);
@@ -79,13 +79,13 @@ describe("result display: PASS — HUMAN CHECK REQUIRED", () => {
     expect(shown([f("brief", "passed"), f("brand", "passed")])).toMatchObject({ result: "pass", display: "pass", label: "PASS" });
   });
 
-  it("no counted issues but a human check → PASS — HUMAN CHECK REQUIRED; the result itself is still PASS and nothing counts", () => {
+  it("no counted issues but a human check → PASS — PLEASE VERIFY; the result itself is still PASS and nothing counts", () => {
     for (const severity of ["critical", "major", "minor"] as const) {
       const s = shown([f("brief", "passed"), human("brief", severity)]);
-      expect(s).toEqual({ result: "pass", display: "pass_human_check", label: "PASS — HUMAN CHECK REQUIRED", issues: { critical: 0, major: 0, minor: 0, suggestion: 0 } });
+      expect(s).toEqual({ result: "pass", display: "pass_human_check", label: "PASS — PLEASE VERIFY", issues: { critical: 0, major: 0, minor: 0, suggestion: 0 } });
     }
     // A suggestion doesn't change that either.
-    expect(shown([f("design_layout", "failed", "suggestion"), human("brief", "critical")]).label).toBe("PASS — HUMAN CHECK REQUIRED");
+    expect(shown([f("design_layout", "failed", "suggestion"), human("brief", "critical")]).label).toBe("PASS — PLEASE VERIFY");
   });
 
   it("MAJOR / MINOR → NEEDS REVISION and CRITICAL → FAIL, with or without human checks", () => {

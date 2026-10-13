@@ -61,6 +61,10 @@ export type Finding = {
   fileId?: string;
   fileName?: string;
   source?: { label: string; url: string };
+  /** Golden Rules: whether the company marked the rule mandatory. */
+  mandatory?: boolean;
+  /** Other checks this finding also stands for, when they were the same issue (lib/qc/golden-rules-view.ts). */
+  alsoCovers?: { ruleId: string; category: Category; title: string }[];
 };
 
 /** A rule definition (plan 5.2): what it is, where it applies, what it needs. */

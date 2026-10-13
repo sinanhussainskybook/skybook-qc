@@ -48,8 +48,8 @@ export function CategoryChecks({ findings, analysis, mock = false, local = false
       )}
       {human > 0 && (
         <p className="rounded-xl bg-revision-soft px-4 py-3 text-sm text-foreground">
-          {human} finding{human === 1 ? "" : "s"} <strong>need a human check</strong> — the reading or the AI&apos;s judgement
-          wasn&apos;t certain enough to count. Look at them before sending the content.
+          {human} finding{human === 1 ? "" : "s"} <strong>to verify</strong> — the AI wasn&apos;t sure enough for {human === 1 ? "it" : "them"} to
+          count. Please check {human === 1 ? "it" : "them"} by eye before sending the content.
         </p>
       )}
       <ul className="divide-y divide-border rounded-xl ring-1 ring-border" aria-label="Checks by category">

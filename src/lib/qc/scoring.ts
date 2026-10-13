@@ -122,8 +122,8 @@ export const RESULT_LABEL: Record<QcResult, string> = { pass: "PASS", needs_revi
 /**
  * How the result is SHOWN (banner and PDF). Display only: the result itself
  * (resultOf) is unchanged and human checks still never count. A PASS with one
- * or more "Needs a human check" items is shown as "PASS — HUMAN CHECK REQUIRED",
- * so it can't be mistaken for a clean pass.
+ * or more "Needs a human check" items is shown as "PASS — PLEASE VERIFY", so
+ * it can't be mistaken for a clean pass.
  */
 export type ResultDisplay = QcResult | "pass_human_check";
 
@@ -132,11 +132,11 @@ export function resultDisplay(board: { result: QcResult | null; humanChecks: num
   return board.result === "pass" && board.humanChecks > 0 ? "pass_human_check" : board.result;
 }
 
-export const RESULT_DISPLAY_LABEL: Record<ResultDisplay, string> = { ...RESULT_LABEL, pass_human_check: "PASS — HUMAN CHECK REQUIRED" };
+export const RESULT_DISPLAY_LABEL: Record<ResultDisplay, string> = { ...RESULT_LABEL, pass_human_check: "PASS — PLEASE VERIFY" };
 
 export const RESULT_DISPLAY_SUMMARY: Record<ResultDisplay, string> = {
   pass: "No issues to fix in the checks that could be verified.",
-  pass_human_check: "No issues to fix in the checks that could be verified — but some items need a human check before it goes to the client.",
+  pass_human_check: "No issues found — but please verify the items marked below before sending it to the client.",
   needs_revision: "Fix the issues below before sending it to the client.",
   fail: "There is at least one critical issue. Don't send it until it's fixed.",
 };

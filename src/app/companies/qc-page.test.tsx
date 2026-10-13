@@ -84,7 +84,7 @@ const checking = {
   progress_done: 1, progress_total: 4, attempts: 1, files_fingerprint: "x", analysed_share: null, failure_reason: null,
   created_at: new Date(), started_at: new Date(), heartbeat_at: new Date(), finished_at: null,
 };
-const visible = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/&#x27;/g, "'").replace(/&amp;/g, "&").replace(/\s+/g, " ");
+const visible = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/&#x27;/g, "'").replace(/&quot;/g, '"').replace(/&amp;/g, "&").replace(/\s+/g, " ");
 
 const main = (html: string) => html.slice(html.indexOf("<main"), html.indexOf("</main>"));
 /** The visible result banner (the section description names the results, so match the banner itself). */
@@ -380,6 +380,7 @@ describe("Start QC page", () => {
       main(renderToStaticMarkup(await StartQcPage(props)))
         .replace(/<[^>]+>/g, " ")
         .replace(/&#x27;/g, "'")
+        .replace(/&quot;/g, '"')
         .replace(/&amp;/g, "&")
         .replace(/\s+/g, " ");
 
@@ -460,7 +461,7 @@ describe("Start QC page", () => {
       expect(text).toContain("The analysis didn't finish (The text reader timed out)");
     });
 
-    it("done with mock results: labelled everywhere; uncertain findings need a human check", async () => {
+    it("done with mock results: labelled everywhere; uncertain findings are items to verify", async () => {
       const { filesFingerprint } = await import("@/lib/analysis/pipeline");
       latestRun.mockResolvedValue(runRow({ status: "done", stage: "Finished", progress_done: 4 }));
       latestDetections.mockResolvedValue({
@@ -479,16 +480,17 @@ describe("Start QC page", () => {
       const text = await page();
       expect(text).toContain("Design checked — the result is below.");
       expect(text).toContain("Sample data — not real AI. These results come from the test provider");
-      expect(text).toContain("need a human check");
+      expect(text).toContain("to verify — the AI wasn't sure enough for it to count. Please check it by eye before sending the content.");
       // Phase 7: the result — labelled as sample data; uncounted checks said plainly.
       // No counted issues but a human check → the banner says so (the result itself is still PASS).
-      expect(text).toContain("Result PASS — HUMAN CHECK REQUIRED No issues to fix in the checks that could be verified — but some items need a human check before it goes to the client. Score 100 / 100");
+      expect(text).toContain("Result PASS — PLEASE VERIFY No issues found — but please verify the items marked below before sending it to the client. Score 100 / 100");
       expect(text).toContain("Sample data — not real AI. This is not a real QC result.");
       // The simplified summary: three counts, short sections, passed checks collapsed into one line.
-      expect(text).toContain("0 Issues to fix 1 Human check 11 Checks passed"); // 10 + the confirmed requirement found
+      expect(text).toContain("0 Issues to fix 1 To verify 11 Checks passed"); // 10 + the confirmed requirement found
       expect(text).toContain("Issues to fix No issues to fix.");
       expect(text).toContain("1 optional suggestion Recommended resolution — Export at 1440 × 1800 if the original artwork allows it.");
-      expect(text).toContain("Human checks The AI wasn't sure about these. They don't count for or against the result — look at each one before sending. Major Brand fonts Brand Should be Montserrat AI read Sample Sans");
+      expect(text).toContain("Items to verify Please check these by eye before sending. They don't count for or against the result. Major Please verify Brand fonts Brand Expected Montserrat Found Sample Sans Check Check the design for \"Montserrat\" — the AI wasn't sure.");
+      expect(text).not.toMatch(/HUMAN CHECK REQUIRED|Human checks?\b|Should be|AI read/);
       expect(text).toContain("Passed ✓ 11 checks passed");
       // Technical wording stays out of the summary: it is only in "All checks in detail", after the download.
       const summary = text.slice(text.indexOf("Result PASS"), text.indexOf("All checks in detail"));

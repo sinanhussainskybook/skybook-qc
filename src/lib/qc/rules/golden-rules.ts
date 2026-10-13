@@ -86,7 +86,7 @@ const goldenRule: Rule<QcContext> = {
   run(context) {
     const active = context.company.goldenRules.filter((r) => r.active);
     if (active.length === 0) return [notApplicable(RULE_ID, CATEGORY, "Golden Rules", "This company has no active Golden Rules.")];
-    return active.map((rule) => checkOne(rule, context.detections));
+    return active.map((rule) => ({ ...checkOne(rule, context.detections), mandatory: rule.mandatory }));
   },
 };
 

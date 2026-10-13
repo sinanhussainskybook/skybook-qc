@@ -3,6 +3,7 @@ import type { CompanyConfiguration } from "@/lib/company/types";
 import type { QcFile, QcRequirement, QcSession } from "@/lib/db/qc-sessions";
 import { contentTypeLabel } from "@/lib/qc/content-types";
 import { CATEGORIES, severityLabel, type Finding, type Severity } from "@/lib/qc/findings";
+import { alsoCoversText, isGoldenRule, needsVerifying, ruleName } from "@/lib/qc/golden-rules-view";
 import { findPlacement, findPlatform } from "@/lib/qc/platforms";
 import { isCheckable, requirementTypeLabel } from "@/lib/qc/requirements";
 import { RESULT_DISPLAY_LABEL, RESULT_DISPLAY_SUMMARY, resultDisplay, type QcResult, type Scoreboard } from "@/lib/qc/scoring";
@@ -22,7 +23,12 @@ export type ReportItem = {
   explanation: string;
   fix?: string;
   file?: string;
+  /** Golden Rules: "Mandatory" or "Optional". */
+  marker?: string;
+  /** Other checks this one also stands for ("Brief — CTA"), when they were the same issue. */
+  alsoCovers?: string;
 };
+
 
 export type ReportData = {
   companyName: string;
@@ -42,7 +48,9 @@ export type ReportData = {
   categories: { label: string; score: string; issues: string; notCounted: string }[];
   requirements: { type: string; value: string; mandatory: boolean; status: string }[];
   unconfirmedRequirements: number;
+  /** Every counting issue, Golden Rules included (a Golden Rule carries its Mandatory / Optional marker). */
   issuesToFix: ReportItem[];
+  /** What a person has to verify by eye (lib/qc/golden-rules-view.ts needsVerifying) — never counted. */
   humanChecks: ReportItem[];
   notVerified: ReportItem[];
   passedCount: number;
@@ -63,6 +71,7 @@ const categoryLabel = (value: string) => CATEGORIES.find((c) => c.value === valu
 const norm = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();
 
 function item(f: Finding, severity = severityLabel(f.severity)): ReportItem {
+  const golden = isGoldenRule(f);
   return {
     severity,
     category: categoryLabel(f.category),
@@ -72,6 +81,8 @@ function item(f: Finding, severity = severityLabel(f.severity)): ReportItem {
     explanation: f.explanation,
     fix: f.suggestedFix,
     file: f.fileName,
+    ...(golden ? { title: ruleName(f.title), marker: f.mandatory === false ? "Optional" : "Mandatory" } : {}),
+    ...(f.alsoCovers?.length ? { alsoCovers: alsoCoversText(f, categoryLabel) ?? undefined } : {}),
   };
 }
 
@@ -85,10 +96,11 @@ function statusOf(f: Finding | undefined): string {
 /** The finding that checked a confirmed requirement (brief rules; disclaimers are legal). */
 function findingFor(r: QcRequirement, findings: Finding[]): Finding | undefined {
   const value = norm(r.expected_value);
-  return findings.find(
-    (f) => (f.ruleId.startsWith(`brief.requirement.${r.type}`) || (r.type === "disclaimer" && f.ruleId.startsWith("legal."))) && norm(f.expected ?? "") === value
-  );
+  const checks = (ruleId: string) => ruleId.startsWith(`brief.requirement.${r.type}`) || (r.type === "disclaimer" && ruleId.startsWith("legal."));
+  // A requirement merged into a Golden Rule (the same issue) is answered by that Golden Rule finding.
+  return findings.find((f) => (checks(f.ruleId) || f.alsoCovers?.some((c) => checks(c.ruleId))) && norm(f.expected ?? "") === value);
 }
+
 
 export function formatReportDate(date: Date, timeZone: string): string {
   const options: Intl.DateTimeFormatOptions = { day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit", timeZoneName: "short" };
@@ -137,7 +149,7 @@ export function buildReportData(input: {
         label: c.label,
         score: c.score === null ? "Not checked" : `${c.score}`,
         issues: issues.length ? issues.map((s) => `${c.issues[s]} ${severityLabel(s).toLowerCase()}`).join(", ") : "None",
-        notCounted: [c.humanChecks ? `${c.humanChecks} need a human check` : "", c.notVerified ? `${c.notVerified} not verified` : ""].filter(Boolean).join(", ") || "-",
+        notCounted: [c.humanChecks ? `${c.humanChecks} to verify` : "", c.notVerified ? `${c.notVerified} not verified` : ""].filter(Boolean).join(", ") || "-",
       };
     }),
     requirements: confirmed.map((r) => ({
@@ -149,8 +161,8 @@ export function buildReportData(input: {
     // Descriptive brief items (campaign, instructions…) are never checked on purpose — not "unused".
     unconfirmedRequirements: input.requirements.filter((r) => !r.confirmed && isCheckable(r)).length,
     issuesToFix: board.counting.map((f) => item(f)),
-    humanChecks: findings.filter(isHumanCheck).map((f) => item(f, f.severity === "critical" ? "Possible critical" : severityLabel(f.severity))),
-    notVerified: findings.filter((f) => f.status === "unverified" && !isHumanCheck(f)).map((f) => item(f, "Not verified")),
+    humanChecks: findings.filter(needsVerifying).map((f) => item(f)),
+    notVerified: findings.filter((f) => f.status === "unverified" && !needsVerifying(f)).map((f) => item(f, "Not verified")),
     passedCount: board.passed,
     sampleData: input.sampleData,
     providerNote: input.provider === "local" ? "Local AI (on this server)" : null,

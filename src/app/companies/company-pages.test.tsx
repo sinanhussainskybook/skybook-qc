@@ -21,6 +21,7 @@ vi.mock("@/lib/db/client", () => ({ getDatabase: () => ({}) }));
 vi.mock("@/lib/auth/actions", () => ({ signOutAction: vi.fn() }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }), usePathname: () => "/" }));
 vi.mock("@/lib/qc/actions", () => ({ startSessionAction: vi.fn(async () => ({ ok: true })) }));
+vi.mock("@/lib/company/delete-actions", () => ({ deleteCompanyAction: vi.fn() }));
 vi.mock("@/lib/company/actions", () => ({
   createCompanyAction: vi.fn(),
   saveCompanyFieldAction: vi.fn(),
@@ -176,6 +177,14 @@ describe("company page", () => {
     expect(html.indexOf("Start a QC check")).toBeLessThan(html.indexOf("Company settings"));
     expect(html).toMatch(/<details id="settings"[^>]*>/);
     expect(html).not.toMatch(/<details id="settings"[^>]*open/);
+  });
+
+  it("offers Delete company to administrators only (the action checks the role again)", async () => {
+    expect(renderToStaticMarkup(await CompanyPage(props))).not.toContain("Delete company");
+    requireCompanyAccess.mockResolvedValue({ user: { ...user, role: "admin" }, company });
+    const html = renderToStaticMarkup(await CompanyPage(props));
+    expect(html).toContain("Delete company");
+    expect(html.indexOf("Company settings")).toBeLessThan(html.indexOf("Delete company"));
   });
 });
 

@@ -43,23 +43,27 @@ describe("AppShell", () => {
   };
   const current = (navHtml: string) => navHtml.match(/<a [^>]*aria-current="page"[^>]*aria-label="([^"]+)"/)?.[1];
 
-  it("has the main navigation in the header: Home, Add company, and Users for admins only", () => {
+  it("has the main navigation in the header: Home, Users for admins only, then the user and Sign out", () => {
     const header = html.slice(html.indexOf("<header"), html.indexOf("</header>"));
     expect(header).toContain('<nav aria-label="Main"');
     const admin = render("admin", "/");
     expect(admin).toContain('href="/"');
-    expect(admin).toContain('href="/companies/new"');
     expect(admin).toContain('href="/admin/users"');
+    expect(admin).toContain("Someone");
+    expect(admin).toContain("Sign out");
     const designer = render("designer", "/");
     expect(designer).toContain('href="/"');
-    expect(designer).toContain('href="/companies/new"');
     expect(designer).not.toContain('href="/admin/users"');
+    expect(designer).toContain("Sign out");
+    // "Add company" is on the Home page, not in the navigation.
+    expect(admin).not.toContain('href="/companies/new"');
+    expect(designer).not.toContain('href="/companies/new"');
   });
 
   it("marks the current page (Home also covers a company's pages)", () => {
     expect(current(render("admin", "/"))).toBe("Home");
     expect(current(render("admin", "/companies/0b6d0f0e-8c1a-4a57-9a4e-2a6f1d6c9e01/qc/new"))).toBe("Home");
-    expect(current(render("admin", "/companies/new"))).toBe("Add company");
+    expect(current(render("admin", "/companies/new"))).toBe("Home");
     expect(current(render("admin", "/admin/users"))).toBe("Users");
     expect(current(render("admin", "/account/password"))).toBeUndefined();
   });

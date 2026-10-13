@@ -92,3 +92,45 @@ export async function findCompaniesByIdOrName(
     [reference.trim()]
   );
 }
+
+// ---------------------------------------------------------------------------
+// Deleting a company (admins only — see company/delete-company.ts)
+// ---------------------------------------------------------------------------
+
+/** The temporary QC sessions of a company (any designer), so their files can be removed first. */
+export async function listCompanySessionIds(db: Database, companyId: string): Promise<string[]> {
+  const rows = await db.query<{ id: string }>("select id from qc_sessions where company_id = $1", [companyId]);
+  return rows.map((row) => row.id);
+}
+
+/** Is the worker analysing (or about to analyse) a design for this company right now? */
+export async function hasActiveAnalysis(db: Database, companyId: string): Promise<boolean> {
+  const [row] = await db.query<{ busy: boolean }>(
+    `select exists (
+       select 1 from qc_analysis_runs r join qc_sessions s on s.id = r.session_id
+        where s.company_id = $1 and r.status in ('queued', 'processing')
+     ) as busy`,
+    [companyId]
+  );
+  return Boolean(row?.busy);
+}
+
+/**
+ * Deletes the company row — only if nothing new appeared while its files were
+ * being removed: no QC session (one started meanwhile would lose its files to
+ * the cascade) and the same logo as the one whose file was removed
+ * (`expectedLogoPath`, null for none). Checked in the same statement as the
+ * delete. Its members, contact details, brand guidelines, Golden Rules and
+ * logo record go with it (ON DELETE CASCADE). Returns false if refused.
+ */
+export async function deleteCompanyRow(db: Database, companyId: string, expectedLogoPath: string | null): Promise<boolean> {
+  const rows = await db.query<{ id: string }>(
+    `delete from companies c
+      where c.id = $1
+        and not exists (select 1 from qc_sessions s where s.company_id = c.id)
+        and (select l.storage_path from company_logos l where l.company_id = c.id) is not distinct from $2::text
+      returning c.id`,
+    [companyId, expectedLogoPath]
+  );
+  return rows.length === 1;
+}

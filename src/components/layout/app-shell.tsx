@@ -7,8 +7,8 @@ import type { User } from "@/lib/db/users";
 
 /**
  * The frame every signed-in page sits in: the Skybook mark on the left, the
- * main navigation (Home, Add company, Users for admins) in the middle, the
- * signed-in user and Sign out on the right, and the page below.
+ * main navigation pill on the right (Home, Users for admins, then the
+ * signed-in user and Sign out), and the page below.
  *
  * The page passes in the user it got from requireUser(); the shell does no
  * checking of its own.
@@ -27,11 +27,10 @@ export function AppShell({
           <Link href="/" aria-label="Skybook AI QC, home" className="shrink-0 rounded-md transition-opacity hover:opacity-75">
             <SkybookLogo sub="AI QC" />
           </Link>
-          <div className="flex flex-1 justify-center">
-            <MainNav role={user.role} />
-          </div>
-          <div className="shrink-0">
-            <UserMenu user={user} />
+          <div className="ml-auto">
+            <MainNav role={user.role}>
+              <UserMenu user={user} />
+            </MainNav>
           </div>
         </div>
       </header>

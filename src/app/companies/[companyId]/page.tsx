@@ -13,6 +13,7 @@ import { AppShell } from "@/components/layout/app-shell";
 import { EditableField, EditableFieldList } from "@/components/company/editable-field";
 import { ListEditor } from "@/components/company/list-editor";
 import { LogoManager } from "@/components/company/logo-manager";
+import { DeleteCompany } from "@/components/company/delete-company";
 import { SectionCard, SubSection } from "@/components/company/section-card";
 import { Badge } from "@/components/ui/badge";
 import { StartQcButton } from "@/components/qc/start-qc-button";
@@ -216,6 +217,14 @@ export default async function CompanyPage({ params }: PageProps<"/companies/[com
         </SectionCard>
       </div>
       </details>
+
+      {user.role === "admin" && (
+        <section aria-labelledby="delete-company-title" className="mt-16 border-t border-border pt-6">
+          <h2 id="delete-company-title" className="text-lg font-semibold tracking-tight">Delete company</h2>
+          <p className="mt-1 mb-4 text-sm text-muted-foreground">Administrators only. Removes the company and everything saved for it.</p>
+          <DeleteCompany company={{ id: company.id, name: company.name }} />
+        </section>
+      )}
     </AppShell>
   );
 }

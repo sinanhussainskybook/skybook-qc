@@ -32,7 +32,7 @@ export function MainNav({ role, children }: { role: Role; children?: ReactNode }
   const items = ITEMS.filter((item) => !item.adminOnly || role === "admin");
 
   return (
-    <nav aria-label="Main" className="flex items-center gap-1 rounded-full bg-card p-1 shadow-[0_4px_16px_-6px_rgb(0_0_0/0.18)] ring-1 ring-foreground/8">
+    <nav aria-label="Main" className="flex items-center gap-1 rounded-full bg-white/[0.07] p-1 shadow-[inset_0_1px_0_rgb(255_255_255/0.08),0_8px_24px_-12px_rgb(37_99_235/0.7)] ring-1 ring-white/15 backdrop-blur">
       <ul className="flex items-center gap-0.5">
         {items.map(({ href, label, icon: Icon, isActive }) => {
           const active = isActive(path);
@@ -45,8 +45,8 @@ export function MainNav({ role, children }: { role: Role; children?: ReactNode }
                 className={cn(
                   "flex h-9 items-center gap-2 rounded-full px-3 text-sm font-medium transition-colors outline-none focus-visible:ring-3 focus-visible:ring-ring/50 sm:px-4",
                   active
-                    ? "bg-foreground text-background shadow-[inset_0_1px_0_rgb(255_255_255/0.12),0_2px_8px_-2px_rgb(0_0_0/0.35)]"
-                    : "text-foreground/80 hover:bg-muted hover:text-foreground"
+                    ? "bg-white text-[#0a1328] shadow-[0_2px_10px_-2px_rgb(59_130_246/0.6)]"
+                    : "text-white/75 hover:bg-white/10 hover:text-white"
                 )}
               >
                 <Icon className="size-4 shrink-0" aria-hidden />
@@ -58,7 +58,7 @@ export function MainNav({ role, children }: { role: Role; children?: ReactNode }
       </ul>
       {children && (
         <>
-          <span className="mx-1 h-6 w-px bg-border" aria-hidden />
+          <span className="mx-1 h-6 w-px bg-white/15" aria-hidden />
           {children}
         </>
       )}

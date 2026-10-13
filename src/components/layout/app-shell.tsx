@@ -22,10 +22,10 @@ export function AppShell({
 }) {
   return (
     <div className="flex min-h-full flex-1 flex-col">
-      <header className="sticky top-0 z-30 border-b border-border/70 bg-background/85 backdrop-blur">
+      <header className="app-header sticky top-0 z-30">
         <div className="mx-auto flex h-16 w-full max-w-5xl items-center gap-4 px-4 sm:px-6">
           <Link href="/" aria-label="Skybook AI QC, home" className="shrink-0 rounded-md transition-opacity hover:opacity-75">
-            <SkybookLogo sub="AI QC" />
+            <SkybookLogo sub="AI QC" className="text-white [&_.text-muted-foreground]:text-white/60" />
           </Link>
           <div className="ml-auto">
             <MainNav role={user.role}>

@@ -48,28 +48,28 @@
 }
 
 :root {
-  /* Surfaces: a white page; panels are white with hairline borders */
-  --background: #ffffff;
-  --foreground: #0f1b2d;
+  /* Surfaces: a pale sky page (see body below); panels stay white with hairline borders */
+  --background: #f5f8ff;
+  --foreground: #0a1328;
   --card: #ffffff;
-  --card-foreground: #0f1b2d;
+  --card-foreground: #0a1328;
   --popover: #ffffff;
-  --popover-foreground: #0f1b2d;
+  --popover-foreground: #0a1328;
 
-  /* Skybook blue — taken from the brand mark. White text on it is 5.6:1. */
-  --primary: #1a64b4;
+  /* Electric blue (the blue abstract theme). White text on it is 5.2:1. */
+  --primary: #2563eb;
   --primary-foreground: #ffffff;
 
-  --secondary: #eaf2fb;
-  --secondary-foreground: #123f73;
-  --muted: #f3f5f8;
-  --muted-foreground: #5b6778;
-  --accent: #eaf2fb;
-  --accent-foreground: #123f73;
+  --secondary: #e8efff;
+  --secondary-foreground: #1e3a8a;
+  --muted: #eef2fb;
+  --muted-foreground: #556074;
+  --accent: #e8efff;
+  --accent-foreground: #1e3a8a;
   --destructive: #c4262e;
-  --border: #e4e8ee;
-  --input: #cfd7e1;
-  --ring: #2e8bd0;
+  --border: #dde5f3;
+  --input: #c8d4ea;
+  --ring: #3b82f6;
 
   /* QC results. Each strong colour passes 4.5:1 on white and on its soft tint. */
   --pass: #147a3f;
@@ -107,6 +107,66 @@
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--muted-foreground);
+}
+
+/*
+ * The blue abstract theme — visual only.
+ *
+ * Signed-in pages: a pale sky that deepens into a soft blue glow at the
+ * bottom of the window, with faint arcs of light. Fixed, so content scrolls
+ * over it; every panel stays white, so text keeps its contrast.
+ */
+body {
+  isolation: isolate;
+  background:
+    radial-gradient(1200px 420px at 50% 122%, rgb(37 99 235 / 0.7), transparent 72%),
+    radial-gradient(1600px 520px at 50% 128%, rgb(96 165 250 / 0.45), transparent 75%),
+    radial-gradient(760px 420px at 100% -10%, rgb(59 130 246 / 0.16), transparent 70%),
+    radial-gradient(620px 360px at -5% 30%, rgb(147 197 253 / 0.18), transparent 70%),
+    linear-gradient(180deg, #f8faff 0%, #f1f6ff 55%, #dfeaff 100%);
+  background-attachment: fixed;
+}
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(1400px 1400px at 50% 165%, transparent 49.6%, rgb(37 99 235 / 0.16) 49.8%, transparent 50.2%),
+    radial-gradient(1700px 1700px at 50% 165%, transparent 49.7%, rgb(59 130 246 / 0.10) 49.85%, transparent 50.1%);
+}
+
+/* The header: deep navy into blue, with a glow of light along its lower edge. */
+.app-header {
+  color: #ffffff;
+  background:
+    radial-gradient(640px 120px at 50% 150%, rgb(59 130 246 / 0.55), transparent 70%),
+    linear-gradient(180deg, #03060f 0%, #0a1a44 100%);
+  border-bottom: 1px solid rgb(147 180 255 / 0.18);
+  box-shadow: 0 10px 30px -14px rgb(37 99 235 / 0.6);
+}
+
+/* The sign-in page: the full night-to-sky hero, with arcs of light. */
+.login-hero {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  color: #ffffff;
+  background:
+    radial-gradient(900px 520px at 72% 112%, rgb(96 165 250 / 0.6), transparent 70%),
+    radial-gradient(760px 420px at 0% 0%, rgb(30 64 175 / 0.45), transparent 70%),
+    linear-gradient(180deg, #02040b 0%, #06122e 34%, #0d3aa8 74%, #4f8dff 100%);
+}
+.login-hero::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(1300px 1300px at 50% 140%, transparent 49.5%, rgb(191 219 254 / 0.22) 49.8%, transparent 50.2%),
+    radial-gradient(1650px 1650px at 50% 140%, transparent 49.6%, rgb(191 219 254 / 0.12) 49.8%, transparent 50.1%);
 }
 
 @layer base {

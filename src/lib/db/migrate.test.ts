@@ -20,6 +20,7 @@ describe("migrations", () => {
       "0006_qc_analysis_runs.sql",
       "0007_qc_local_provider.sql",
       "0008_qc_gemini_provider.sql",
+      "0009_user_must_change_password.sql",
     ]);
   });
 

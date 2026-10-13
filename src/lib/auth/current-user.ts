@@ -3,11 +3,11 @@ import { cache } from "react";
 import { cookies } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 import { getDatabase, isDatabaseConfigured } from "@/lib/db/client";
-import type { User } from "@/lib/db/users";
+import type { SessionUser } from "@/lib/db/sessions";
 import { hasRole, type Role } from "@/lib/auth/roles";
 import { getSessionUser } from "@/lib/auth/sign-in";
 import { isProductionEnvironment, sessionCookieName } from "@/lib/auth/session-cookie";
-import { LOGIN_PATH } from "@/lib/auth/route-access";
+import { CHANGE_PASSWORD_PATH, LOGIN_PATH } from "@/lib/auth/route-access";
 
 /**
  * The signed-in user, checked on the server against the database.
@@ -16,14 +16,25 @@ import { LOGIN_PATH } from "@/lib/auth/route-access";
  */
 
 /** The current user, or null. Checked once per request (React cache). */
-export const getCurrentUser = cache(async (): Promise<User | null> => {
+export const getCurrentUser = cache(async (): Promise<SessionUser | null> => {
   const token = (await cookies()).get(sessionCookieName(isProductionEnvironment()))?.value;
   if (!token || !isDatabaseConfigured()) return null;
   return getSessionUser(getDatabase(), token);
 });
 
-/** The current user; a signed-out visitor is sent to the sign-in page. */
-export async function requireUser(): Promise<User> {
+/**
+ * The current user; a signed-out visitor is sent to the sign-in page, and a
+ * user with a temporary password (set by an administrator) to the
+ * change-password page first.
+ */
+export async function requireUser(): Promise<SessionUser> {
+  const user = await requireSignedInUser();
+  if (user.mustChangePassword) redirect(CHANGE_PASSWORD_PATH);
+  return user;
+}
+
+/** Signed in, temporary password or not — only for the change-password page and its action. */
+export async function requireSignedInUser(): Promise<SessionUser> {
   const user = await getCurrentUser();
   if (!user) redirect(LOGIN_PATH);
   return user;
@@ -33,7 +44,7 @@ export async function requireUser(): Promise<User> {
  * The current user, if they have `role`. Anyone else gets "not found", so
  * admin-only pages don't reveal that they exist.
  */
-export async function requireRole(role: Role): Promise<User> {
+export async function requireRole(role: Role): Promise<SessionUser> {
   const user = await requireUser();
   if (!hasRole(user, role)) notFound();
   return user;

@@ -4,6 +4,9 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { getDatabase, isDatabaseConfigured } from "@/lib/db/client";
 import { signIn, signOut } from "@/lib/auth/sign-in";
+import { changeOwnPassword, type ChangePasswordResult } from "@/lib/auth/change-password";
+import { requireSignedInUser } from "@/lib/auth/current-user";
+import { hashSessionToken, isWellFormedSessionToken } from "@/lib/auth/session-token";
 import {
   isProductionEnvironment,
   sessionCookieName,
@@ -12,7 +15,7 @@ import {
 import { LOGIN_PATH, safeRedirectPath } from "@/lib/auth/route-access";
 
 /**
- * Server actions for the sign-in form and the sign-out button.
+ * Server actions for the sign-in form, the sign-out button and Change password.
  * Next.js only accepts these from pages on this site (it checks the Origin).
  */
 
@@ -88,4 +91,38 @@ export async function signOutAction(): Promise<void> {
   }
   cookieStore.delete(name);
   redirect(LOGIN_PATH);
+}
+
+export type ChangePasswordFormState = { errors?: Extract<ChangePasswordResult, { ok: false }>["errors"] };
+
+/**
+ * The signed-in user chooses a new password (required after an administrator
+ * set a temporary one). This browser stays signed in; every other session of
+ * theirs is signed out.
+ */
+export async function changePasswordAction(
+  _previous: ChangePasswordFormState,
+  formData: FormData
+): Promise<ChangePasswordFormState> {
+  const user = await requireSignedInUser();
+  const token = (await cookies()).get(sessionCookieName(isProductionEnvironment()))?.value;
+
+  let result: ChangePasswordResult;
+  try {
+    result = await changeOwnPassword(
+      getDatabase(),
+      user,
+      {
+        currentPassword: field(formData, "currentPassword"),
+        password: field(formData, "password"),
+        passwordConfirmation: field(formData, "passwordConfirmation"),
+      },
+      { keepTokenHash: token && isWellFormedSessionToken(token) ? hashSessionToken(token) : undefined }
+    );
+  } catch (error) {
+    console.error("Change password failed:", error);
+    return { errors: { form: "Your password couldn't be changed. Please try again." } };
+  }
+  if (!result.ok) return { errors: result.errors };
+  redirect("/");
 }

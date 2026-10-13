@@ -1,6 +1,9 @@
 import type { Database } from "@/lib/db/database";
 import type { User } from "@/lib/db/users";
 
+/** The signed-in user, and whether they must choose a new password first. */
+export type SessionUser = User & { mustChangePassword: boolean };
+
 /**
  * Sign-in sessions (table `app_sessions`).
  *
@@ -26,9 +29,9 @@ export async function findSessionUser(
   db: Database,
   tokenHash: string,
   now: Date
-): Promise<User | null> {
-  const [row] = await db.query<User>(
-    `select u.id, u.name, u.email, u.role, u.active
+): Promise<SessionUser | null> {
+  const [row] = await db.query<SessionUser>(
+    `select u.id, u.name, u.email, u.role, u.active, u.must_change_password as "mustChangePassword"
        from app_sessions s
        join app_users u on u.id = s.user_id
       where s.id = $1
@@ -41,6 +44,18 @@ export async function findSessionUser(
 
 export async function deleteSession(db: Database, tokenHash: string): Promise<void> {
   await db.query("delete from app_sessions where id = $1", [tokenHash]);
+}
+
+/**
+ * Signs a user out everywhere (account switched off, deleted or given a new
+ * password) — except, optionally, the session doing it.
+ */
+export async function deleteUserSessions(db: Database, userId: string, exceptTokenHash?: string): Promise<number> {
+  const rows = await db.query<{ id: string }>(
+    "delete from app_sessions where user_id = $1 and id is distinct from $2 returning id",
+    [userId, exceptTokenHash ?? null]
+  );
+  return rows.length;
 }
 
 /** Housekeeping: remove sessions that have expired. */

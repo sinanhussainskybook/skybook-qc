@@ -38,6 +38,8 @@ describe("GET /companies/[companyId]/qc/report", () => {
   it("signed out → 401; no access → 404; no session of THIS designer → 404; nothing analysed → 409", async () => {
     getCurrentUser.mockResolvedValueOnce(null);
     expect((await call()).status).toBe(401);
+    getCurrentUser.mockResolvedValueOnce({ id: "u1", role: "designer", mustChangePassword: true });
+    expect((await call()).status).toBe(403);
     findCompanyForUser.mockResolvedValueOnce(null);
     expect((await call()).status).toBe(404);
     findCurrentSession.mockResolvedValueOnce(null);

@@ -11,6 +11,12 @@ export const PUBLIC_PATHS: readonly string[] = ["/login"];
 
 export const LOGIN_PATH = "/login";
 
+/** Where a user with a temporary password must go before anything else. */
+export const CHANGE_PASSWORD_PATH = "/account/password";
+
+/** Admin-only User Management (requireRole("admin") on the page and every action). */
+export const USERS_PATH = "/admin/users";
+
 export type RouteAccess = "allow" | "redirect-to-login" | "unauthorized";
 
 export function decideRouteAccess(pathname: string, hasSessionCookie: boolean): RouteAccess {

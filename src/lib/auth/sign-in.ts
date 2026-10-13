@@ -6,6 +6,7 @@ import {
   deleteSession,
   findSessionUser,
   insertSession,
+  type SessionUser,
 } from "@/lib/db/sessions";
 import { findUserForSignIn, type User } from "@/lib/db/users";
 import { getDummyHash, verifyPassword } from "@/lib/auth/password";
@@ -92,7 +93,7 @@ export async function getSessionUser(
   db: Database,
   token: string,
   now: Date = new Date()
-): Promise<User | null> {
+): Promise<SessionUser | null> {
   if (!isWellFormedSessionToken(token)) return null;
   return findSessionUser(db, hashSessionToken(token), now);
 }

@@ -24,6 +24,8 @@ const plain = (status: number, message: string) => new Response(message, { statu
 export async function GET(_request: Request, { params }: RouteContext<"/companies/[companyId]/qc/report">) {
   const user = await getCurrentUser();
   if (!user) return plain(401, "Sign in to download the QC report.");
+  // A temporary password (set by an administrator) must be changed first, as on every page.
+  if (user.mustChangePassword) return plain(403, "Choose your new password first, then download the report.");
   const { companyId } = await params;
   const company = await findCompanyForUser(user, companyId);
   if (!company) return plain(404, "Not found.");

@@ -2,8 +2,8 @@
  * The two roles (D2). Stored on each user and checked on the server.
  *
  * - `designer` — runs QC checks.
- * - `admin` — everything a designer can do, plus administrative features
- *   added later. There is no admin screen yet.
+ * - `admin` — everything a designer can do, plus User Management
+ *   (/admin/users): create, switch on/off, reset passwords, delete.
  */
 
 export const ROLES = ["admin", "designer"] as const;

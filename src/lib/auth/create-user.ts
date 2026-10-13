@@ -5,8 +5,9 @@ import { DEFAULT_COST, hashPassword, type ScryptCost } from "@/lib/auth/password
 import { checkEmail, checkName, checkPassword, checkRole } from "@/lib/auth/user-input";
 
 /**
- * Creates one staff account (used by `npm run user:create`). Everything is
- * checked again here, whatever the caller already checked.
+ * Creates one staff account (used by `npm run user:create` and the admin
+ * User Management page). Everything is checked again here, whatever the
+ * caller already checked. `mustChangePassword`: the password is temporary.
  */
 
 export type NewUserInput = {
@@ -15,6 +16,7 @@ export type NewUserInput = {
   role: string;
   password: string;
   passwordConfirmation: string;
+  mustChangePassword?: boolean;
 };
 
 export type CreateUserResult =
@@ -49,6 +51,7 @@ export async function createUser(
       email: email.value,
       role: role.value,
       passwordHash: await hashPassword(password.value, cost),
+      mustChangePassword: input.mustChangePassword ?? false,
     });
     return { ok: true, user };
   } catch (error) {

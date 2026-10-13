@@ -29,4 +29,15 @@ describe("AppShell", () => {
     expect(header).toContain("<form");
     expect(header).toContain("Sign out");
   });
+
+  it("links Users for an admin only (the page checks the role again on the server)", () => {
+    expect(html).toContain('href="/admin/users"');
+    const designer = renderToStaticMarkup(
+      <AppShell user={{ name: "Dee Designer", role: "designer" }}>
+        <p>Page</p>
+      </AppShell>
+    );
+    expect(designer).not.toContain('href="/admin/users"');
+    expect(designer).toContain('href="/account/password"');
+  });
 });

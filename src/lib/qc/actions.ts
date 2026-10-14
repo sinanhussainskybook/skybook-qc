@@ -100,6 +100,19 @@ export async function startOverAction(_previous: QcFormState, formData: FormData
   return { ok: true };
 }
 
+/**
+ * "Start a new check" on the company page: Start over for THIS company's current session (its files, then
+ * its records — startOverAction), then a fresh session (startSessionAction). The session must be the
+ * signed-in designer's own, for the company named in the form; anything else changes nothing.
+ */
+export async function startNewCheckAction(previous: QcFormState, formData: FormData): Promise<QcFormState> {
+  const found = await sessionFromForm(formData);
+  if (!found || found.company.id !== field(formData, "companyId")) return { error: MESSAGES.notAvailable };
+  const cleared = await startOverAction(previous, formData);
+  if (!cleared.ok) return cleared;
+  return startSessionAction(previous, formData);
+}
+
 export async function changeContentTypeAction(_previous: QcFormState, formData: FormData): Promise<QcFormState> {
   const found = await sessionFromForm(formData);
   if (!found) return { error: MESSAGES.notAvailable };

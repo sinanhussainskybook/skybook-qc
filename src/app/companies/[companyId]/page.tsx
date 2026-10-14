@@ -17,10 +17,12 @@ import { DeleteCompany } from "@/components/company/delete-company";
 import { SectionCard, SubSection } from "@/components/company/section-card";
 import { Badge } from "@/components/ui/badge";
 import { StartQcButton } from "@/components/qc/start-qc-button";
+import { ContinueQc } from "@/components/qc/continue-qc";
 import { requireCompanyAccess } from "@/lib/company/access";
 import { FIELD_SECTIONS } from "@/lib/company/fields";
 import { getDatabase } from "@/lib/db/client";
 import { loadCompanyConfiguration } from "@/lib/db/company-config";
+import { findCurrentSession } from "@/lib/db/qc-sessions";
 import { logoImageUrl } from "@/lib/company/logo";
 import { getLogoStorage } from "@/lib/storage/logo-storage";
 
@@ -35,7 +37,8 @@ const NAV = [
 ];
 
 /**
- * One company: the main action first — Start a QC check — and its saved
+ * One company: the main action first — Start a QC check, or, while this
+ * designer has one in progress, Continue QC check / Start a new check — and its saved
  * configuration (information, contact, logo, brand guidelines, Golden Rules)
  * folded away under "Company settings". Every value has its own Edit, and
  * every save is checked on the server for this company (D13).
@@ -44,6 +47,10 @@ export default async function CompanyPage({ params }: PageProps<"/companies/[com
   const { companyId } = await params;
   const { user, company } = await requireCompanyAccess(companyId);
   const config = await loadCompanyConfiguration(getDatabase(), company);
+  // This designer's QC check in progress for this company, if any (not expired — same rule as the QC page).
+  const now = new Date();
+  const session = await findCurrentSession(getDatabase(), company.id, user.id, now);
+  const hoursLeft = session ? Math.max(1, Math.ceil((session.expires_at.getTime() - now.getTime()) / 3_600_000)) : 0;
   const { contact, brand, goldenRules, logo } = config;
   const storage = getLogoStorage();
   const logoUrl = await logoImageUrl(storage, logo);
@@ -86,7 +93,11 @@ export default async function CompanyPage({ params }: PageProps<"/companies/[com
             Upload the client&apos;s brief and the design — the design is checked against the brief and this company&apos;s brand rules.
           </p>
           <div className="mt-8">
-            <StartQcButton companyId={company.id} className="btn-glossy" />
+            {session ? (
+              <ContinueQc companyId={company.id} sessionId={session.id} hoursLeft={hoursLeft} />
+            ) : (
+              <StartQcButton companyId={company.id} className="btn-glossy" />
+            )}
           </div>
         </>
       }

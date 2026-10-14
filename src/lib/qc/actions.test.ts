@@ -144,6 +144,72 @@ describe("Phase 4 actions and authorization", () => {
     expect((await sessionOf(dee, acme)).status).toBe("ready");
   });
 
+  describe("Start a new check (company page): Start over for THIS company's check, then a fresh one", () => {
+    const upload = async (sessionId: string) => {
+      const prepared = await actions.prepareUploadAction({ sessionId, kind: "content", name: "poster.png", size: PNG.length, type: "image/png" });
+      if (!prepared.ok) throw new Error(prepared.error);
+      const path = fake.browserPut(prepared.uploadUrl, PNG);
+      expect(await actions.confirmUploadAction({ sessionId, fileId: prepared.fileId })).toEqual({ ok: true });
+      return path;
+    };
+    const start = (companyId: string) => actions.startSessionAction({}, form({ companyId, contentType: "design_poster" }));
+    const newCheck = (companyId: string, sessionId: string) => actions.startNewCheckAction({}, form({ companyId, sessionId, contentType: "design_poster" }));
+    const sessionIds = async () => (await state.db.query<{ id: string }>("select id from qc_sessions order by id")).map((r) => r.id);
+
+    it("removes only this company's current check (its files, then its records) and starts a fresh, empty one", async () => {
+      state.user = ada; // an admin can open both companies
+      await start(acme);
+      await start(globex);
+      const old = await sessionOf(ada, acme);
+      const keptOther = await sessionOf(ada, globex);
+      const oldFile = await upload(old.id);
+      const keptFile = await upload(keptOther.id);
+      await actions.saveRequirementAction({}, form({ sessionId: old.id, type: "offer", expected_value: "20% off" }));
+      state.user = sam; // another designer's check for the same company
+      await start(acme);
+      const samsCheck = await sessionOf(sam, acme);
+
+      state.user = ada;
+      expect(await newCheck(acme, old.id)).toEqual({ ok: true });
+
+      const fresh = await sessionOf(ada, acme);
+      expect(fresh.id).not.toBe(old.id);
+      expect(fresh.status).toBe("draft");
+      expect(await listFiles(state.db, fresh.id, "any")).toEqual([]);
+      expect(await listRequirements(state.db, fresh.id)).toEqual([]);
+      expect(fake.files.has(oldFile)).toBe(false);
+      // Untouched: the same designer's check for another company, and another designer's check for this one.
+      expect(fake.files.has(keptFile)).toBe(true);
+      expect((await sessionOf(ada, globex)).id).toBe(keptOther.id);
+      expect((await sessionOf(sam, acme)).id).toBe(samsCheck.id);
+      expect(await sessionIds()).not.toContain(old.id);
+    });
+
+    it("refused, nothing changed: a check of another company, or another designer's check", async () => {
+      state.user = ada;
+      await start(globex);
+      const globexCheck = await sessionOf(ada, globex);
+      expect(await newCheck(acme, globexCheck.id)).toEqual({ error: "This QC session isn't available any more. Reload the page." });
+      state.user = sam;
+      await start(acme);
+      const samsCheck = await sessionOf(sam, acme);
+      state.user = dee;
+      expect(await newCheck(acme, samsCheck.id)).toEqual({ error: "This QC session isn't available any more. Reload the page." });
+      expect(await sessionIds()).toEqual([globexCheck.id, samsCheck.id].sort());
+    });
+
+    it("if Storage can't be reached, the check in progress is kept and nothing new is started", async () => {
+      await start(acme);
+      const current = await sessionOf(dee, acme);
+      const file = await upload(current.id);
+      fake.failing.list = true;
+      expect(await newCheck(acme, current.id)).toEqual({ error: "The session couldn't be cleared right now. Please try again in a moment." });
+      fake.failing.list = false;
+      expect((await sessionOf(dee, acme)).id).toBe(current.id);
+      expect(fake.files.has(file)).toBe(true);
+    });
+  });
+
   describe("authorization", () => {
     let deesSession: string;
     beforeEach(async () => {

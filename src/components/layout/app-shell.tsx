@@ -10,14 +10,20 @@ import type { User } from "@/lib/db/users";
  * main navigation pill on the right (Home, Users for admins, then the
  * signed-in user and Sign out), and the page below.
  *
+ * `hero`: the page's title, intro and main action, centred in white on the
+ * navy-to-blue hero; the page's content (`children`) then sits in a white
+ * panel overlapping the hero's lower edge. Visual only.
+ *
  * The page passes in the user it got from requireUser(); the shell does no
  * checking of its own.
  */
 export function AppShell({
   children,
+  hero,
   user,
 }: {
-  children: ReactNode;
+  children?: ReactNode;
+  hero?: ReactNode;
   user: Pick<User, "name" | "role">;
 }) {
   return (
@@ -35,7 +41,22 @@ export function AppShell({
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-5xl flex-1 px-4 pt-8 pb-20 sm:px-6 sm:pt-12">{children}</main>
+      {hero ? (
+        <main className="flex-1">
+          <section className="app-hero">
+            <div className={`mx-auto flex w-full max-w-5xl flex-col items-center px-4 pt-10 text-center sm:px-6 sm:pt-14 ${children ? "pb-36 sm:pb-40" : "pb-24"}`}>
+              {hero}
+            </div>
+          </section>
+          {children && (
+            <div className="relative mx-auto -mt-28 w-full max-w-5xl px-4 pb-20 sm:-mt-32 sm:px-6">
+              <div className="content-panel p-5 sm:p-8">{children}</div>
+            </div>
+          )}
+        </main>
+      ) : (
+        <main className="mx-auto w-full max-w-5xl flex-1 px-4 pt-8 pb-20 sm:px-6 sm:pt-12">{children}</main>
+      )}
     </div>
   );
 }

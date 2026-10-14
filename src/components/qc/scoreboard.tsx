@@ -78,7 +78,7 @@ export function Scoreboard({ board, findings = [], mock = false, reportHref }: {
 
         {reportHref && (
           <div className="mt-8 flex flex-wrap items-center gap-x-4 gap-y-2">
-            <a href={reportHref} download className={buttonVariants({ className: "h-12 gap-2 rounded-full px-6 text-base font-semibold" })}>
+            <a href={reportHref} download className={buttonVariants({ className: "btn-glossy h-12 gap-2 rounded-full px-6 text-base font-semibold" })}>
               <FileDown className="size-4" aria-hidden />
               Download QC report (PDF)
             </a>

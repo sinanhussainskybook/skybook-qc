@@ -23,18 +23,22 @@ export default async function UsersPage() {
   const users = await listUsers(getDatabase());
 
   return (
-    <AppShell user={admin}>
-      <Link href="/" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
-        <ArrowLeft className="size-4" aria-hidden />
-        All companies
-      </Link>
-
-      <h1 className="display mt-6 text-4xl">Users</h1>
-      <p className="mt-3 max-w-2xl text-muted-foreground">
-        Add staff, switch accounts on or off, set temporary passwords and delete accounts. A temporary password must be changed at the next sign-in.
-      </p>
-
-      <section aria-labelledby="add-user-title" className="mt-10 rounded-3xl bg-card p-6 ring-1 ring-foreground/8 sm:p-8">
+    <AppShell
+      user={admin}
+      hero={
+        <>
+          <Link href="/" className="hero-glass text-sm">
+            <ArrowLeft className="size-4" aria-hidden />
+            All companies
+          </Link>
+          <h1 className="display mt-6 text-4xl sm:text-6xl">Users</h1>
+          <p className="mt-4 max-w-2xl text-muted-foreground sm:text-lg">
+            Add staff, switch accounts on or off, set temporary passwords and delete accounts. A temporary password must be changed at the next sign-in.
+          </p>
+        </>
+      }
+    >
+      <section aria-labelledby="add-user-title" className="rounded-3xl bg-card p-6 ring-1 ring-foreground/8 sm:p-8">
         <h2 id="add-user-title" className="mb-5 text-lg font-semibold tracking-tight">Add a user</h2>
         <CreateUserForm />
       </section>

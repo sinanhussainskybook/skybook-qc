@@ -45,7 +45,7 @@ export function CreateUserForm() {
       <div className="space-y-3 sm:col-span-2">
         {errors.form && <p role="alert" className="rounded-xl bg-fail-soft px-3.5 py-2.5 text-sm font-medium text-fail">{errors.form}</p>}
         {state.ok && <p role="status" className="rounded-xl bg-pass-soft px-3.5 py-2.5 text-sm font-medium text-pass">{state.message}</p>}
-        <Button type="submit" disabled={pending} className="h-11 rounded-full bg-foreground px-6 text-sm font-semibold text-background hover:bg-foreground/85">
+        <Button type="submit" disabled={pending} className="btn-glossy h-11 rounded-full bg-foreground px-6 text-sm font-semibold text-background hover:bg-foreground/85">
           {pending ? "Adding…" : "Add user"}
         </Button>
       </div>

@@ -99,7 +99,7 @@ export function ContentTypeForm({
         <Button
           type="submit"
           disabled={!picked || pending}
-          className="h-10 rounded-full bg-foreground px-5 text-sm font-semibold text-background hover:bg-foreground/85"
+          className="btn-glossy h-10 rounded-full bg-foreground px-5 text-sm font-semibold text-background hover:bg-foreground/85"
         >
           {pending ? "Saving…" : mode === "start" ? "Start QC" : "Change content type"}
         </Button>

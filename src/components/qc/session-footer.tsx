@@ -48,7 +48,7 @@ export function SessionFooter({
           <Button
             type="submit"
             disabled={saving || blocked || status === "ready"}
-            className="h-12 rounded-full px-7 text-base font-semibold"
+            className="btn-glossy h-12 rounded-full px-7 text-base font-semibold"
           >
             <ScanSearch aria-hidden />
             {saving ? "Starting…" : "Check Design"}

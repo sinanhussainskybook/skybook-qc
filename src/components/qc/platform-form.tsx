@@ -239,7 +239,7 @@ export function PlatformForm({
       <Button
         type="submit"
         disabled={!platform || (Boolean(platform.placements) && !spec) || pending}
-        className="h-10 rounded-full bg-foreground px-5 text-sm font-semibold text-background hover:bg-foreground/85"
+        className="btn-glossy h-10 rounded-full bg-foreground px-5 text-sm font-semibold text-background hover:bg-foreground/85"
       >
         {pending ? "Saving…" : "Save platform"}
       </Button>

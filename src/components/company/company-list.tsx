@@ -16,7 +16,7 @@ export function CompanyList({ companies }: { companies: CompanySummary[] }) {
         <p className="mx-auto mt-2 max-w-sm text-sm text-muted-foreground">
           Add the first company, then fill in its information, brand guidelines and Golden Rules. They are saved for every future QC check.
         </p>
-        <Link href="/companies/new" className={cn(buttonVariants(), "mt-6 h-10 rounded-full px-5")}>
+        <Link href="/companies/new" className={cn(buttonVariants(), "btn-glossy mt-6 h-10 rounded-full px-5")}>
           <Plus aria-hidden />
           Add company
         </Link>

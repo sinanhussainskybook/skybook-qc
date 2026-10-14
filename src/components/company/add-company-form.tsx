@@ -44,7 +44,7 @@ export function AddCompanyForm() {
       <Button
         type="submit"
         disabled={pending}
-        className="h-11 w-full rounded-full bg-foreground text-sm font-semibold text-background hover:bg-foreground/85"
+        className="btn-glossy h-11 w-full rounded-full bg-foreground text-sm font-semibold text-background hover:bg-foreground/85"
       >
         {pending ? "Adding…" : "Add company"}
       </Button>

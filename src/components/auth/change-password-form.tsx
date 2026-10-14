@@ -26,7 +26,7 @@ export function ChangePasswordForm() {
         <Input id="new-password-again" name="passwordConfirmation" type="password" required maxLength={PASSWORD_MAX_LENGTH} autoComplete="new-password" className={inputClass} />
       </FieldBlock>
       {errors.form && <p role="alert" className="rounded-xl bg-fail-soft px-3.5 py-2.5 text-sm font-medium text-fail">{errors.form}</p>}
-      <Button type="submit" disabled={pending} className="h-11 w-full rounded-full bg-foreground text-sm font-semibold text-background hover:bg-foreground/85">
+      <Button type="submit" disabled={pending} className="btn-glossy h-11 w-full rounded-full bg-foreground text-sm font-semibold text-background hover:bg-foreground/85">
         {pending ? "Saving…" : "Save new password"}
       </Button>
     </form>

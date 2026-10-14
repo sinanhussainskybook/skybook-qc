@@ -11,21 +11,23 @@ export default async function NewCompanyPage() {
   const user = await requireUser();
 
   return (
-    <AppShell user={user}>
-      <Link
-        href="/"
-        className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
-      >
-        <ArrowLeft className="size-4" aria-hidden />
-        All companies
-      </Link>
-
-      <section className="mx-auto mt-8 max-w-md rounded-3xl bg-card p-6 ring-1 ring-foreground/8 sm:p-8">
-        <h1 className="text-xl font-semibold tracking-tight">Add a company</h1>
-        <p className="mt-1 mb-6 text-sm text-muted-foreground">
-          Start with the name. Contact details, brand guidelines and Golden Rules are added on
-          the company page next.
-        </p>
+    <AppShell
+      user={user}
+      hero={
+        <>
+          <Link href="/" className="hero-glass text-sm">
+            <ArrowLeft className="size-4" aria-hidden />
+            All companies
+          </Link>
+          <h1 className="display mt-6 text-4xl sm:text-6xl">Add a company</h1>
+          <p className="mt-4 max-w-xl text-muted-foreground sm:text-lg">
+            Start with the name. Contact details, brand guidelines and Golden Rules are added on
+            the company page next.
+          </p>
+        </>
+      }
+    >
+      <section className="mx-auto max-w-md">
         <AddCompanyForm />
       </section>
     </AppShell>

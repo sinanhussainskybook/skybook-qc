@@ -202,7 +202,7 @@ export function FileUploader({
           htmlFor={inputId}
           className={cn(
             buttonVariants({ variant: "outline" }),
-            "h-11 cursor-pointer rounded-full px-5 text-sm font-semibold hover:border-primary/40 hover:text-primary focus-within:ring-3 focus-within:ring-ring/50",
+            "btn-white h-11 cursor-pointer rounded-full px-5 text-sm font-semibold hover:border-primary/40 hover:text-primary focus-within:ring-3 focus-within:ring-ring/50",
             (!storageReady || busy || full) && "pointer-events-none opacity-50"
           )}
         >

@@ -55,10 +55,7 @@ export default async function StartQcPage({ params }: PageProps<"/companies/[com
   const session = await findCurrentSession(db, company.id, user.id, now);
 
   const back = (
-    <Link
-      href={`/companies/${company.id}`}
-      className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
-    >
+    <Link href={`/companies/${company.id}`} className="hero-glass text-sm">
       <ArrowLeft className="size-4" aria-hidden />
       {company.name}
     </Link>
@@ -66,18 +63,23 @@ export default async function StartQcPage({ params }: PageProps<"/companies/[com
 
   if (!session) {
     return (
-      <AppShell user={user}>
-        {back}
-        <section className="mt-8 max-w-2xl">
-          <p className="eyebrow">{company.name}</p>
-          <h1 className="display mt-3 text-4xl sm:text-6xl">Start QC</h1>
-          <p className="mt-4 mb-8 text-muted-foreground">
-            Upload the client&apos;s brief and the design, then press Check Design. The design is checked against the
-            brief and this company&apos;s brand rules.
-          </p>
-          <StartQcButton companyId={company.id} label="Start QC" />
-        </section>
-      </AppShell>
+      <AppShell
+        user={user}
+        hero={
+          <>
+            {back}
+            <section className="mt-6 flex max-w-2xl flex-col items-center">
+              <p className="eyebrow">{company.name}</p>
+              <h1 className="display mt-3 text-4xl sm:text-6xl">Start QC</h1>
+              <p className="mt-4 mb-8 text-muted-foreground sm:text-lg">
+                Upload the client&apos;s brief and the design, then press Check Design. The design is checked against the
+                brief and this company&apos;s brand rules.
+              </p>
+              <StartQcButton companyId={company.id} label="Start QC" className="btn-glossy" />
+            </section>
+          </>
+        }
+      />
     );
   }
 
@@ -103,17 +105,21 @@ export default async function StartQcPage({ params }: PageProps<"/companies/[com
     list.map((f) => ({ id: f.id, file_name: f.file_name, mime_type: f.mime_type, file_size: f.file_size }));
 
   return (
-    <AppShell user={user}>
-      {back}
-
-      <header className="mt-8 mb-10">
-        <p className="eyebrow">{company.name}</p>
-        <h1 className="display mt-3 text-4xl sm:text-6xl">Start QC</h1>
-        <p className="mt-4 text-sm text-muted-foreground">
-          Deleted automatically in {hoursLeft} hour{hoursLeft === 1 ? "" : "s"} unless you make a change.
-        </p>
-      </header>
-
+    <AppShell
+      user={user}
+      hero={
+        <>
+          {back}
+          <header className="mt-6">
+            <p className="eyebrow">{company.name}</p>
+            <h1 className="display mt-3 text-4xl sm:text-6xl">Start QC</h1>
+            <p className="mt-4 text-sm text-muted-foreground">
+              Deleted automatically in {hoursLeft} hour{hoursLeft === 1 ? "" : "s"} unless you make a change.
+            </p>
+          </header>
+        </>
+      }
+    >
       {!storage && (
         <p className="mb-6 flex items-start gap-2 rounded-xl bg-revision-soft px-4 py-3 text-sm text-revision">
           <TriangleAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
@@ -125,7 +131,7 @@ export default async function StartQcPage({ params }: PageProps<"/companies/[com
         {/* Before any file can reach Google: only when Gemini is the configured provider. */}
         {configuredProvider() === "gemini" && <GeminiFreeTierNotice />}
 
-        <Step id="information" n={1} title="Upload client brief" description="The client's brief — a document, an email or a spreadsheet. It's read automatically as soon as it's uploaded.">
+        <Step id="information" n={1} className="border-t-0 pt-2 sm:pt-2" title="Upload client brief" description="The client's brief — a document, an email or a spreadsheet. It's read automatically as soon as it's uploaded.">
           <FileUploader
             sessionId={session.id}
             kind="information"

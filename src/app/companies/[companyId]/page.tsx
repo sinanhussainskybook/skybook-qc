@@ -70,29 +70,28 @@ export default async function CompanyPage({ params }: PageProps<"/companies/[com
     });
 
   return (
-    <AppShell user={user}>
-      <Link
-        href="/"
-        className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
-      >
-        <ArrowLeft className="size-4" aria-hidden />
-        All companies
-      </Link>
-
-      <header className="mt-8">
-        <div className="flex flex-wrap items-center gap-3">
-          <h1 className="display text-4xl break-words sm:text-6xl">{company.name}</h1>
-          {!company.active && <Badge variant="outline">Inactive</Badge>}
-        </div>
-        <p className="mt-4 max-w-xl text-muted-foreground">
-          Upload the client&apos;s brief and the design — the design is checked against the brief and this company&apos;s brand rules.
-        </p>
-        <div className="mt-8">
-          <StartQcButton companyId={company.id} />
-        </div>
-      </header>
-
-      <details id="settings" className="group mt-16 border-t border-border pt-6">
+    <AppShell
+      user={user}
+      hero={
+        <>
+          <Link href="/" className="hero-glass text-sm">
+            <ArrowLeft className="size-4" aria-hidden />
+            All companies
+          </Link>
+          <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
+            <h1 className="display max-w-full text-4xl break-words sm:text-6xl">{company.name}</h1>
+            {!company.active && <Badge variant="outline" className="hero-glass">Inactive</Badge>}
+          </div>
+          <p className="mt-4 max-w-xl text-muted-foreground sm:text-lg">
+            Upload the client&apos;s brief and the design — the design is checked against the brief and this company&apos;s brand rules.
+          </p>
+          <div className="mt-8">
+            <StartQcButton companyId={company.id} className="btn-glossy" />
+          </div>
+        </>
+      }
+    >
+      <details id="settings" className="group">
         <summary className="flex cursor-pointer list-none items-center gap-3">
           <span className="min-w-0 flex-1">
             <span className="block text-lg font-semibold tracking-tight">Company settings</span>
@@ -219,7 +218,7 @@ export default async function CompanyPage({ params }: PageProps<"/companies/[com
       </details>
 
       {user.role === "admin" && (
-        <section aria-labelledby="delete-company-title" className="mt-16 border-t border-border pt-6">
+        <section aria-labelledby="delete-company-title" className="mt-12 border-t border-border pt-6">
           <h2 id="delete-company-title" className="text-lg font-semibold tracking-tight">Delete company</h2>
           <p className="mt-1 mb-4 text-sm text-muted-foreground">Administrators only. Removes the company and everything saved for it.</p>
           <DeleteCompany company={{ id: company.id, name: company.name }} />

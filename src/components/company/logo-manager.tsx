@@ -134,7 +134,7 @@ export function LogoManager({
             <label
               className={cn(
                 buttonVariants({ variant: "outline" }),
-                "h-9 cursor-pointer rounded-full px-4 focus-within:ring-3 focus-within:ring-ring/50"
+                "btn-white h-9 cursor-pointer rounded-full px-4 focus-within:ring-3 focus-within:ring-ring/50"
               )}
             >
               <ImageUp aria-hidden />
@@ -194,7 +194,7 @@ export function LogoManager({
             <Button
               type="button"
               disabled={!storageReady || busy}
-              className="h-9 rounded-full bg-foreground px-4 text-background hover:bg-foreground/85"
+              className="btn-glossy h-9 rounded-full bg-foreground px-4 text-background hover:bg-foreground/85"
               onClick={() => {
                 setLocalError(null);
                 setLast(null);

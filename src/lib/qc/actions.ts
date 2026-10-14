@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { getDatabase } from "@/lib/db/client";
 import {
   deleteRequirement,
+  findCurrentSession,
   insertRequirement,
   listFiles,
   listRequirements,
@@ -34,7 +35,7 @@ import {
 import type { FileKind } from "@/lib/qc/qc-file";
 import { getQcStorage } from "@/lib/storage/qc-storage";
 import { enqueueBriefReading, enqueueRun } from "@/lib/analysis/enqueue";
-import { latestRun, type RunKind, type RunStatus } from "@/lib/db/analysis-runs";
+import { hasFinishedDesignCheck, latestRun, type RunKind, type RunStatus } from "@/lib/db/analysis-runs";
 
 /**
  * Server actions for the Start QC page (Phase 4). Every one:
@@ -46,7 +47,14 @@ import { latestRun, type RunKind, type RunStatus } from "@/lib/db/analysis-runs"
  * Messages are plain; details go to the server log.
  */
 
-export type QcFormState = { ok?: boolean; message?: string; error?: string; errors?: Record<string, string> };
+export type QcFormState = {
+  ok?: boolean;
+  message?: string;
+  error?: string;
+  errors?: Record<string, string>;
+  /** Start a QC check found this designer's COMPLETED check for the company: confirm, then start fresh. */
+  confirmNewCheck?: { sessionId: string };
+};
 
 const MESSAGES = {
   notAvailable: "This QC session isn't available any more. Reload the page.",
@@ -73,6 +81,11 @@ async function sessionFromForm(formData: FormData) {
 // Session
 // ---------------------------------------------------------------------------
 
+/**
+ * Start a QC check. An unfinished check (nothing checked to the end yet) is opened again, within its 24
+ * hours. A COMPLETED check — its design checked, a result shown — is never reopened: the designer is asked
+ * to confirm, and startNewCheckAction then removes it (files first) and starts an empty one.
+ */
 export async function startSessionAction(_previous: QcFormState, formData: FormData): Promise<QcFormState> {
   const user = await requireUser();
   const company = await findCompanyForUser(user, formData.get("companyId"));
@@ -81,6 +94,10 @@ export async function startSessionAction(_previous: QcFormState, formData: FormD
   if (!isOfferedContentType(contentType)) return { error: MESSAGES.contentType };
 
   try {
+    const current = await findCurrentSession(getDatabase(), company.id, user.id, new Date());
+    if (current && (await hasFinishedDesignCheck(getDatabase(), current.id))) {
+      return { confirmNewCheck: { sessionId: current.id } };
+    }
     await startSession(getDatabase(), getQcStorage(), { companyId: company.id, userId: user.id, contentType }, new Date());
   } catch (error) {
     console.error("Starting a QC session failed:", error);
@@ -101,9 +118,10 @@ export async function startOverAction(_previous: QcFormState, formData: FormData
 }
 
 /**
- * "Start a new check" on the company page: Start over for THIS company's current session (its files, then
- * its records — startOverAction), then a fresh session (startSessionAction). The session must be the
- * signed-in designer's own, for the company named in the form; anything else changes nothing.
+ * "Start a new check" (after confirming, when the last check is complete): Start over for THIS company's
+ * current session (its files, then its records — startOverAction), then a fresh, empty session
+ * (startSessionAction). The session must be the signed-in designer's own, for the company named in the
+ * form; anything else changes nothing.
  */
 export async function startNewCheckAction(previous: QcFormState, formData: FormData): Promise<QcFormState> {
   const found = await sessionFromForm(formData);

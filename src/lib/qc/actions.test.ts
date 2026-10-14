@@ -144,6 +144,116 @@ describe("Phase 4 actions and authorization", () => {
     expect((await sessionOf(dee, acme)).status).toBe("ready");
   });
 
+  describe("Start a QC check: a completed check is never reopened; an unfinished one is", () => {
+    const upload = async (sessionId: string) => {
+      const prepared = await actions.prepareUploadAction({ sessionId, kind: "content", name: "poster.png", size: PNG.length, type: "image/png" });
+      if (!prepared.ok) throw new Error(prepared.error);
+      const path = fake.browserPut(prepared.uploadUrl, PNG);
+      expect(await actions.confirmUploadAction({ sessionId, fileId: prepared.fileId })).toEqual({ ok: true });
+      return path;
+    };
+    const start = () => actions.startSessionAction({}, form({ companyId: acme, contentType: "design_poster" }));
+    const run = (sessionId: string, kind: "content" | "information", status: string) =>
+      state.db.query(
+        "insert into qc_analysis_runs (session_id, requested_by, kind, provider, status, files_fingerprint) values ($1, $2, $3, 'mock', $4, 'x')",
+        [sessionId, dee.id, kind, status]
+      );
+    const runCount = async (sessionId: string) =>
+      Number((await state.db.query<{ n: number }>("select count(*)::int as n from qc_analysis_runs where session_id = $1", [sessionId]))[0].n);
+
+    it("unfinished (files uploaded, nothing checked yet) → opened again unchanged, files kept", async () => {
+      await start();
+      const current = await sessionOf(dee, acme);
+      const file = await upload(current.id);
+      await actions.saveRequirementAction({}, form({ sessionId: current.id, type: "offer", expected_value: "20% off" }));
+      expect(await start()).toEqual({ ok: true });
+      expect((await sessionOf(dee, acme)).id).toBe(current.id);
+      expect(fake.files.has(file)).toBe(true);
+      expect(await listRequirements(state.db, current.id)).toHaveLength(1);
+    });
+
+    it("a failed or still-running design check, or only the brief read, is NOT complete → opened again", async () => {
+      await start();
+      const current = await sessionOf(dee, acme);
+      for (const [kind, status] of [["content", "failed"], ["content", "processing"], ["information", "done"]] as const) {
+        await state.db.query("delete from qc_analysis_runs");
+        await run(current.id, kind, status);
+        expect(await start(), `${kind} ${status}`).toEqual({ ok: true });
+        expect((await sessionOf(dee, acme)).id).toBe(current.id);
+      }
+    });
+
+    it("completed (design check finished) → the server asks to confirm and changes nothing — even when called directly", async () => {
+      await start();
+      const done = await sessionOf(dee, acme);
+      const file = await upload(done.id);
+      await run(done.id, "content", "done");
+      for (let i = 0; i < 2; i++) {
+        expect(await start()).toEqual({ confirmNewCheck: { sessionId: done.id } });
+      }
+      expect((await sessionOf(dee, acme)).id).toBe(done.id);
+      expect(fake.files.has(file)).toBe(true);
+      expect(await runCount(done.id)).toBe(1);
+    });
+
+    it("confirmed → the completed check's files and records are removed and a fresh, empty check starts (no old result)", async () => {
+      await start();
+      const done = await sessionOf(dee, acme);
+      const file = await upload(done.id);
+      await actions.saveRequirementAction({}, form({ sessionId: done.id, type: "offer", expected_value: "20% off" }));
+      await run(done.id, "content", "done");
+      expect(await actions.startNewCheckAction({}, form({ companyId: acme, sessionId: done.id, contentType: "design_poster" }))).toEqual({ ok: true });
+      const fresh = await sessionOf(dee, acme);
+      expect(fresh.id).not.toBe(done.id);
+      expect(fresh.status).toBe("draft");
+      expect(await listFiles(state.db, fresh.id, "any")).toEqual([]);
+      expect(await listRequirements(state.db, fresh.id)).toEqual([]);
+      expect(await runCount(fresh.id)).toBe(0); // no analysis → no result shown
+      expect(await runCount(done.id)).toBe(0); // the old runs went with the old check
+      expect(fake.files.has(file)).toBe(false);
+      // The fresh check is unfinished, so Start opens it without asking.
+      expect(await start()).toEqual({ ok: true });
+      expect((await sessionOf(dee, acme)).id).toBe(fresh.id);
+    });
+
+    it("if the files can't be removed, the completed check is kept whole and is still not reopened", async () => {
+      await start();
+      const done = await sessionOf(dee, acme);
+      const file = await upload(done.id);
+      await run(done.id, "content", "done");
+      fake.failing.list = true;
+      expect(await actions.startNewCheckAction({}, form({ companyId: acme, sessionId: done.id, contentType: "design_poster" }))).toEqual({
+        error: "The session couldn't be cleared right now. Please try again in a moment.",
+      });
+      fake.failing.list = false;
+      expect((await sessionOf(dee, acme)).id).toBe(done.id);
+      expect(fake.files.has(file)).toBe(true);
+      expect(await runCount(done.id)).toBe(1);
+      expect(await start()).toEqual({ confirmNewCheck: { sessionId: done.id } });
+    });
+
+    it("expired (24 hours after the last change) → never reopened: a fresh check starts and the old files are removed", async () => {
+      await start();
+      const old = await sessionOf(dee, acme);
+      const file = await upload(old.id);
+      await state.db.query("update qc_sessions set expires_at = now() - interval '1 minute' where id = $1", [old.id]);
+      expect(await start()).toEqual({ ok: true });
+      const fresh = await sessionOf(dee, acme);
+      expect(fresh.id).not.toBe(old.id);
+      expect(await listFiles(state.db, fresh.id, "any")).toEqual([]);
+      expect(fake.files.has(file)).toBe(false);
+    });
+
+    it("Start never touches company settings", async () => {
+      const before = await state.db.query("select * from companies where id = $1", [acme]);
+      await start();
+      const done = await sessionOf(dee, acme);
+      await run(done.id, "content", "done");
+      await actions.startNewCheckAction({}, form({ companyId: acme, sessionId: done.id, contentType: "design_poster" }));
+      expect(await state.db.query("select * from companies where id = $1", [acme])).toEqual(before);
+    });
+  });
+
   describe("Start a new check (company page): Start over for THIS company's check, then a fresh one", () => {
     const upload = async (sessionId: string) => {
       const prepared = await actions.prepareUploadAction({ sessionId, kind: "content", name: "poster.png", size: PNG.length, type: "image/png" });

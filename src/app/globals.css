@@ -176,6 +176,13 @@ body::before {
 .app-hero [role="alert"] {
   color: #fecaca;
 }
+/* A white box on the hero (e.g. a confirmation) keeps the normal, dark-on-light colours. */
+.app-hero .hero-light .text-muted-foreground {
+  color: var(--muted-foreground);
+}
+.app-hero .hero-light [role="alert"] {
+  color: var(--fail);
+}
 
 /* A frosted-glass pill on the hero (eyebrows, back links, small badges). */
 .hero-glass {

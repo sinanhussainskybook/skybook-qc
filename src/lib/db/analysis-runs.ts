@@ -90,6 +90,18 @@ export async function latestRun(db: Database, sessionId: string, kind?: RunKind)
   return row ?? null;
 }
 
+/**
+ * Has this session's design been checked to the end — a finished design (content) analysis, so a QC
+ * result exists? Such a check is complete: Start a QC check never reopens it (it starts a fresh one).
+ */
+export async function hasFinishedDesignCheck(db: Database, sessionId: string): Promise<boolean> {
+  const [row] = await db.query<{ done: boolean }>(
+    "select exists (select 1 from qc_analysis_runs where session_id = $1 and kind = 'content' and status = 'done') as done",
+    [sessionId]
+  );
+  return Boolean(row?.done);
+}
+
 /** The detections of the session's newest finished content run, with what it analysed. */
 export async function latestDetections(
   db: Database,

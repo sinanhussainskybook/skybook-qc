@@ -7,7 +7,6 @@ const requireUser = vi.fn();
 const loadCompanyConfiguration = vi.fn();
 const getLogoStorage = vi.fn();
 const logoImageUrl = vi.fn();
-const findCurrentSession = vi.fn();
 
 vi.mock("@/lib/company/access", () => ({ requireCompanyAccess }));
 vi.mock("@/lib/storage/logo-storage", () => ({ getLogoStorage }));
@@ -18,7 +17,6 @@ vi.mock("@/lib/company/logo-actions", () => ({
 }));
 vi.mock("@/lib/auth/current-user", () => ({ requireUser }));
 vi.mock("@/lib/db/company-config", () => ({ loadCompanyConfiguration }));
-vi.mock("@/lib/db/qc-sessions", () => ({ findCurrentSession }));
 vi.mock("@/lib/db/client", () => ({ getDatabase: () => ({}) }));
 vi.mock("@/lib/auth/actions", () => ({ signOutAction: vi.fn() }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }), usePathname: () => "/" }));
@@ -84,7 +82,6 @@ describe("company page", () => {
     loadCompanyConfiguration.mockReset().mockResolvedValue(config);
     getLogoStorage.mockReset().mockReturnValue({});
     logoImageUrl.mockReset().mockResolvedValue(null);
-    findCurrentSession.mockReset().mockResolvedValue(null);
   });
 
   it("checks access to this company on the server first", async () => {
@@ -182,34 +179,11 @@ describe("company page", () => {
     expect(html).not.toMatch(/<details id="settings"[^>]*open/);
   });
 
-  describe("a QC check already in progress (QC session data is temporary — 24 hours after the last change)", () => {
-    const SESSION = "5b6d0f0e-8c1a-4a57-9a4e-2a6f1d6c9e02";
-    const inProgress = (hours: number) => ({ id: SESSION, company_id: ID, user_id: "u1", expires_at: new Date(Date.now() + hours * 3_600_000 - 60_000) });
-
-    it("looks for this designer's own, unexpired check for THIS company", async () => {
-      await CompanyPage(props);
-      expect(findCurrentSession).toHaveBeenCalledWith(expect.anything(), ID, user.id, expect.any(Date));
-    });
-
-    it("none in progress → the normal Start a QC check, and no Continue", async () => {
-      const html = renderToStaticMarkup(await CompanyPage(props));
-      expect(html).toContain("Start a QC check");
-      expect(html).not.toContain("Continue QC check");
-      expect(html).not.toContain("Start a new check");
-    });
-
-    it("one in progress → Continue QC check (a plain link to it) with the time left, and Start a new check", async () => {
-      findCurrentSession.mockResolvedValue(inProgress(20));
-      const html = renderToStaticMarkup(await CompanyPage(props));
-      expect(html).toMatch(new RegExp(`<a [^>]*href="/companies/${ID}/qc/new"[^>]*>Continue QC check`));
-      expect(html).toContain("20 hours left — deleted automatically unless you make a change.");
-      expect(html).toContain("Start a new check");
-      // The plain Start button (which would silently resume) is not shown.
-      expect(html).not.toContain("Start a QC check");
-      expect(html).not.toContain('name="contentType"'); // nothing is submitted until "Start a new check" is confirmed
-      findCurrentSession.mockResolvedValue(inProgress(1));
-      expect(renderToStaticMarkup(await CompanyPage(props))).toContain("1 hour left");
-    });
+  it("Start a QC check is the only action — no Continue option (a completed check is never reopened)", async () => {
+    const html = renderToStaticMarkup(await CompanyPage(props));
+    expect(html.match(/Start a QC check/g)).toHaveLength(1);
+    expect(html).not.toContain("Continue QC check");
+    expect(html).not.toContain("Start a new check"); // only after the server says the last check is complete
   });
 
   it("offers Delete company to administrators only (the action checks the role again)", async () => {

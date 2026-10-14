@@ -7,8 +7,9 @@ import "server-only";
  *   - `company-logos`  — permanent company logos (D3)
  *   - `qc-temp-files`  — temporary QC session files, deleted automatically (D11)
  *
- * Every call uses the service-role key from SUPABASE_SERVICE_ROLE_KEY,
- * which never reaches the browser. The browser only ever gets a
+ * Every call uses the server key from SUPABASE_SERVICE_ROLE_KEY — a new
+ * secret key (sb_secret_…) or a legacy service_role key — which never
+ * reaches the browser. The browser only ever gets a
  * short-lived signed link for one exact file path chosen by the server.
  */
 
@@ -73,7 +74,12 @@ export function createBucketClient(
   fetchImpl: typeof fetch = fetch
 ): BucketClient {
   const base = `${connection.url}/storage/v1`;
-  const headers = { apikey: connection.serviceKey, Authorization: `Bearer ${connection.serviceKey}` };
+  // Supabase's newer secret keys (sb_secret_…) are not JWTs: they go in `apikey` only — sent as
+  // `Authorization: Bearer` they are rejected ("Invalid Compact JWS"). A legacy service_role key is a JWT
+  // and keeps both headers, as before.
+  const headers: Record<string, string> = connection.serviceKey.startsWith("sb_")
+    ? { apikey: connection.serviceKey }
+    : { apikey: connection.serviceKey, Authorization: `Bearer ${connection.serviceKey}` };
   const object = (path: string) => `${base}/object/${bucket}/${encodePath(path)}`;
 
   async function call(what: string, url: string, init: RequestInit, okStatuses: number[] = []) {

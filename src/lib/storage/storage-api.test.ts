@@ -28,6 +28,56 @@ describe("SUPABASE_URL must be the bare project address", () => {
   });
 });
 
+describe("how the server key is sent (new sb_secret_ keys vs legacy service_role JWTs)", () => {
+  // Made-up values in each format — not real keys.
+  const NEW_KEY = "sb_secret_TESTONLY0000000000000000";
+  const LEGACY_JWT = "eyJhbGciOiJIUzI1NiJ9.eyJyb2xlIjoic2VydmljZV9yb2xlIn0.TESTONLYsignature";
+
+  /** Runs every Storage operation once and returns the headers each one sent. */
+  async function headersSent(serviceKey: string) {
+    const fetchMock = vi.fn<typeof fetch>(async (url) => {
+      const u = String(url);
+      if (u.includes("/object/upload/sign/")) return Response.json({ url: "/object/upload/sign/b/p.png?token=t" });
+      if (u.includes("/object/sign/")) return Response.json({ signedURL: "/object/sign/b/p.png?token=t" });
+      if (u.includes("/object/list/")) return Response.json([{ name: "p.png", id: "1" }]);
+      if (u.includes("/object/authenticated/")) return new Response(new Uint8Array([1]), { status: 206, headers: { "content-range": "bytes 0-0/1" } });
+      return new Response("{}");
+    });
+    const client = createBucketClient({ url: "https://abc.supabase.co", serviceKey }, "b", fetchMock);
+    await client.upload("p.png", new Uint8Array([1]), "image/png");
+    await client.remove(["p.png"]);
+    await client.signedUrl("p.png", 60);
+    await client.signedUploadUrl("p.png");
+    await client.readStart("p.png", 1);
+    await client.list("folder");
+    return fetchMock.mock.calls.map(([, init]) => init?.headers as Record<string, string>);
+  }
+
+  it("a new secret key (sb_…) goes in apikey only — never as Authorization: Bearer — on every operation", async () => {
+    const sent = await headersSent(NEW_KEY);
+    expect(sent).toHaveLength(6); // upload, delete, sign, upload-sign, read, list
+    for (const headers of sent) {
+      expect(headers.apikey).toBe(NEW_KEY);
+      expect(headers).not.toHaveProperty("Authorization");
+    }
+  });
+
+  it("a legacy service_role JWT keeps both apikey and Authorization: Bearer, as before, on every operation", async () => {
+    const sent = await headersSent(LEGACY_JWT);
+    expect(sent).toHaveLength(6);
+    for (const headers of sent) {
+      expect(headers.apikey).toBe(LEGACY_JWT);
+      expect(headers.Authorization).toBe(`Bearer ${LEGACY_JWT}`);
+    }
+  });
+
+  it("operation-specific headers are still added alongside the key headers", async () => {
+    const sent = await headersSent(NEW_KEY);
+    expect(sent[0]).toMatchObject({ apikey: NEW_KEY, "Content-Type": "image/png", "x-upsert": "false" }); // upload
+    expect(sent[4]).toMatchObject({ apikey: NEW_KEY, Range: "bytes=0-0" }); // read
+  });
+});
+
 describe("shared Storage client", () => {
   it("makes a one-time upload link for one exact path", async () => {
     const fetchMock = fakeFetch(Response.json({ url: "/object/upload/sign/qc-temp-files/s1/f1.png?token=abc" }));

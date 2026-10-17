@@ -9,7 +9,7 @@ import { createFakeBucket } from "../../../test/fake-storage";
 import type { Database } from "@/lib/db/database";
 import type { User } from "@/lib/db/users";
 import { findAccessibleCompany, insertCompany } from "@/lib/db/companies";
-import { claimNextRun, findRun, insertRun } from "@/lib/db/analysis-runs";
+import { claimNextRun, findRun, insertRun, recoverStaleRuns } from "@/lib/db/analysis-runs";
 import { insertPendingFile, insertSession, listFiles, listRequirements, markFileReady, type QcSession } from "@/lib/db/qc-sessions";
 import { docxText, xlsxText } from "@/lib/analysis/documents";
 import { explicitlyRequired, MUST_HAVE_TYPES, patternCandidates } from "@/lib/analysis/information";
@@ -330,6 +330,50 @@ describe("reading information files (6.7)", () => {
       expect((await run()).result).toBe("done");
       // The mock OCR reads its sample lines; the mock AI proposes the first one, which is in that text.
       expect((await listRequirements(db, session.id)).map((r) => r.expected_value)).toContain("Sample data — not real AI");
+    });
+
+    it("regression: a paused brief reading, recovered and run again meanwhile, adds nothing twice", async () => {
+      await addInfo("notes.txt", "text/plain", "txt", strToU8("Email sales@skybook.com\nCall +971 4 123 4567\nPrice AED 1,299"));
+      const files = (await listFiles(db, session.id, "ready")).filter((f) => f.kind === "information");
+      await insertRun(db, { sessionId: session.id, userId: dee.id, kind: "information", provider: "mock", fingerprint: filesFingerprint(files) }, T0);
+      const deps = (provider: AnalysisProvider) => ({ db, storage: fake.bucket, logoStorage: null, provider, preparer: new PassThroughPreparer(), tempRoot, now: () => T0, sleep: async () => {} });
+
+      // Worker 1 claims the run, reads the brief, checks which requirements already exist (none yet) — and
+      // stalls just as it is about to add the first one: the race the claim check closes.
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => (release = resolve));
+      let entered!: () => void;
+      const inside = new Promise<void>((resolve) => (entered = resolve));
+      const stallingDb: Database = {
+        exec: (script) => db.exec(script),
+        async query(text, params) {
+          if (/insert into qc_requirements/.test(text)) {
+            entered();
+            await gate;
+          }
+          return db.query(text, params);
+        },
+      };
+      const first = (await claimNextRun(db, T0, "mock"))!;
+      const paused = processRun({ ...deps(new MockProvider()), db: stallingDb }, first);
+      await inside;
+      expect(await listRequirements(db, session.id)).toEqual([]); // worker 1 has added nothing yet
+
+      // Meanwhile the run is recovered as stale and worker 2 reads the brief completely.
+      expect(await recoverStaleRuns(db, new Date(T0.getTime() + 3 * 60_000), new Date(T0.getTime() + 60_000), 3)).toEqual({ requeued: 1, failed: 0 });
+      const second = (await claimNextRun(db, T0, "mock"))!;
+      expect(second.attempts).toBe(first.attempts + 1);
+      expect(await processRun(deps(new MockProvider()), second)).toBe("done");
+      const afterSecond = (await listRequirements(db, session.id)).map((r) => `${r.type}|${r.expected_value}`).sort();
+      expect(afterSecond.length).toBeGreaterThan(0);
+
+      // Worker 1 resumes: every insert is refused, it reports "lost", and the requirements are exactly worker 2's.
+      release();
+      expect(await paused).toBe("lost");
+      const final = (await listRequirements(db, session.id)).map((r) => `${r.type}|${r.expected_value}`).sort();
+      expect(final).toEqual(afterSecond);
+      expect(new Set(final).size).toBe(final.length); // no duplicates
+      expect(await findRun(db, first.id)).toMatchObject({ status: "done", attempts: second.attempts });
     });
 
     it("running twice doesn't duplicate candidates", async () => {

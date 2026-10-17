@@ -10,7 +10,7 @@ import type { Database } from "@/lib/db/database";
 import type { User } from "@/lib/db/users";
 import { insertCompany } from "@/lib/db/companies";
 import { insertPendingFile, insertSession, markFileReady, NO_PLATFORM, setSessionPlatform, type QcSession } from "@/lib/db/qc-sessions";
-import { claimNextRun, findRun, heartbeat, insertRun, latestDetections } from "@/lib/db/analysis-runs";
+import { cancelRun, claimNextRun, failRun, findRun, finishRun, heartbeat, insertRun, latestDetections } from "@/lib/db/analysis-runs";
 import { MockProvider } from "@/lib/analysis/mock-provider";
 import { PassThroughPreparer } from "@/lib/analysis/media/types";
 import { LocalMediaPreparer } from "@/lib/analysis/media/local";
@@ -243,8 +243,58 @@ describe("analysis runs (mock provider)", () => {
     await queue();
     const run = (await claimNextRun(db, T0, "mock"))!;
     await db.query("update qc_analysis_runs set status = 'cancelled' where id = $1", [run.id]);
-    expect(await heartbeat(db, run.id, T0)).toBe(false);
+    expect(await heartbeat(db, run, T0)).toBe(false);
     expect(await processRun(deps(), run)).toBe("lost");
+  });
+
+  describe("regression: a paused worker can't touch its run once it was recovered (claims are tied to their attempt)", () => {
+    const afterStall = () => new Date(T0.getTime() + 3 * 60_000); // > 2 min without a heartbeat → stale
+
+    it("claimed again: the old claim's heartbeat, finish, fail and cancel all change nothing; the new claim works", async () => {
+      await addContent("poster.png");
+      await queue();
+      const paused = (await claimNextRun(db, T0, "mock"))!; // attempt 1 — this worker then stalls
+      clock.now = afterStall();
+      expect(await recoverStale({ db, now: () => clock.now })).toEqual({ requeued: 1, failed: 0 });
+      const current = (await claimNextRun(db, clock.now, "mock"))!; // attempt 2
+      expect(current.id).toBe(paused.id);
+      expect(current.attempts).toBe(paused.attempts + 1);
+
+      expect(await heartbeat(db, paused, clock.now)).toBe(false);
+      expect(await finishRun(db, paused, { analysedShare: 1 }, clock.now)).toBe(false);
+      expect(await failRun(db, paused, "stale worker", clock.now)).toBe(false);
+      expect(await cancelRun(db, paused, "stale worker", clock.now)).toBe(false);
+      expect(await findRun(db, paused.id)).toMatchObject({ status: "processing", attempts: current.attempts, failure_reason: null });
+
+      // The paused worker resuming does no work and writes nothing…
+      const provider = new MockProvider();
+      const judged = vi.spyOn(provider, "judgeImage");
+      const read = vi.spyOn(provider, "readText");
+      expect(await processRun({ ...deps(), provider }, paused)).toBe("lost");
+      expect(judged).not.toHaveBeenCalled();
+      expect(read).not.toHaveBeenCalled();
+      expect(await latestDetections(db, session.id)).toBeNull();
+      expect(await findRun(db, paused.id)).toMatchObject({ status: "processing", attempts: current.attempts });
+
+      // …and the current claim finishes normally.
+      expect(await processRun(deps(), current)).toBe("done");
+      expect(await findRun(db, current.id)).toMatchObject({ status: "done", attempts: 2 });
+      expect(await latestDetections(db, session.id)).not.toBeNull();
+    });
+
+    it("put back in the queue (not yet claimed again): the paused worker can't fail or cancel it — the retry is kept", async () => {
+      await addContent("poster.png");
+      await queue();
+      const paused = (await claimNextRun(db, T0, "mock"))!;
+      clock.now = afterStall();
+      await recoverStale({ db, now: () => clock.now });
+      expect(await failRun(db, paused, "stale worker", clock.now)).toBe(false);
+      expect(await cancelRun(db, paused, "stale worker", clock.now)).toBe(false);
+      expect(await heartbeat(db, paused, clock.now)).toBe(false);
+      expect(await findRun(db, paused.id)).toMatchObject({ status: "queued", failure_reason: null });
+      expect(await processRun(deps(), paused)).toBe("lost");
+      expect((await findRun(db, paused.id))!.status).toBe("queued");
+    });
   });
 
   it("workOnce claims the oldest queued run; an empty queue does nothing", async () => {

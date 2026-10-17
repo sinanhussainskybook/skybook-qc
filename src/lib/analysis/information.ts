@@ -189,7 +189,7 @@ export async function processInformationRun(
   const limits = limitsOf(deps);
   const files = (await listFiles(deps.db, access.sessionId, "ready")).filter((f) => f.kind === "information").slice(0, limits.maxImagesPerRun);
   if (filesFingerprint(files) !== run.files_fingerprint) {
-    await cancelRun(deps.db, run.id, SAFE_REASONS.changed, now());
+    await cancelRun(deps.db, run, SAFE_REASONS.changed, now());
     return "cancelled";
   }
   progress.total = files.length * 2;
@@ -204,7 +204,7 @@ export async function processInformationRun(
     const stored = await deps.storage.readStart(file.storage_path, file.file_size + 1);
     const read = stored ? await readFileText(deps, file, stored.bytes, signal) : { unsupported: "the file couldn't be read from storage" };
     progress.done++;
-    await heartbeat(deps.db, run.id, now(), progress);
+    await heartbeat(deps.db, run, now(), progress);
     if ("unsupported" in read) {
       problems.push(`${file.file_name}: ${read.unsupported}`);
       continue;
@@ -222,7 +222,7 @@ export async function processInformationRun(
         )
       : null;
     progress.done++;
-    await heartbeat(deps.db, run.id, now(), progress);
+    await heartbeat(deps.db, run, now(), progress);
     if (proposed && !proposed.ok) problems.push(`${file.file_name}: ${proposed.reason}`);
     if (proposed?.ok) {
       for (const c of proposed.value.candidates) {
@@ -238,10 +238,10 @@ export async function processInformationRun(
   }
 
   if (!readable) {
-    return (await failRun(deps.db, run.id, (problems[0] ?? SAFE_REASONS.failed).slice(0, 300), now())) ? "failed" : "lost";
+    return (await failRun(deps.db, run, (problems[0] ?? SAFE_REASONS.failed).slice(0, 300), now())) ? "failed" : "lost";
   }
   if (!(await authorizeRun(deps.db, run, now()))) {
-    await cancelRun(deps.db, run.id, SAFE_REASONS.unavailable, now());
+    await cancelRun(deps.db, run, SAFE_REASONS.unavailable, now());
     return "cancelled";
   }
 
@@ -252,7 +252,7 @@ export async function processInformationRun(
     const key = `${c.type}|${normalizeWords(c.value)}`;
     if (existing.has(key) || added >= MAX_CANDIDATES_PER_RUN) continue;
     existing.add(key);
-    await insertExtractedRequirement(
+    const inserted = await insertExtractedRequirement(
       deps.db,
       access.sessionId,
       {
@@ -263,10 +263,12 @@ export async function processInformationRun(
         sourceFileId: c.fileId,
         mandatory: MUST_HAVE_TYPES.has(c.type) || Boolean(c.explicit),
       },
-      now()
+      now(),
+      run
     );
+    if (!inserted) return "lost"; // this run was recovered or claimed again: the newer attempt adds them
     added++;
   }
   if (added) await touchSession(deps.db, access.sessionId, now());
-  return (await finishRun(deps.db, run.id, {}, now())) ? "done" : "lost";
+  return (await finishRun(deps.db, run, {}, now())) ? "done" : "lost";
 }

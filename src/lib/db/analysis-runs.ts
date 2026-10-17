@@ -134,10 +134,18 @@ export async function claimNextRun(db: Database, now: Date, provider: AnalysisPr
   return row ?? null;
 }
 
-/** Keeps a processing run alive and records progress. False when the run is no longer ours. */
+/**
+ * The worker's claim on a run: its id and the attempt number claimNextRun gave it (attempts goes up by one
+ * on every claim). Every worker update below must match BOTH, so a worker that paused long enough for its
+ * run to be recovered and claimed again — by itself or another worker — can no longer touch that run: its
+ * heartbeat, finish, fail and cancel all return false and change nothing.
+ */
+export type RunClaim = Pick<AnalysisRun, "id" | "attempts">;
+
+/** Keeps a processing run alive and records progress. False when the run is no longer this claim's. */
 export async function heartbeat(
   db: Database,
-  runId: string,
+  claim: RunClaim,
   now: Date,
   progress?: { stage: string; done: number; total: number }
 ): Promise<boolean> {
@@ -147,9 +155,9 @@ export async function heartbeat(
             stage = coalesce($3, stage),
             progress_done = coalesce($4, progress_done),
             progress_total = coalesce($5, progress_total)
-      where id = $1 and status = 'processing'
+      where id = $1 and status = 'processing' and attempts = $6
       returning id`,
-    [runId, now, progress?.stage.slice(0, 80) ?? null, progress?.done ?? null, progress?.total ?? null]
+    [claim.id, now, progress?.stage.slice(0, 80) ?? null, progress?.done ?? null, progress?.total ?? null, claim.attempts]
   );
   return rows.length > 0;
 }
@@ -160,7 +168,7 @@ export async function heartbeat(
  */
 export async function finishRun(
   db: Database,
-  runId: string,
+  claim: RunClaim,
   result: { detections?: ContentDetections; analysedShare?: number },
   now: Date
 ): Promise<boolean> {
@@ -168,34 +176,36 @@ export async function finishRun(
     `update qc_analysis_runs
         set status = 'done', finished_at = $2, heartbeat_at = $2, detections = $3::jsonb, analysed_share = $4,
             stage = 'Finished', progress_done = progress_total
-      where id = $1 and status = 'processing'
+      where id = $1 and status = 'processing' and attempts = $5
       returning session_id`,
-    [runId, now, result.detections ? JSON.stringify(result.detections) : null, result.analysedShare ?? null]
+    [claim.id, now, result.detections ? JSON.stringify(result.detections) : null, result.analysedShare ?? null, claim.attempts]
   );
   if (!rows.length) return false;
   if (result.detections) {
     await db.query("update qc_analysis_runs set detections = null where session_id = $1 and id <> $2 and detections is not null", [
       rows[0].session_id,
-      runId,
+      claim.id,
     ]);
   }
   return true;
 }
 
-export async function failRun(db: Database, runId: string, reason: string, now: Date): Promise<boolean> {
+/** The worker gives up on the run it is processing. Not once the run was recovered or claimed again. */
+export async function failRun(db: Database, claim: RunClaim, reason: string, now: Date): Promise<boolean> {
   const rows = await db.query(
     `update qc_analysis_runs set status = 'failed', failure_reason = $2, finished_at = $3, stage = 'Failed'
-      where id = $1 and status in ('queued', 'processing') returning id`,
-    [runId, reason.slice(0, 300), now]
+      where id = $1 and status = 'processing' and attempts = $4 returning id`,
+    [claim.id, reason.slice(0, 300), now, claim.attempts]
   );
   return rows.length > 0;
 }
 
-export async function cancelRun(db: Database, runId: string, reason: string, now: Date): Promise<boolean> {
+/** The worker stops the run it is processing (session gone or changed). Same claim rule as failRun. */
+export async function cancelRun(db: Database, claim: RunClaim, reason: string, now: Date): Promise<boolean> {
   const rows = await db.query(
     `update qc_analysis_runs set status = 'cancelled', failure_reason = $2, finished_at = $3, stage = 'Cancelled'
-      where id = $1 and status in ('queued', 'processing') returning id`,
-    [runId, reason.slice(0, 300), now]
+      where id = $1 and status = 'processing' and attempts = $4 returning id`,
+    [claim.id, reason.slice(0, 300), now, claim.attempts]
   );
   return rows.length > 0;
 }

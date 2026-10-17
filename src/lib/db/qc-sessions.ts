@@ -252,24 +252,31 @@ export async function insertRequirement(
 }
 
 /**
- * A requirement found in an uploaded information file (6.7). Always
- * UNCONFIRMED and optional: unconfirmed requirements are never used by the QC
- * engine until the designer reviews and confirms them.
+ * Adds a requirement found in an uploaded information file (6.7). It is always
+ * UNCONFIRMED: the QC engine never uses it until the designer reviews and
+ * confirms it.
+ *
+ * Added only while `claim` (the worker's run and attempt) still owns its run —
+ * checked in the same statement. Returns null, adding nothing, once the run was
+ * recovered or claimed again, so a paused worker can't add a second copy of
+ * what the new attempt adds.
  */
 export async function insertExtractedRequirement(
   db: Database,
   sessionId: string,
   input: { type: string; label: string | null; expectedValue: string; notes: string | null; sourceFileId: string; mandatory?: boolean },
-  now: Date
-): Promise<string> {
+  now: Date,
+  claim: { id: string; attempts: number }
+): Promise<string | null> {
   const [row] = await db.query<{ id: string }>(
     `insert into qc_requirements
        (session_id, type, label, expected_value, notes, mandatory, confirmed, source, source_file_id, created_at, updated_at)
-     values ($1, $2, $3, $4, $5, $8, false, 'extracted', $6, $7, $7)
+     select $1, $2, $3, $4, $5, $8, false, 'extracted', $6, $7, $7
+      where exists (select 1 from qc_analysis_runs where id = $9 and status = 'processing' and attempts = $10)
      returning id`,
-    [sessionId, input.type, input.label, input.expectedValue, input.notes, input.sourceFileId, now, input.mandatory ?? false]
+    [sessionId, input.type, input.label, input.expectedValue, input.notes, input.sourceFileId, now, input.mandatory ?? false, claim.id, claim.attempts]
   );
-  return row.id;
+  return row?.id ?? null;
 }
 
 /**

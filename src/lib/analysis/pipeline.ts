@@ -91,9 +91,12 @@ export async function processRun(deps: RunDeps, run: AnalysisRun): Promise<"done
   const now = deps.now ?? (() => new Date());
   const access = await authorizeRun(deps.db, run, now());
   if (!access) {
-    await cancelRun(deps.db, run.id, SAFE_REASONS.unavailable, now());
+    await cancelRun(deps.db, run, SAFE_REASONS.unavailable, now());
     return "cancelled";
   }
+  // Still this claim's run? A worker that paused may find it recovered and claimed again — then it does no
+  // work at all (no second AI call); its updates would be refused anyway (see RunClaim).
+  if (!(await heartbeat(deps.db, run, now()))) return "lost";
 
   const limits = limitsOf(deps);
   const controller = new AbortController();
@@ -105,7 +108,7 @@ export async function processRun(deps: RunDeps, run: AnalysisRun): Promise<"done
   );
   const progress = { stage: "Starting", done: 0, total: 1 };
   const beat = setInterval(() => {
-    heartbeat(deps.db, run.id, now(), progress)
+    heartbeat(deps.db, run, now(), progress)
       .then((ours) => {
         if (!ours) controller.abort(); // cancelled or taken over: stop
       })
@@ -120,11 +123,11 @@ export async function processRun(deps: RunDeps, run: AnalysisRun): Promise<"done
     return await processContentRun(deps, run, access, controller.signal, progress, workDir);
   } catch (error) {
     if (error instanceof RunAborted || controller.signal.aborted) {
-      const failed = await failRun(deps.db, run.id, SAFE_REASONS.stopped, now());
+      const failed = await failRun(deps.db, run, SAFE_REASONS.stopped, now());
       return failed ? "failed" : "lost";
     }
     console.error(`Analysis run ${run.id} failed:`, error instanceof Error ? error.name : "error");
-    return (await failRun(deps.db, run.id, SAFE_REASONS.failed, now())) ? "failed" : "lost";
+    return (await failRun(deps.db, run, SAFE_REASONS.failed, now())) ? "failed" : "lost";
   } finally {
     clearTimeout(deadline);
     clearInterval(beat);
@@ -144,10 +147,10 @@ async function processContentRun(
   const limits = limitsOf(deps);
   const files = (await listFiles(deps.db, access.sessionId, "ready")).filter((f) => f.kind === "content").slice(0, limits.maxImagesPerRun);
   if (filesFingerprint(files) !== run.files_fingerprint) {
-    await cancelRun(deps.db, run.id, SAFE_REASONS.changed, now());
+    await cancelRun(deps.db, run, SAFE_REASONS.changed, now());
     return "cancelled";
   }
-  if (!files.length) return (await failRun(deps.db, run.id, SAFE_REASONS.nothing, now())) ? "failed" : "lost";
+  if (!files.length) return (await failRun(deps.db, run, SAFE_REASONS.nothing, now())) ? "failed" : "lost";
 
   // The saved logo, for the AI to compare with (never stored with the run).
   const config = await loadCompanyConfiguration(deps.db, access.company);
@@ -208,7 +211,7 @@ async function processContentRun(
   const step = async (stage: string) => {
     progress.stage = stage;
     progress.done++;
-    await heartbeat(deps.db, run.id, now(), progress);
+    await heartbeat(deps.db, run, now(), progress);
   };
 
   // 2. Read and judge each frame — at most 3 provider calls at a time.
@@ -287,7 +290,7 @@ async function processContentRun(
   const anything = results.some((r) => r.ocr || r.judgement) || transcript !== null || audio !== null;
   if (!anything) {
     const reason = unsupported ?? problems[0] ?? SAFE_REASONS.failed;
-    return (await failRun(deps.db, run.id, reason.slice(0, 300), now())) ? "failed" : "lost";
+    return (await failRun(deps.db, run, reason.slice(0, 300), now())) ? "failed" : "lost";
   }
 
   const analysedShare = prepared.reduce((sum, p) => sum + p.analysedShare, 0) / prepared.length;
@@ -302,13 +305,13 @@ async function processContentRun(
 
   // 5. Still allowed, still the same files? Then store.
   if (!(await authorizeRun(deps.db, run, now()))) {
-    await cancelRun(deps.db, run.id, SAFE_REASONS.unavailable, now());
+    await cancelRun(deps.db, run, SAFE_REASONS.unavailable, now());
     return "cancelled";
   }
   const current = (await listFiles(deps.db, access.sessionId, "ready")).filter((f) => f.kind === "content").slice(0, limits.maxImagesPerRun);
   if (filesFingerprint(current) !== run.files_fingerprint) {
-    await cancelRun(deps.db, run.id, SAFE_REASONS.changed, now());
+    await cancelRun(deps.db, run, SAFE_REASONS.changed, now());
     return "cancelled";
   }
-  return (await finishRun(deps.db, run.id, { detections, analysedShare }, now())) ? "done" : "lost";
+  return (await finishRun(deps.db, run, { detections, analysedShare }, now())) ? "done" : "lost";
 }

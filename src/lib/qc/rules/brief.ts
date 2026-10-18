@@ -182,6 +182,11 @@ function judgeSize(r: QcInputRequirement, size: { width: number; height: number 
   });
 }
 
+/** Every finding about a requirement carries its id, so the report can show that requirement's status. */
+function linked(found: Finding | Finding[], r: QcInputRequirement): Finding[] {
+  return (Array.isArray(found) ? found : [found]).map((f) => (r.id ? { ...f, requirementId: r.id } : f));
+}
+
 function judge(r: QcInputRequirement, d: ContentDetections | null, files: ContentFileFacts[] = []): Finding | Finding[] {
   const label = requirementTypeLabel(r.type);
   const title = r.label ? `${label}: ${r.label}` : label;
@@ -260,7 +265,7 @@ const requirementsRule: Rule<QcContext> = {
   run(context) {
     const list = context.requirements.filter((r) => r.type !== "disclaimer");
     if (list.length === 0) return [notApplicable(RULE_ID, CATEGORY, "Brief", "No confirmed requirements to check (disclaimers are checked under Legal).")];
-    return list.flatMap((r) => judge(r, context.detections, context.platform?.files));
+    return list.flatMap((r) => linked(judge(r, context.detections, context.platform?.files), r));
   },
 };
 

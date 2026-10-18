@@ -335,8 +335,10 @@ describe("QC session rules (Storage faked)", () => {
         custom: null,
       });
       expect(input.requirements).toEqual([
-        { type: "offer", label: "Summer", expectedValue: "20% off", notes: null, mandatory: true, source: "manual" },
+        { id: expect.any(String), type: "offer", label: "Summer", expectedValue: "20% off", notes: null, mandatory: true, source: "manual" },
       ]);
+      // The id is the requirement's own (qc_requirements.id): findings that check it carry it, for the report.
+      expect(input.requirements[0].id).toBe((await listRequirements(db, session.id)).find((r) => r.confirmed)!.id);
       expect(input.unconfirmedRequirementCount).toBe(1);
       expect(input.informationFiles.map((f) => f.fileName)).toEqual(["brief.pdf"]);
       expect(input.contentFiles.map((f) => f.fileName)).toEqual(["poster.png"]);

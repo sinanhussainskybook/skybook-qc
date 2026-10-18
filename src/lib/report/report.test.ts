@@ -1,7 +1,7 @@
 import { PDFDict, PDFDocument, PDFName } from "pdf-lib";
 import sharp from "sharp";
 import { describe, expect, it } from "vitest";
-import { HUMAN_CHECK_CRITICAL } from "@/lib/analysis/policy";
+import { applyConfidencePolicy, HUMAN_CHECK_CRITICAL } from "@/lib/analysis/policy";
 import type { QcFile, QcRequirement, QcSession } from "@/lib/db/qc-sessions";
 import type { Category, Finding, FindingStatus, Severity } from "@/lib/qc/findings";
 import { scoreFindings } from "@/lib/qc/scoring";
@@ -11,7 +11,7 @@ import { logoForReport } from "@/lib/report/report-logo";
 import { displayTitle, groupRelated, groupSections, renderReportPdf, reportFileName, splitIssues, type ReportLogo } from "@/lib/report/report-pdf";
 import { shapeArabic, woffToSfnt, type FontFiles } from "@/lib/report/report-fonts";
 import { pdfText } from "@/lib/analysis/media/pdf";
-import { company } from "../../../test/qc-fixtures";
+import { company, detections, golden, requirement, run, text } from "../../../test/qc-fixtures";
 
 /** Phase 8 — the PDF QC report, built from the current session's findings and Phase 7 result. */
 
@@ -85,13 +85,14 @@ describe("QC report", () => {
     expect(r.text).not.toMatch(/Brief requirements met|Score by category|Not scored|Followed/);
   });
 
-  it("PASS with something to verify → 'PASS — PLEASE VERIFY'; the item sits in its severity group with a short 'Please verify' note — no Human review section", async () => {
+  it("a possible critical issue to verify → 'CHECK BEFORE SENDING', never a PASS; the item sits in its severity group with a short 'Please verify' note — no Human review section", async () => {
     const humanPrice = f("brief", "unverified", "critical", { ruleId: "brief.requirement.price", title: "Price", expected: "AED 1,299", detected: "AED 1,399", explanation: `${HUMAN_CHECK_CRITICAL}: this was judged by AI, which can't fail a design on its own.` });
     const r = await report([f("brand", "passed"), humanPrice, f("brand", "unverified", "major", { title: "Brand fonts", explanation: "None saved." })]);
-    expect(r.data).toMatchObject({ result: "pass", resultLabel: "PASS — PLEASE VERIFY", humanCheckCount: 1 });
+    expect(r.data).toMatchObject({ result: "pass", resultLabel: "CHECK BEFORE SENDING", humanCheckCount: 1, possibleCriticalCount: 1 });
     expect(r.data.issues).toEqual({ critical: 0, major: 0, minor: 0, suggestion: 0 }); // the human check still doesn't count
-    expect(r.text.split("\n")).toContain("PASS — PLEASE VERIFY"); // one line, not wrapped
-    expect(flat(r.text)).toContain("No issues found — but please verify the items marked below before sending it to the client.");
+    expect(r.text.split("\n")).toContain("CHECK BEFORE SENDING"); // one line, not wrapped
+    expect(r.text).not.toMatch(/\bPASS\b/); // never shown as a pass
+    expect(flat(r.text)).toContain("A possible critical issue couldn't be confirmed automatically. Check the items marked below by eye — don't send it to the client until you have.");
     inOrder(r.text, "FINDINGS", "SEVERITY", "ISSUE", "SUGGESTED FIX", "CRITICAL", "1 to verify", "CRITICAL", "PLEASE VERIFY", "Price", "Brief", "Expected: AED 1,299", "Found: AED 1,399");
     expect(flat(r.text)).toContain('Found: AED 1,399 Please verify: Check the design for "AED 1,299" — the AI wasn\'t sure.');
     expect(r.text).not.toMatch(/HUMAN REVIEW|judged by AI|Should be|AI read/); // no separate section, no technical wording
@@ -131,7 +132,7 @@ describe("QC report", () => {
     expect(r.text).not.toContain("The brief asks for this, but it isn't in the content.");
     expect(r.text).not.toContain("Barely used.");
     expect(r.text).not.toContain("No brand fonts are saved");
-    expect(flat(r.text)).toContain("Company settings missing (1): Brand fonts — add them on the company page. They don't affect the result.");
+    expect(flat(r.text)).toContain("Company settings missing (1): Brand fonts — add them on the company page. They aren't design issues.");
     expect(r.text).toContain("No requirements from the brief were checked.");
     // Each issue appears exactly once.
     for (const title of ["Price", "Brand colours used", "Recommended resolution", "Logo"]) expect([title, lines.filter((l) => l === title).length]).toEqual([title, 1]);
@@ -181,7 +182,7 @@ describe("QC report", () => {
   it("FAIL report with a critical finding: expected / found / fix and the file", async () => {
     const r = await report(
       [
-        f("brief", "failed", "critical", { ruleId: "brief.requirement.price", title: "Price", expected: "AED 1,299", detected: "AED 1,399", suggestedFix: 'Change it to "AED 1,299".', fileName: "summer-post.png" }),
+        f("brief", "failed", "critical", { ruleId: "brief.requirement.price", requirementId: "price", title: "Price", expected: "AED 1,299", detected: "AED 1,399", suggestedFix: 'Change it to "AED 1,299".', fileName: "summer-post.png" }),
         ...(["content", "brand", "golden_rules", "design_layout", "accessibility", "image_asset", "platform_size", "legal"] as Category[]).map((c) => f(c, "passed")),
       ],
       { requirements: [req("price", "AED 1,299"), req("cta", "Book now", { confirmed: false })] }
@@ -200,8 +201,8 @@ describe("QC report", () => {
   it("brief requirements: met ones are counted as passed, one with no check at all is named once, failed ones only as their issue", async () => {
     const r = await report(
       [
-        f("brief", "passed", "critical", { ruleId: "brief.requirement.headline", title: "Headline", expected: "Live by the sea" }),
-        f("brief", "failed", "major", { ruleId: "brief.requirement.cta", title: "CTA", expected: "Book now", detected: "Buy now", suggestedFix: 'Change it to "Book now".' }),
+        f("brief", "passed", "critical", { ruleId: "brief.requirement.headline", requirementId: "headline", title: "Headline", expected: "Live by the sea" }),
+        f("brief", "failed", "major", { ruleId: "brief.requirement.cta", requirementId: "cta", title: "CTA", expected: "Book now", detected: "Buy now", suggestedFix: 'Change it to "Book now".' }),
       ],
       { requirements: [req("headline", "Live by the sea"), req("cta", "Book now"), req("phone", "+971 4 123 4567", { mandatory: false })] }
     );
@@ -304,7 +305,7 @@ describe("QC report", () => {
   it("checks that couldn't run automatically: named in one line, never counted — no long reasons", async () => {
     const r = await report([f("brand", "unverified", "major", { title: "Brand colours", explanation: "No brand colours are saved for this company." }), f("brief", "passed")]);
     expect(r.data.result).toBe("pass");
-    expect(flat(r.text)).toContain("Company settings missing (1): Brand colours — add them on the company page. They don't affect the result.");
+    expect(flat(r.text)).toContain("Company settings missing (1): Brand colours — add them on the company page. They aren't design issues.");
     const unsure = (title: string, category: Category, expected?: string) =>
       f(category, "unverified", "minor", { title, expected, explanation: "Not verified: Gemini saw no problem here, but that isn't confirmed — check it yourself." });
     const grouped = await report([unsure("Image quality", "image_asset"), unsure("Meaning shown only by colour", "accessibility", "Meaning also shown in words or symbols"), f("content", "passed")]);
@@ -324,7 +325,7 @@ describe("QC report", () => {
     ];
     const r = await report(findings);
     const text = flat(r.text);
-    expect(text).toContain("Company settings missing (3): Brand fonts · Terminology · Logo — add them on the company page. They don't affect the result.");
+    expect(text).toContain("Company settings missing (3): Brand fonts · Terminology · Logo — add them on the company page. They aren't design issues.");
     expect(text).toContain("Not checked automatically (2): Platform · Image quality — they don't affect the result.");
     // Not mistakes: no issue rows, nothing to verify, and the result is a clean PASS at 100.
     expect(r.text).not.toContain("SEVERITY");
@@ -406,7 +407,7 @@ describe("QC report", () => {
     const goldenFindings = () =>
       mergeDuplicateFindings([
         f("golden_rules", "failed", "major", { ruleId: "golden_rules.rule.approved_cta", title: "Golden Rule: Always use Book now", mandatory: false, expected: "Book now", detected: "Book today", explanation: "The call to action isn't the approved wording.", suggestedFix: 'Use "Book now".' }),
-        f("brief", "failed", "critical", { ruleId: "brief.requirement.cta", title: "CTA (call to action)", expected: "Book now", detected: "Book today", explanation: "Not the brief's CTA.", suggestedFix: 'Use "Book now".' }),
+        f("brief", "failed", "critical", { ruleId: "brief.requirement.cta", requirementId: "cta", title: "CTA (call to action)", expected: "Book now", detected: "Book today", explanation: "Not the brief's CTA.", suggestedFix: 'Use "Book now".' }),
         f("golden_rules", "passed", "critical", { ruleId: "golden_rules.rule.approved_color", title: "Golden Rule: Use Skybook blue", mandatory: true }),
         f("golden_rules", "unverified", "critical", { ruleId: "golden_rules.rule.logo_rule", title: "Golden Rule: Logo top-left", mandatory: true, expected: "Logo top-left", explanation: "This rule is written in words, so it isn't checked automatically — review it by eye." }),
         f("golden_rules", "unverified", "major", { ruleId: "golden_rules.rule.approved_font", title: "Golden Rule: Headlines in Montserrat", mandatory: true, explanation: "No approved value is saved for this rule, so there's nothing to compare with." }),
@@ -441,13 +442,13 @@ describe("QC report", () => {
       expect(r.text.split("\n")).toContain("1 To verify");
       expect(r.text.split("\n")).toContain("1 Critical");
       // The rule with no saved value: named once in the short summary, not sent for a manual check.
-      expect(text).toContain("Company settings missing (1): Headlines in Montserrat (Golden Rule) — add them on the company page. They don't affect the result.");
+      expect(text).toContain("Company settings missing (1): Headlines in Montserrat (Golden Rule) — add them on the company page. They aren't design issues.");
     });
 
     it("PDF: a brief requirement merged with the company's contact details says so once — the issue shown and counted once", async () => {
       const r = await report(
         mergeDuplicateFindings([
-          f("brief", "failed", "critical", { ruleId: "brief.requirement.phone", title: "Phone number", expected: "+971 4 123 4567", detected: "+971 4 123 4568", suggestedFix: 'Change it to "+971 4 123 4567".' }),
+          f("brief", "failed", "critical", { ruleId: "brief.requirement.phone", requirementId: "phone", title: "Phone number", expected: "+971 4 123 4567", detected: "+971 4 123 4568", suggestedFix: 'Change it to "+971 4 123 4567".' }),
           f("content", "failed", "critical", { ruleId: "content.contact_details.phone", title: "Phone / WhatsApp number", expected: "+971 4 123 4567 or +971 50 765 4321", detected: "+971 4 123 4568", suggestedFix: "Replace it with +971 4 123 4567." }),
         ]),
         { requirements: [req("phone", "+971 4 123 4567")] }
@@ -502,7 +503,7 @@ function fontsIn(doc: PDFDocument): { names: string[]; embeddedFiles: number } {
 /** Phase 8.1 — Arabic / multilingual text in the PDF (embedded Noto Sans + Noto Sans Arabic). */
 describe("QC report — Arabic text", () => {
   const arabicFindings = () => [
-    f("brief", "failed", "major", { ruleId: "brief.requirement.headline", title: "Headline", expected: "عرض الصيف", detected: "Summer Offer", suggestedFix: "استخدم العنوان: عرض الصيف" }),
+    f("brief", "failed", "major", { ruleId: "brief.requirement.headline", requirementId: "headline", title: "Headline", expected: "عرض الصيف", detected: "Summer Offer", suggestedFix: "استخدم العنوان: عرض الصيف" }),
     f("content", "passed"),
   ];
 
@@ -704,5 +705,203 @@ describe("QC report — the 13 Oct Travel Mart report", () => {
     expect(text).toContain('rgb(12, 34, 56) — "line break andbell"'); // a newline or tab becomes a space; a control character is removed
     expect(r.text).not.toContain("?"); // no "?" placeholders for invisible characters
     expect(r.text.replace(/\n/g, "")).toContain(long); // a value longer than a line wraps — every character kept
+  });
+});
+
+/**
+ * Stage 1 (honest results): each brief requirement in the report is matched to the finding that checked
+ * it by the requirement's id — never by comparing text, which failed when the check words the value its
+ * own way ("1080 × 1080 px" for "1080x1080") or two requirements ask for the same thing.
+ */
+describe("QC report — requirement status by requirement id", () => {
+  const statuses = (r: Awaited<ReturnType<typeof report>>) => r.data.requirements.map((x) => [x.type, x.value, x.status]);
+
+  it("an exact size worded differently by the check is still answered (it used to say 'Not checked')", async () => {
+    const r = await report(
+      [f("brief", "failed", "major", { ruleId: "brief.requirement.dimensions", requirementId: "dimensions", title: "Dimensions", expected: "1080 × 1080 px", detected: "1254 × 1254 px" })],
+      { requirements: [req("dimensions", "1080x1080")] }
+    );
+    expect(statuses(r)).toEqual([["Dimensions", "1080x1080", "To fix (Major)"]]);
+  });
+
+  it("two requirements asking for the same value each get their own finding's status", async () => {
+    const r = await report(
+      [
+        f("brief", "passed", "critical", { ruleId: "brief.requirement.cta", requirementId: "r1", title: "CTA", expected: "Book now" }),
+        f("brief", "failed", "major", { ruleId: "brief.requirement.cta", requirementId: "r2", title: "CTA", expected: "Book now", detected: "Buy now" }),
+      ],
+      { requirements: [req("cta", "Book now", { id: "r1" }), req("cta", "Book now", { id: "r2", mandatory: false })] }
+    );
+    expect(statuses(r)).toEqual([
+      ["CTA (call to action)", "Book now", "Passed"],
+      ["CTA (call to action)", "Book now", "To fix (Major)"],
+    ]);
+  });
+
+  it("a finding with the same words but about another requirement doesn't answer this one", async () => {
+    const r = await report(
+      [f("brief", "failed", "critical", { ruleId: "brief.requirement.price", requirementId: "other", title: "Price", expected: "AED 1,299", detected: "AED 1,399" })],
+      { requirements: [req("price", "AED 1,299", { id: "mine" })] }
+    );
+    expect(statuses(r)).toEqual([["Price", "AED 1,299", "Not checked"]]);
+  });
+
+  it("several findings for one requirement (one per design): the most important status is shown", async () => {
+    const per = (status: FindingStatus, over: Partial<Finding> = {}) => f("brief", status, "major", { ruleId: "brief.requirement.dimensions", requirementId: "dims", title: "Dimensions", expected: "1080 × 1080 px", ...over });
+    const dims = [req("dimensions", "1080x1080", { id: "dims" })];
+    expect(statuses(await report([per("passed", { fileName: "a.png" }), per("failed", { fileName: "b.png" })], { requirements: dims }))[0][2]).toBe("To fix (Major)");
+    expect(statuses(await report([per("passed", { fileName: "a.png" }), per("unverified", { fileName: "b.png", explanation: `${HUMAN_CHECK_CRITICAL}: unsure.` })], { requirements: dims }))[0][2]).toBe("Needs a human check");
+  });
+
+  it("end to end with the real rules: brief, legal and a requirement merged into a Golden Rule each carry their id", async () => {
+    const reqs = [req("dimensions", "1080x1080", { id: "q-size" }), req("disclaimer", "T&Cs apply", { id: "q-legal" }), req("cta", "Book now", { id: "q-cta" }), req("price", "AED 1,299", { id: "q-price" })];
+    const findings = mergeDuplicateFindings(
+      run({
+        company: company({ goldenRules: [golden({ category: "approved_cta", approved_value: "Book now", mandatory: true })] }),
+        requirements: reqs.map((r) => requirement(r.type, r.expected_value, { id: r.id })),
+        platform: { platform: null, placement: null, custom: null, files: [{ id: "f1", fileName: "post.png", format: "png", size: 400_000, media: { unit: "px", width: 1254, height: 1254 } as never }] },
+        detections: detections({ texts: [text("Summer offer AED 1,299"), text("Buy now", { role: "cta" })], textCoverage: 0.95 }),
+      })
+    );
+    // The brief's CTA is the same issue as the Golden Rule: merged into it, but still answered by id.
+    const golden_ = findings.find((x) => x.ruleId === "golden_rules.rule.approved_cta")!;
+    expect(golden_.alsoCovers).toEqual([expect.objectContaining({ ruleId: "brief.requirement.cta", requirementId: "q-cta" })]);
+    const r = await report(findings, { requirements: reqs });
+    expect(statuses(r)).toEqual([
+      ["Dimensions", "1080x1080", "To fix (Major)"],
+      ["Disclaimer", "T&Cs apply", "To fix (Critical)"],
+      ["CTA (call to action)", "Book now", "To fix (Critical)"],
+      ["Price", "AED 1,299", "Passed"],
+    ]);
+  });
+});
+
+/** Stage 1 follow-up: the same notes in the PDF, and a mandatory Golden Rule only a person can check. */
+describe("QC report — possible critical issues", () => {
+  const flat = (t: string) => t.replace(/\n/g, " ");
+  /** Each part appears, in this order (not necessarily on consecutive lines). */
+  const inOrder = (t: string, ...parts: string[]) => {
+    const at = parts.map((p) => flat(t).indexOf(p));
+    expect(at.every((i) => i >= 0)).toBe(true);
+    expect([...at].sort((a, b) => a - b)).toEqual(at);
+  };
+  const possible = () => f("brief", "unverified", "critical", { ruleId: "brief.requirement.price", title: "Price", expected: "AED 1,299", explanation: `${HUMAN_CHECK_CRITICAL}: unsure.` });
+
+  it("CHECK BEFORE SENDING: the score is labelled as covering confirmed checks only", async () => {
+    const r = await report([possible(), f("content", "passed")]);
+    expect(r.data).toMatchObject({ resultLabel: "CHECK BEFORE SENDING", score: 100, scoreNote: "Confirmed checks only — 1 possible critical issue still to check by eye.", warning: null });
+    expect(flat(r.text)).toContain("Score: Confirmed checks only — 1 possible critical issue still to check by eye.");
+  });
+
+  it("NEEDS REVISION with a possible critical issue: a warning under the result, and the score note", async () => {
+    const r = await report([possible(), f("accessibility", "failed", "major", { title: "Text contrast" }), f("content", "passed")]);
+    expect(r.data.resultLabel).toBe("NEEDS REVISION");
+    inOrder(r.text, "NEEDS REVISION", "Fix the issues below", "Also check 1 possible critical issue marked below by eye before sending — if confirmed, this design fails.", "Score: Confirmed checks only");
+  });
+
+  it("no possible critical issue: neither note appears", async () => {
+    const r = await report([f("accessibility", "failed", "major", { title: "Text contrast" }), f("content", "passed")]);
+    expect(r.data).toMatchObject({ scoreNote: null, warning: null });
+    expect(r.text).not.toMatch(/Confirmed checks only|if confirmed, this design fails/);
+  });
+
+  it("end to end: a company's mandatory Golden Rule in words (logo rule) blocks PASS; an optional one doesn't", async () => {
+    const result = async (mandatory: boolean) => {
+      const findings = mergeDuplicateFindings(
+        run({
+          company: company({ goldenRules: [golden({ category: "logo_rule", rule: "Logo top-left", approved_value: null, mandatory })] }),
+          requirements: [requirement("price", "AED 1,299", { id: "q-price" })],
+          detections: detections({ texts: [text("Summer offer AED 1,299")], textCoverage: 0.95 }),
+        })
+      );
+      return report(findings, { requirements: [req("price", "AED 1,299", { id: "q-price" })] });
+    };
+    const mandatory = await result(true);
+    expect(mandatory.data).toMatchObject({ result: "pass", resultLabel: "CHECK BEFORE SENDING", possibleCriticalCount: 1 });
+    expect(mandatory.data.humanChecks.map((x) => [x.title, x.marker])).toEqual([["Logo top-left", "Mandatory"]]);
+    expect(mandatory.text).not.toMatch(/\bPASS\b/);
+    expect((await result(false)).data.resultLabel).not.toBe("CHECK BEFORE SENDING");
+  });
+});
+
+describe("QC report — CHECK COMPANY SETTINGS", () => {
+  const flat = (t: string) => t.replace(/\n/g, " ");
+
+  it("end to end: a company's mandatory Golden Rule with no approved value saved → CHECK COMPANY SETTINGS, never PASS, not counted", async () => {
+    const result = async (mandatory: boolean) => {
+      const findings = mergeDuplicateFindings(
+        run({
+          company: company({ goldenRules: [golden({ category: "approved_font", rule: "Headlines in Montserrat", approved_value: null, mandatory })] }),
+          requirements: [requirement("price", "AED 1,299", { id: "q-price" })],
+          detections: detections({ texts: [text("Summer offer AED 1,299")], fonts: [{ family: "Montserrat", confidence: 0.9 }], textCoverage: 0.95 }),
+        })
+      );
+      return report(findings, { requirements: [req("price", "AED 1,299", { id: "q-price" })] });
+    };
+    const r = await result(true);
+    expect(r.data).toMatchObject({ result: "pass", resultLabel: "CHECK COMPANY SETTINGS", settingsBlockerCount: 1, settingsWarning: null, issues: { critical: 0, major: 0, minor: 0, suggestion: 0 } });
+    expect(r.text.split("\n")).toContain("CHECK COMPANY SETTINGS");
+    expect(r.text).not.toMatch(/\bPASS\b/);
+    const pdf = flat(r.text);
+    expect(pdf).toContain("mandatory Golden Rule couldn't be checked because its approved value is missing or invalid. Fix it on the company page");
+    expect(pdf).toContain("Score: Confirmed checks only — 1 mandatory Golden Rule not checked (approved value missing or invalid).");
+    expect(pdf).toContain("Company settings missing (1): Headlines in Montserrat (Golden Rule) — add them on the company page. They aren't design issues.");
+    // An optional rule with no value is only a settings note: the design can still pass.
+    expect((await result(false)).data.resultLabel).not.toBe("CHECK COMPANY SETTINGS");
+  });
+
+  it("beside another result it's a warning line under the summary", async () => {
+    const noValue = f("golden_rules", "unverified", "critical", { ruleId: "golden_rules.rule.approved_font", title: "Golden Rule: Headlines in Montserrat", mandatory: true, explanation: "No approved value is saved for this rule, so there's nothing to compare with. Add one on the company page." });
+    const r = await report([noValue, f("accessibility", "failed", "major", { title: "Text contrast" }), f("content", "passed")]);
+    expect(r.data.resultLabel).toBe("NEEDS REVISION");
+    expect(flat(r.text)).toContain("1 mandatory Golden Rule couldn't be checked because its approved value is missing or invalid — fix it on the company page.");
+  });
+});
+
+describe("QC report — an invalid saved colour in a mandatory Golden Rule", () => {
+  const flat = (t: string) => t.replace(/\n/g, " ");
+
+  it("end to end: CHECK COMPANY SETTINGS, never PASS, not counted; an optional one doesn't block", async () => {
+    const result = async (mandatory: boolean) => {
+      const findings = mergeDuplicateFindings(
+        run({
+          company: company({ goldenRules: [golden({ category: "approved_color", rule: "Use brand navy", approved_value: "navy", mandatory })] }),
+          requirements: [requirement("price", "AED 1,299", { id: "q-price" })],
+          detections: detections({ texts: [text("Summer offer AED 1,299")], colors: [{ hex: "#1A64B4", share: 0.4 }], textCoverage: 0.95 }),
+        })
+      );
+      return report(findings, { requirements: [req("price", "AED 1,299", { id: "q-price" })] });
+    };
+    const r = await result(true);
+    expect(r.data).toMatchObject({ result: "pass", resultLabel: "CHECK COMPANY SETTINGS", settingsBlockerCount: 1, issues: { critical: 0, major: 0, minor: 0, suggestion: 0 } });
+    expect(r.text).not.toMatch(/\bPASS\b/);
+    const pdf = flat(r.text);
+    expect(pdf).toContain("its approved value is missing or invalid. Fix it on the company page");
+    expect(pdf).toContain("Score: Confirmed checks only — 1 mandatory Golden Rule not checked (approved value missing or invalid).");
+    expect(pdf).toContain("Company settings missing (1): Use brand navy (Golden Rule) — add them on the company page. They aren't design issues.");
+    expect((await result(false)).data.resultLabel).not.toBe("CHECK COMPANY SETTINGS");
+  });
+});
+
+describe("QC report — a mandatory Golden Rule the analysis couldn't check", () => {
+  it("end to end: colours not measured → the mandatory colour rule isn't silently passed", async () => {
+    const result = async (mandatory: boolean) => {
+      const d = detections({ texts: [text("Summer offer AED 1,299")], textCoverage: 0.95 }); // no colours measured
+      const raw = run({
+        company: company({ goldenRules: [golden({ category: "approved_color", rule: "Use brand blue", approved_value: "#1A64B4", mandatory })] }),
+        requirements: [requirement("price", "AED 1,299", { id: "q-price" })],
+        detections: d,
+      });
+      const findings = mergeDuplicateFindings(applyConfidencePolicy(raw, d, { state: "done" }, { provider: "google" }));
+      return report(findings, { requirements: [req("price", "AED 1,299", { id: "q-price" })] });
+    };
+    const r = await result(true);
+    expect(r.data.result).toBe("pass"); // nothing counted
+    expect(r.data.resultLabel).toBe("CHECK BEFORE SENDING");
+    expect(r.text).not.toMatch(/\bPASS\b/);
+    expect(r.data.humanChecks.map((x) => [x.title, x.marker])).toEqual([["Use brand blue", "Mandatory"]]);
+    expect(r.text.replace(/\n/g, " ")).toContain("Please verify: Check the design follows this rule — it can't be checked automatically.");
+    // An optional rule the analysis couldn't check stays a plain "not checked" note: the design can pass.
+    expect((await result(false)).data.resultLabel).toBe("PASS");
   });
 });

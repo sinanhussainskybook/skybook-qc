@@ -57,7 +57,10 @@ function checkOne(rule: GoldenRule, d: ContentDetections | null): Finding {
       return failed(ctas.map((t) => t.text).join(", "), "The call to action isn't the approved wording.", `Use "${value}".`, Math.min(...ctas.map((t) => t.confidence)));
     }
     case "approved_color": {
-      if (colorDifference(value, value) === null) return unverified(`"${value}" isn't a colour code (#RRGGBB), so it can't be compared.`);
+      // A company setting to fix, not a design issue: worded like a missing value (golden-rules-view.ts missingCompanySetting).
+      if (colorDifference(value, value) === null) {
+        return unverified(`The colour saved for this rule ("${value}") isn't a colour code (#RRGGBB), so it can't be compared. Fix it on the company page.`);
+      }
       if (!d?.colors) return unverified(NEEDS_ANALYSIS);
       const hit = d.colors.find((c) => (colorDifference(c.hex, value) ?? Infinity) <= BRAND_COLOR_TOLERANCE);
       return hit

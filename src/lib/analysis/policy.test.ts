@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyConfidencePolicy, HUMAN_CHECK, HUMAN_CHECK_CRITICAL, isHumanCheck, isRegistered, LOCAL_AI_SAW_NO_PROBLEM, PARTLY_ANALYSED, PARTLY_HEARD } from "@/lib/analysis/policy";
+import { applyConfidencePolicy, evidenceOf, HUMAN_CHECK, HUMAN_CHECK_CRITICAL, isHumanCheck, isRegistered, LOCAL_AI_SAW_NO_PROBLEM, PARTLY_ANALYSED, PARTLY_HEARD, SOME_POSITIONS_UNREAD } from "@/lib/analysis/policy";
 import { LOCAL_UNCONFIRMED_CAP } from "@/lib/analysis/validate";
 import type { ContentDetections } from "@/lib/qc/detections";
 import type { Finding } from "@/lib/qc/findings";
@@ -260,5 +260,72 @@ describe("exact dimensions from the brief", () => {
       expect(sized(provider, 1254), provider).toMatchObject({ status: "failed", severity: "major", detected: "1254 × 1254 px" });
       expect(sized(provider, 1080), provider).toMatchObject({ status: "passed" });
     }
+  });
+});
+
+/**
+ * Stage 1 (honest results): the platform safe zone is judged from where the analysis says text and the
+ * logo sit — positions from AI (always for the logo, and for all text with Gemini) — not from the file's
+ * own measurements. It is AI evidence, as sure as the least sure element it's about, and its "everything
+ * is inside" pass needs every text read and placed.
+ */
+describe("safe zone: detected positions are AI evidence, not a measurement", () => {
+  // Instagram Stories image: keep the top 14 %, bottom 35 % and 6 % each side clear.
+  const story = { platform: "instagram", placement: "stories_image", custom: null, files: [{ id: "f1", fileName: "story.png", format: "png" as const, size: 400_000, media: { unit: "px", width: 1080, height: 1920 } as never }] };
+  const inside = { x: 0.2, y: 0.4, w: 0.5, h: 0.05 };
+  const top = { x: 0.2, y: 0.02, w: 0.5, h: 0.05 }; // in the top 14 %: covered by the platform's own bar
+  const zone = (fs: Finding[]) => fs.find((f) => f.ruleId === "platform.safe_zone")!;
+  const policy = (d: ContentDetections, provider: "gemini" | "google" | "local" | "mock") =>
+    zone(applyConfidencePolicy(run({ detections: d, platform: story }, "social_post"), d, { state: "done" }, { provider }));
+
+  it("is registered as AI evidence; the file's own measurements stay measured", () => {
+    expect(evidenceOf("platform.safe_zone")).toBe("ai");
+    expect(evidenceOf("platform.dimensions")).toBe("measured");
+    expect(evidenceOf("platform.format")).toBe("measured");
+  });
+
+  it("a failure carries the confidence of the least sure element in the unsafe area (text or logo)", () => {
+    const d = detections({ texts: [text("Swipe up", { box: top, confidence: 0.7 }), text("Summer", { box: inside, confidence: 0.99 })], logo: { present: true, box: top, confidence: 0.4 }, textCoverage: 0.95 });
+    const f = zone(run({ detections: d, platform: story }, "social_post"));
+    expect(f).toMatchObject({ status: "failed", confidence: 0.4 });
+    expect(f.detected).toContain("Logo");
+  });
+
+  it("Gemini: text the AI was only 'likely' about in the unsafe area is a human check — never a counted fact", () => {
+    const f = policy(detections({ texts: [text("Swipe up", { box: top, confidence: 0.7 })], textCoverage: 0.95 }), "gemini");
+    expect(f.status).toBe("unverified");
+    expect(isHumanCheck(f)).toBe(true);
+    expect(f.explanation.startsWith(`${HUMAN_CHECK}:`)).toBe(true);
+  });
+
+  it("Gemini: a clear reading still counts, like every other AI finding", () => {
+    expect(policy(detections({ texts: [text("Swipe up", { box: top, confidence: 0.9 })], textCoverage: 0.95 }), "gemini")).toMatchObject({ status: "failed", severity: "minor" });
+  });
+
+  it("the logo's position is AI for every provider: an unsure logo in the unsafe area is a human check even with OCR", () => {
+    for (const provider of ["google", "local", "mock"] as const) {
+      const f = policy(detections({ texts: [text("Summer", { box: inside, confidence: 0.99 })], logo: { present: true, box: top, confidence: 0.7 }, textCoverage: 0.95 }), provider);
+      expect([provider, f.status, isHumanCheck(f)]).toEqual([provider, "unverified", true]);
+    }
+  });
+
+  it("'everything inside' needs all the text read: with partial coverage it's not verified", () => {
+    const pass = (textCoverage: number) => policy(detections({ texts: [text("Summer", { box: inside, confidence: 0.99 })], textCoverage }), "google");
+    expect(pass(0.95)).toMatchObject({ status: "passed" });
+    expect(pass(0.5)).toMatchObject({ status: "unverified", explanation: PARTLY_ANALYSED });
+  });
+
+  it("Gemini: 'everything inside' isn't claimed when some text has no position", () => {
+    const f = policy(detections({ texts: [text("Summer", { box: inside, confidence: 0.9, fontSizePx: 40 }), text("Book now", { confidence: 0.9 })], textCoverage: 0.95 }), "gemini");
+    expect(f).toMatchObject({ status: "unverified", explanation: SOME_POSITIONS_UNREAD });
+  });
+
+  it("the file's own measurements are unchanged: format, ratio and size still pass on partial coverage, with Gemini too", () => {
+    const d = detections({ texts: [text("Summer", { box: inside, confidence: 0.9, fontSizePx: 40 })], textCoverage: 0.5 });
+    const raw = run({ detections: d, platform: story }, "social_post").filter((f) => f.ruleId.startsWith("platform.") && f.ruleId !== "platform.safe_zone");
+    expect(raw.length).toBeGreaterThan(0);
+    const after = applyConfidencePolicy(raw, d, { state: "done" }, { provider: "gemini" });
+    expect(after.map((f) => [f.ruleId, f.status])).toEqual(raw.map((f) => [f.ruleId, f.status]));
+    expect(after.some((f) => f.status === "passed")).toBe(true);
   });
 });

@@ -63,8 +63,10 @@ export type Finding = {
   source?: { label: string; url: string };
   /** Golden Rules: whether the company marked the rule mandatory. */
   mandatory?: boolean;
+  /** The confirmed brief requirement this finding checks (brief and legal checks) — how the report links them. */
+  requirementId?: string;
   /** Other checks this finding also stands for, when they were the same issue (lib/qc/golden-rules-view.ts). */
-  alsoCovers?: { ruleId: string; category: Category; title: string }[];
+  alsoCovers?: { ruleId: string; category: Category; title: string; requirementId?: string }[];
 };
 
 /** A rule definition (plan 5.2): what it is, where it applies, what it needs. */

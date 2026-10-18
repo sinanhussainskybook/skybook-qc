@@ -1,5 +1,6 @@
 import { isHumanCheck } from "@/lib/analysis/policy";
 import { CATEGORIES, type Category, type Finding, type Severity } from "@/lib/qc/findings";
+import { missingCompanySetting, needsVerifying } from "@/lib/qc/golden-rules-view";
 
 /**
  * Score and result (Phase 7). Reads the findings the frozen Phase 5 rules
@@ -51,6 +52,10 @@ export type Scoreboard = {
   notVerified: number;
   /** "Needs a human check" — uncertain readings or AI judgements; never counted. */
   humanChecks: number;
+  /** Of those, "possible critical issue": a CRITICAL the evidence couldn't confirm (lib/analysis/policy.ts). Never counted. */
+  possibleCriticals: number;
+  /** Mandatory Golden Rules that can't be checked until the company saves their approved value. Never counted. */
+  settingsBlockers: number;
   notApplicable: number;
   /** Checks with an answer (passed + failed) out of all checks that apply. */
   answered: number;
@@ -62,6 +67,24 @@ export type Scoreboard = {
 
 const emptyCounts = (): SeverityCounts => ({ critical: 0, major: 0, minor: 0, suggestion: 0 });
 const ORDER: Record<Severity, number> = { critical: 0, major: 1, minor: 2, suggestion: 3 };
+
+/**
+ * A possible CRITICAL issue only a person can settle — never counted, but never a PASS either:
+ *   - "Needs a human check — possible critical issue": a critical the evidence couldn't confirm;
+ *   - a MANDATORY Golden Rule written only in words ("logo rule", "other"), or one the analysis couldn't
+ *     check (e.g. colours not measured): it can only be checked by eye.
+ * All are what lib/qc/golden-rules-view.ts marks "Please verify" (needsVerifying), at CRITICAL.
+ */
+export const isPossibleCritical = (f: Finding): boolean => f.severity === "critical" && needsVerifying(f);
+
+/**
+ * A MANDATORY Golden Rule that couldn't be checked because of the company's settings: no approved value
+ * saved ("No approved value is saved for this rule…"), or one that can't be used ("The colour saved for
+ * this rule (…) isn't a colour code…"). A company-settings gap, not a design mistake: never counted, but
+ * the design can't be called a PASS while a mandatory rule went unchecked.
+ */
+export const isUnconfiguredMandatoryRule = (f: Finding): boolean =>
+  f.category === "golden_rules" && f.mandatory === true && f.status === "unverified" && missingCompanySetting(f);
 
 export function categoryScore(issues: SeverityCounts): number {
   const lost = (Object.keys(SCORE_WEIGHTS) as Severity[]).reduce((sum, s) => sum + SCORE_WEIGHTS[s] * issues[s], 0);
@@ -109,6 +132,8 @@ export function scoreFindings(findings: Finding[]): Scoreboard {
     passed,
     notVerified: sum((c) => c.notVerified),
     humanChecks: sum((c) => c.humanChecks),
+    possibleCriticals: findings.filter(isPossibleCritical).length,
+    settingsBlockers: findings.filter(isUnconfiguredMandatoryRule).length,
     notApplicable,
     answered: passed + failed,
     applicable: findings.length - notApplicable,
@@ -121,22 +146,80 @@ export const RESULT_LABEL: Record<QcResult, string> = { pass: "PASS", needs_revi
 
 /**
  * How the result is SHOWN (banner and PDF). Display only: the result itself
- * (resultOf) is unchanged and human checks still never count. A PASS with one
- * or more "Needs a human check" items is shown as "PASS — PLEASE VERIFY", so
- * it can't be mistaken for a clean pass.
+ * (resultOf) is unchanged and human checks still never count.
+ *   - A PASS with a possible critical issue to check by eye is shown as
+ *     "CHECK BEFORE SENDING" — never as a PASS: a critical issue may be there,
+ *     only the AI couldn't confirm it (e.g. a mandatory price it didn't read).
+ *   - A PASS with other "Needs a human check" items is "PASS — PLEASE VERIFY",
+ *     so it can't be mistaken for a clean pass.
+ * NEEDS REVISION and FAIL are shown as they are.
  */
-export type ResultDisplay = QcResult | "pass_human_check";
+export type ResultDisplay = QcResult | "pass_human_check" | "check_before_sending" | "check_company_settings";
 
-export function resultDisplay(board: { result: QcResult | null; humanChecks: number }): ResultDisplay | null {
+type DisplayInput = { result: QcResult | null; humanChecks: number; possibleCriticals: number; settingsBlockers: number };
+
+/**
+ * …and a PASS while a mandatory Golden Rule couldn't be checked for want of its saved value is
+ * "CHECK COMPANY SETTINGS": not a design failure, but not a pass either. A possible critical issue on the
+ * design comes first (CHECK BEFORE SENDING); the settings gap is then a warning line (settingsWarning).
+ */
+export function resultDisplay(board: DisplayInput): ResultDisplay | null {
   if (!board.result) return null;
-  return board.result === "pass" && board.humanChecks > 0 ? "pass_human_check" : board.result;
+  if (board.result !== "pass") return board.result;
+  if (board.possibleCriticals > 0) return "check_before_sending";
+  if (board.settingsBlockers > 0) return "check_company_settings";
+  return board.humanChecks > 0 ? "pass_human_check" : "pass";
 }
 
-export const RESULT_DISPLAY_LABEL: Record<ResultDisplay, string> = { ...RESULT_LABEL, pass_human_check: "PASS — PLEASE VERIFY" };
+export const RESULT_DISPLAY_LABEL: Record<ResultDisplay, string> = {
+  ...RESULT_LABEL,
+  pass_human_check: "PASS — PLEASE VERIFY",
+  check_before_sending: "CHECK BEFORE SENDING",
+  check_company_settings: "CHECK COMPANY SETTINGS",
+};
 
 export const RESULT_DISPLAY_SUMMARY: Record<ResultDisplay, string> = {
   pass: "No issues to fix in the checks that could be verified.",
   pass_human_check: "No issues found — but please verify the items marked below before sending it to the client.",
+  check_before_sending: "A possible critical issue couldn't be confirmed automatically. Check the items marked below by eye — don't send it to the client until you have.",
+  check_company_settings: "No issues found in the checks that ran, but a mandatory Golden Rule couldn't be checked because its approved value is missing or invalid. Fix it on the company page, then check the design again before sending it to the client.",
   needs_revision: "Fix the issues below before sending it to the client.",
   fail: "There is at least one critical issue. Don't send it until it's fixed.",
 };
+
+const possibleCriticalText = (n: number) => (n === 1 ? "1 possible critical issue" : `${n} possible critical issues`);
+const blockerText = (n: number) => (n === 1 ? "1 mandatory Golden Rule" : `${n} mandatory Golden Rules`);
+
+/**
+ * Shown under the score while possible critical issues or unchecked mandatory Golden Rules are open
+ * (CHECK BEFORE SENDING, CHECK COMPANY SETTINGS…): the score covers the confirmed checks only — those
+ * items don't count — so a high score isn't a verified one. Display only: the score itself is unchanged.
+ */
+export function scoreNote(board: { score: number | null; possibleCriticals: number; settingsBlockers: number }): string | null {
+  if (board.score === null || (board.possibleCriticals === 0 && board.settingsBlockers === 0)) return null;
+  const open = [
+    board.possibleCriticals ? `${possibleCriticalText(board.possibleCriticals)} still to check by eye` : "",
+    board.settingsBlockers ? `${blockerText(board.settingsBlockers)} not checked (approved value missing or invalid)` : "",
+  ].filter(Boolean);
+  return `Confirmed checks only — ${open.join("; ")}.`;
+}
+
+/**
+ * A mandatory Golden Rule went unchecked for want of a usable saved value, and the result is something other
+ * than CHECK COMPANY SETTINGS (which says so itself): say so beside it, so it isn't missed.
+ */
+export function settingsWarning(board: DisplayInput): string | null {
+  if (board.settingsBlockers === 0 || resultDisplay(board) === "check_company_settings" || !board.result) return null;
+  const n = board.settingsBlockers;
+  return `${blockerText(n)} couldn't be checked because ${n === 1 ? "its approved value is" : "their approved values are"} missing or invalid — fix ${n === 1 ? "it" : "them"} on the company page.`;
+}
+
+/**
+ * NEEDS REVISION with a possible critical issue: the label says "revise", so it also warns that a critical
+ * item still has to be checked — if it's confirmed, the design fails. (FAIL already says don't send;
+ * CHECK BEFORE SENDING says it in its own summary.)
+ */
+export function possibleCriticalWarning(board: DisplayInput): string | null {
+  if (resultDisplay(board) !== "needs_revision" || board.possibleCriticals === 0) return null;
+  return `Also check ${possibleCriticalText(board.possibleCriticals)} marked below by eye before sending — if confirmed, this design fails.`;
+}

@@ -18,6 +18,8 @@ import type { MediaInfo } from "@/lib/qc/media-info";
  */
 
 export type QcInputRequirement = {
+  /** The requirement's id (qc_requirements.id): findings that check it carry it. */
+  id?: string;
   type: string;
   label: string | null;
   expectedValue: string;
@@ -96,6 +98,7 @@ export function toQcInput(
     requirements: requirements
       .filter((r) => r.confirmed)
       .map((r) => ({
+        id: r.id,
         type: r.type,
         label: r.label,
         expectedValue: r.expected_value,

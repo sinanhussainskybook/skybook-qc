@@ -2,11 +2,11 @@ import { isHumanCheck } from "@/lib/analysis/policy";
 import type { CompanyConfiguration } from "@/lib/company/types";
 import type { QcFile, QcRequirement, QcSession } from "@/lib/db/qc-sessions";
 import { contentTypeLabel } from "@/lib/qc/content-types";
-import { CATEGORIES, severityLabel, type Finding, type Severity } from "@/lib/qc/findings";
+import { CATEGORIES, severityLabel, sortFindings, type Finding, type Severity } from "@/lib/qc/findings";
 import { alsoCoversText, isGoldenRule, needsVerifying, ruleName } from "@/lib/qc/golden-rules-view";
 import { findPlacement, findPlatform } from "@/lib/qc/platforms";
 import { isCheckable, requirementTypeLabel } from "@/lib/qc/requirements";
-import { RESULT_DISPLAY_LABEL, RESULT_DISPLAY_SUMMARY, resultDisplay, type QcResult, type Scoreboard } from "@/lib/qc/scoring";
+import { possibleCriticalWarning, RESULT_DISPLAY_LABEL, RESULT_DISPLAY_SUMMARY, resultDisplay, scoreNote, settingsWarning, type QcResult, type Scoreboard } from "@/lib/qc/scoring";
 
 /**
  * The QC report (Phase 8) as plain data — what the PDF shows, built from the
@@ -42,6 +42,16 @@ export type ReportData = {
   score: number | null;
   issues: Record<Severity, number>;
   humanCheckCount: number;
+  /** Of those, possible critical issues — the result is shown as CHECK BEFORE SENDING, never PASS. */
+  possibleCriticalCount: number;
+  /** Under the score while possible critical issues are open: it covers the confirmed checks only. */
+  scoreNote: string | null;
+  /** NEEDS REVISION with a possible critical issue: a warning that it must still be checked. */
+  warning: string | null;
+  /** Mandatory Golden Rules that couldn't be checked for want of their saved value (CHECK COMPANY SETTINGS). */
+  settingsBlockerCount: number;
+  /** Those rules, beside any other result: add the value on the company page. */
+  settingsWarning: string | null;
   notVerifiedCount: number;
   answered: number;
   applicable: number;
@@ -68,7 +78,6 @@ export const RESULT_SUMMARY: Record<QcResult, string> = {
 };
 
 const categoryLabel = (value: string) => CATEGORIES.find((c) => c.value === value)?.label ?? value;
-const norm = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();
 
 function item(f: Finding, severity = severityLabel(f.severity)): ReportItem {
   const golden = isGoldenRule(f);
@@ -93,12 +102,16 @@ function statusOf(f: Finding | undefined): string {
   return { passed: "Passed", unverified: "Not verified", not_applicable: "Not applicable", failed: "To fix" }[f.status];
 }
 
-/** The finding that checked a confirmed requirement (brief rules; disclaimers are legal). */
+/**
+ * The finding that checked a confirmed requirement, by the requirement's id (never by comparing text:
+ * the check may word the value differently, e.g. "1080 × 1080 px" for "1080x1080", and two
+ * requirements can ask for the same value). A requirement merged into another finding (the same issue,
+ * lib/qc/golden-rules-view.ts) is answered by that finding. Several findings — one per design — give the
+ * most important status: to fix, then to verify, then passed.
+ */
 function findingFor(r: QcRequirement, findings: Finding[]): Finding | undefined {
-  const value = norm(r.expected_value);
-  const checks = (ruleId: string) => ruleId.startsWith(`brief.requirement.${r.type}`) || (r.type === "disclaimer" && ruleId.startsWith("legal."));
-  // A requirement merged into a Golden Rule (the same issue) is answered by that Golden Rule finding.
-  return findings.find((f) => (checks(f.ruleId) || f.alsoCovers?.some((c) => checks(c.ruleId))) && norm(f.expected ?? "") === value);
+  const about = findings.filter((f) => f.requirementId === r.id || f.alsoCovers?.some((c) => c.requirementId === r.id));
+  return sortFindings(about)[0];
 }
 
 
@@ -140,6 +153,11 @@ export function buildReportData(input: {
     score: board.score,
     issues: board.issues,
     humanCheckCount: board.humanChecks,
+    possibleCriticalCount: board.possibleCriticals,
+    scoreNote: scoreNote(board),
+    warning: possibleCriticalWarning(board),
+    settingsBlockerCount: board.settingsBlockers,
+    settingsWarning: settingsWarning(board),
     notVerifiedCount: board.notVerified,
     answered: board.answered,
     applicable: board.applicable,

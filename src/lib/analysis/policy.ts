@@ -79,6 +79,9 @@ export const EVIDENCE: Record<string, "text" | "measured" | "ai" | "none"> = {
   "brief.requirement": "text",
   "brief.unexpected": "text",
   "platform": "measured",
+  // Where text and logos sit: positions from the analysis (the logo's always from AI, text from AI with
+  // Gemini), not the file's own measurements — so never a reliable measurement on its own.
+  "platform.safe_zone": "ai",
   "legal.disclaimer": "text",
 };
 
@@ -92,6 +95,8 @@ const ABSENCE_RULES = ["brief.requirement", "legal.disclaimer", "golden_rules.ru
  * (a required item seen once is there, whatever the rest says).
  */
 const PASS_WITHOUT_FULL_COVERAGE = ["platform", ...ABSENCE_RULES];
+/** …except the safe zone: "everything is inside" covers every text and logo, so it needs them all read. */
+const NEEDS_FULL_COVERAGE = ["platform.safe_zone"];
 export const PARTLY_ANALYSED = "Not verified: only part of the content could be read clearly, so this can't be confirmed for all of it.";
 /**
  * The LOCAL provider's extra rules (2026-10-06 trial findings; Google and the
@@ -125,9 +130,9 @@ export type PolicyOptions = {
  * (overlap, edges, contrast, size) are treated as AI: an AI-only CRITICAL is
  * "Needs a human check — possible critical issue", other findings count only
  * when Gemini said it was clear, and an AI "no problem found" pass is not
- * verified. Only the file's own measurements (Platform / Size, and an exact
- * size the brief asks for) and measured
- * audio stay "measured". Google, local and the mock are unchanged.
+ * verified. Only the file's own measurements (Platform / Size — not its safe
+ * zone, which uses detected positions — and an exact size the brief asks for)
+ * and measured audio stay "measured". Google, local and the mock are unchanged.
  */
 const GEMINI_STILL_MEASURED = ["platform", "brief.requirement.dimensions", "image.audio"];
 
@@ -139,7 +144,7 @@ const GEMINI_STILL_MEASURED = ["platform", "brief.requirement.dimensions", "imag
  * text, so it becomes not verified instead. Gemini only: the OCR providers
  * always measure a box for every line.
  */
-const POSITION_PASSES = ["layout.text_overlap", "layout.edge_margin", "accessibility.text_size"];
+const POSITION_PASSES = ["layout.text_overlap", "layout.edge_margin", "accessibility.text_size", "platform.safe_zone"];
 export const SOME_POSITIONS_UNREAD =
   "Not verified: the position or size of some text couldn't be read, so this couldn't be checked for all of it — check it yourself. Not counted for or against the result.";
 
@@ -276,7 +281,8 @@ function checkPass(f: Finding, detections: ContentDetections | null, analysis: A
   ) {
     return unverified(SOME_POSITIONS_UNREAD);
   }
-  if (evidenceOf(f.ruleId) === "none" || PASS_WITHOUT_FULL_COVERAGE.some((r) => f.ruleId === r || f.ruleId.startsWith(`${r}.`))) return f;
+  const matches = (r: string) => f.ruleId === r || f.ruleId.startsWith(`${r}.`);
+  if (evidenceOf(f.ruleId) === "none" || (PASS_WITHOUT_FULL_COVERAGE.some(matches) && !NEEDS_FULL_COVERAGE.some(matches))) return f;
   return (detections.textCoverage ?? 0) < POLICY.coverage ? unverified(PARTLY_ANALYSED) : f;
 }
 

@@ -1,3 +1,4 @@
+import { missingCompanySetting, needsVerifying } from "@/lib/qc/golden-rules-view";
 import { describe, expect, it } from "vitest";
 import { byRule, company, detections, golden, run, text } from "../../../../test/qc-fixtures";
 
@@ -64,5 +65,25 @@ describe("Golden Rules", () => {
 
   it("a company with no active Golden Rules: not applicable", () => {
     expect(byRule(run(), "golden_rules")).toMatchObject([{ status: "not_applicable" }]);
+  });
+});
+
+describe("an invalid saved colour is a company setting to fix, not a design issue", () => {
+  const one = (rules: ReturnType<typeof golden>[]) => {
+    const findings = byRule(run({ company: company({ goldenRules: rules }), detections: detections() }), "golden_rules");
+    expect(findings).toHaveLength(1);
+    return findings[0];
+  };
+
+  it("the rule says so in settings wording — it's listed under missing company settings, never counted", () => {
+    const f = one([golden({ category: "approved_color", approved_value: "navy" })]);
+    expect(f).toMatchObject({ status: "unverified", severity: "critical", mandatory: true });
+    expect(f.explanation).toBe("The colour saved for this rule (\"navy\") isn't a colour code (#RRGGBB), so it can't be compared. Fix it on the company page.");
+    expect(missingCompanySetting(f)).toBe(true);
+    expect(needsVerifying(f)).toBe(false); // not an item to check on the design
+  });
+
+  it("a valid colour code is still compared as before", () => {
+    expect(missingCompanySetting(one([golden({ category: "approved_color", approved_value: "#1A64B4" })]))).toBe(false);
   });
 });

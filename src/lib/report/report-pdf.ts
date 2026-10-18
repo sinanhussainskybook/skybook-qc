@@ -67,6 +67,10 @@ const RESULT_TONE: Record<string, Tone> = {
   pass: TONE.pass,
   // A pass with "Needs a human check" items: amber, like the Start QC banner.
   pass_human_check: TONE.major,
+  // A possible critical issue to check by eye: never shown as a pass.
+  check_before_sending: TONE.major,
+  // A mandatory Golden Rule couldn't be checked (approved value missing or invalid): never shown as a pass.
+  check_company_settings: TONE.major,
   needs_revision: TONE.major,
   fail: TONE.critical,
 };
@@ -610,7 +614,7 @@ export async function renderReportPdf(
   if (data.sampleData) paragraph(d, [{ text: "SAMPLE DATA — NOT REAL AI. This is not a real QC result.", bold: true, color: TONE.major.strong }], 9.5, 10);
 
   // --- The result and score, prominently; one line of counts ------------------------------
-  const shown = resultDisplay({ result: data.result, humanChecks: data.humanCheckCount });
+  const shown = resultDisplay({ result: data.result, humanChecks: data.humanCheckCount, possibleCriticals: data.possibleCriticalCount, settingsBlockers: data.settingsBlockerCount });
   const tone = shown ? RESULT_TONE[shown] : TONE.grey;
   const ringR = 31;
   const ringW = 7;
@@ -625,6 +629,10 @@ export async function renderReportPdf(
   d.write(data.resultLabel, textX, top - 10 - size * 0.92, size, { bold: true, color: tone.strong });
   d.draw(summary.laid, textX, top - 15 - size * 1.08);
   d.y = Math.min(top - 15 - size * 1.08 - summary.height, data.score !== null ? top - ringR * 2 - ringW : Infinity) - 14;
+  // A possible critical item beside NEEDS REVISION, and what the score covers while one is open.
+  if (data.warning) paragraph(d, [{ text: data.warning, bold: true, color: TONE.critical.strong }], 9.5, 6);
+  if (data.settingsWarning) paragraph(d, [{ text: data.settingsWarning, bold: true, color: TONE.major.strong }], 9.5, 6);
+  if (data.scoreNote) paragraph(d, [{ text: `Score: ${data.scoreNote}`, color: C.muted }], 8.6, 8);
 
   const counts: { n: number; label: string; tone: Tone }[] = [
     { n: data.issues.critical, label: "Critical", tone: TONE.critical },

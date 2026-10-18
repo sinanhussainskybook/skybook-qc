@@ -18,8 +18,8 @@ function placedElements(d: ContentDetections | null): PlacedElement[] | undefine
   if (!d?.texts) return undefined;
   const elements: PlacedElement[] = d.texts
     .filter((t) => t.box)
-    .map((t) => ({ label: `"${t.text.length > 30 ? `${t.text.slice(0, 30)}…` : t.text}"`, box: t.box!, fileId: t.fileId }));
-  if (d.logo?.present && d.logo.box) elements.push({ label: "Logo", box: d.logo.box });
+    .map((t) => ({ label: `"${t.text.length > 30 ? `${t.text.slice(0, 30)}…` : t.text}"`, box: t.box!, fileId: t.fileId, confidence: t.confidence }));
+  if (d.logo?.present && d.logo.box) elements.push({ label: "Logo", box: d.logo.box, confidence: d.logo.confidence });
   return elements;
 }
 

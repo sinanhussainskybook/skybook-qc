@@ -2,13 +2,17 @@ import { ChevronDown, FileDown } from "lucide-react";
 import { buttonVariants } from "@/components/ui/button";
 import { CATEGORIES, severityLabel, type Finding, type Severity } from "@/lib/qc/findings";
 import { alsoCoversText, alsoNote, isGoldenRule, needsVerifying, NOT_CHECKED, ruleName, splitNotChecked, verifyNote } from "@/lib/qc/golden-rules-view";
-import { RESULT_DISPLAY_LABEL, RESULT_DISPLAY_SUMMARY, resultDisplay, type ResultDisplay, type Scoreboard as Board } from "@/lib/qc/scoring";
+import { possibleCriticalWarning, RESULT_DISPLAY_LABEL, RESULT_DISPLAY_SUMMARY, resultDisplay, scoreNote, settingsWarning, type ResultDisplay, type Scoreboard as Board } from "@/lib/qc/scoring";
 import { cn } from "@/lib/utils";
 
 const RESULT_STYLE: Record<ResultDisplay, { text: string; dot: string }> = {
   pass: { text: "text-pass", dot: "bg-pass" },
   // A pass that still has "Needs a human check" items: amber, so it isn't read as a clean pass.
   pass_human_check: { text: "text-revision", dot: "bg-revision" },
+  // A possible critical issue the AI couldn't confirm: never shown as a pass.
+  check_before_sending: { text: "text-revision", dot: "bg-revision" },
+  // A mandatory Golden Rule couldn't be checked (approved value missing or invalid): a settings gap, not a pass.
+  check_company_settings: { text: "text-revision", dot: "bg-revision" },
   needs_revision: { text: "text-revision", dot: "bg-revision" },
   fail: { text: "text-fail", dot: "bg-fail" },
 };
@@ -42,6 +46,9 @@ export function Scoreboard({ board, findings = [], mock = false, reportHref }: {
     return <p className="rounded-xl bg-muted/60 px-4 py-3 text-sm text-muted-foreground">No result yet: none of the checks could be verified.</p>;
   }
   const style = RESULT_STYLE[shown];
+  const note = scoreNote(board);
+  const warning = possibleCriticalWarning(board);
+  const settings = settingsWarning(board);
   const toFix = board.counting.filter((f) => f.severity !== "suggestion");
   const suggestions = board.counting.filter((f) => f.severity === "suggestion");
   const toVerify = findings.filter(needsVerifying);
@@ -60,12 +67,15 @@ export function Scoreboard({ board, findings = [], mock = false, reportHref }: {
             <p className="eyebrow">Result</p>
             <p className={cn("display mt-2 text-5xl break-words sm:text-7xl", style.text)}>{RESULT_DISPLAY_LABEL[shown]}</p>
             <p className="mt-3 max-w-xl text-base">{RESULT_DISPLAY_SUMMARY[shown]}</p>
+            {warning && <p className="mt-2 max-w-xl text-base font-semibold text-fail">{warning}</p>}
+            {settings && <p className="mt-2 max-w-xl text-base font-semibold text-revision">{settings}</p>}
           </div>
           {board.score !== null && (
             <p className="shrink-0 text-right">
               <span className="eyebrow block">Score</span>
               <span className="display text-6xl tabular-nums sm:text-7xl">{board.score}</span>
               <span className="text-lg text-muted-foreground"> / 100</span>
+              {note && <span className="mt-1 block max-w-[16rem] text-sm text-muted-foreground">{note}</span>}
             </p>
           )}
         </div>

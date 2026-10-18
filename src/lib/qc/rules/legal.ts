@@ -1,6 +1,6 @@
 import { capitalizationDifference, containsText, findName } from "@/lib/qc/compare";
 import { allText } from "@/lib/qc/detections";
-import type { Rule } from "@/lib/qc/findings";
+import type { Finding, Rule } from "@/lib/qc/findings";
 import { ALL_TYPES, findingFor, NEEDS_ANALYSIS, notApplicable, notVerified, severityFor, type QcContext } from "@/lib/qc/rules/context";
 
 /**
@@ -34,7 +34,7 @@ const disclaimerRule: Rule<QcContext> = {
     }
     // On-screen text only: a disclaimer must be readable, not just spoken.
     const text = allText(context.detections, false);
-    return disclaimers.map((r) => {
+    const checkDisclaimer = (r: (typeof disclaimers)[number]): Finding => {
       const title = r.label ? `Disclaimer: ${r.label}` : "Disclaimer";
       const severity = severityFor(r.mandatory);
       if (text === null) return notVerified(this.id, CATEGORY, title, severity, NEEDS_ANALYSIS, r.expectedValue);
@@ -65,7 +65,9 @@ const disclaimerRule: Rule<QcContext> = {
             : `The disclaimer required by the brief isn't shown.${r.mandatory ? " The brief marks it as mandatory." : ""}`,
         suggestedFix: `Show the disclaimer exactly as: "${r.expectedValue}".`,
       });
-    });
+    };
+    // Each finding carries its requirement's id, so the report can show that requirement's status.
+    return disclaimers.map((r) => ({ ...checkDisclaimer(r), ...(r.id ? { requirementId: r.id } : {}) }));
   },
 };
 

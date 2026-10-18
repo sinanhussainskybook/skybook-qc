@@ -45,7 +45,8 @@ export type CustomChoice = {
 };
 
 /** Where text and the logo sit (fractions of the frame) — from content analysis (Phase 6); absent = not analysed. */
-export type PlacedElement = { label: string; box: { x: number; y: number; w: number; h: number }; fileId?: string };
+/** A detected text or logo and where it sits. `confidence`: how sure its detection is (0–1; absent = 1). */
+export type PlacedElement = { label: string; box: { x: number; y: number; w: number; h: number }; fileId?: string; confidence?: number };
 
 export type PlatformContext = {
   platform: string | null;
@@ -148,7 +149,7 @@ function finding(
   title: string,
   severity: Severity,
   status: Finding["status"],
-  parts: Pick<Finding, "expected" | "detected" | "explanation" | "suggestedFix"> & { kind?: Finding["kind"] }
+  parts: Pick<Finding, "expected" | "detected" | "explanation" | "suggestedFix"> & { kind?: Finding["kind"]; confidence?: number }
 ): Finding {
   return {
     ruleId: id,
@@ -161,7 +162,7 @@ function finding(
     detected: parts.detected,
     explanation: parts.explanation,
     suggestedFix: status === "failed" ? parts.suggestedFix : undefined,
-    confidence: status === "unverified" ? 0 : 1,
+    confidence: status === "unverified" ? 0 : (parts.confidence ?? 1),
     fileId: where.file.id,
     fileName: where.file.fileName,
     source: where.source,
@@ -382,6 +383,8 @@ function checkSafeZone(where: Where, spec: PlacementSpec, elements: PlacedElemen
         ? `${spec.label} covers these areas with its own buttons and captions, so anything there may be hidden.`
         : "Text and logo stay clear of the areas the platform covers.",
       suggestedFix: "Move the text or logo into the middle of the frame, away from the top and bottom.",
+      // Based on detected positions, not the file itself: as sure as the least sure element it's about.
+      ...(outside.length ? { confidence: Math.min(...outside.map((e) => e.confidence ?? 1)) } : {}),
     }),
   ];
 }

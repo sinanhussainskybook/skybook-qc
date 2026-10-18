@@ -117,10 +117,12 @@ describe("Results page — Golden Rules and items to verify", () => {
       f("image_asset", "unverified", "minor", { title: "Image quality", explanation: "Not verified: Gemini saw no problem here, but that isn't confirmed." }),
       f("content", "passed", "major"),
     ]);
-    expect(text).toContain("Company settings missing (2): Brand fonts · Always use Book now (Golden Rule) — add them on the company page. They don't affect the result.");
+    expect(text).toContain("Company settings missing (2): Brand fonts · Always use Book now (Golden Rule) — add them on the company page. They aren't design issues.");
     expect(text).toContain("Not checked automatically (1): Image quality — they don't affect the result.");
     expect(text).toContain("0 Issues to fix 0 To verify 1 Check passed");
-    expect(text).toContain("PASS");
+    // The mandatory Golden Rule with no value saved: not an issue, but the design isn't called a PASS.
+    expect(text).toContain("CHECK COMPANY SETTINGS");
+    expect(text).not.toMatch(/\bPASS\b/);
     expect(text).not.toContain("Items to verify");
   });
 
@@ -129,5 +131,76 @@ describe("Results page — Golden Rules and items to verify", () => {
     expect(text).toContain("PASS — PLEASE VERIFY");
     expect(text).toContain("No issues found — but please verify the items marked below before sending it to the client.");
     expect(text).not.toContain("HUMAN CHECK REQUIRED");
+  });
+
+  it("a possible critical issue to verify reads 'CHECK BEFORE SENDING' — never PASS — and the website and PDF agree", async () => {
+    const findings = [
+      f("brief", "unverified", "critical", { ruleId: "brief.requirement.price", title: "Price", expected: "AED 1,299", explanation: "Needs a human check — possible critical issue: this was judged by AI, which can't fail a design on its own." }),
+      f("content", "passed", "major"),
+    ];
+    const text = render(findings);
+    expect(text).toContain("CHECK BEFORE SENDING");
+    expect(text).toContain("A possible critical issue couldn't be confirmed automatically.");
+    expect(text).not.toMatch(/\bPASS\b/);
+    const board = scoreFindings(findings);
+    const data = buildReportData({ config: company(), session, requirements: [], files: [], findings, board, sampleData: false, provider: null, generatedAt: new Date("2026-10-18T10:00:00Z"), timeZone: "Asia/Dubai" });
+    expect(data.resultLabel).toBe("CHECK BEFORE SENDING");
+    expect((await renderReportPdf(data, null)).lines).toContain("CHECK BEFORE SENDING");
+  });
+
+  it("the score says it covers confirmed checks only while a possible critical issue is open; NEEDS REVISION warns about it", () => {
+    const possible = f("brief", "unverified", "critical", { ruleId: "brief.requirement.price", title: "Price", expected: "AED 1,299", explanation: "Needs a human check — possible critical issue: unsure." });
+    const check = render([possible, f("content", "passed", "major")]);
+    expect(check).toContain("Confirmed checks only — 1 possible critical issue still to check by eye.");
+    expect(check).not.toContain("if confirmed, this design fails");
+    const revise = render([possible, f("brand", "failed", "major", { title: "Text contrast" }), f("content", "passed", "major")]);
+    expect(revise).toContain("NEEDS REVISION");
+    expect(revise).toContain("Also check 1 possible critical issue marked below by eye before sending — if confirmed, this design fails.");
+    const clean = render([f("brand", "failed", "major", { title: "Text contrast" }), f("content", "passed", "major")]);
+    expect(clean).not.toMatch(/Confirmed checks only|if confirmed, this design fails/);
+  });
+});
+
+describe("Results page — CHECK COMPANY SETTINGS", () => {
+  const noValue = f("golden_rules", "unverified", "critical", { ruleId: "golden_rules.rule.approved_font", title: "Golden Rule: Headlines in Montserrat", mandatory: true, explanation: "No approved value is saved for this rule, so there's nothing to compare with. Add one on the company page." });
+
+  it("a mandatory Golden Rule with no approved value saved: the label, why, what to do, and the rule named under missing settings", () => {
+    const text = render([noValue, f("content", "passed", "major")]);
+    expect(text).toContain("CHECK COMPANY SETTINGS");
+    expect(text).toContain("a mandatory Golden Rule couldn't be checked because its approved value is missing or invalid. Fix it on the company page");
+    expect(text).toContain("Confirmed checks only — 1 mandatory Golden Rule not checked (approved value missing or invalid).");
+    expect(text).toContain("Company settings missing (1): Headlines in Montserrat (Golden Rule) — add them on the company page. They aren't design issues.");
+    expect(text).toContain("0 Issues to fix");
+    expect(text).not.toMatch(/\bPASS\b/);
+  });
+
+  it("beside NEEDS REVISION it's a warning line, and the label stays", () => {
+    const text = render([noValue, f("brand", "failed", "major", { title: "Text contrast" }), f("content", "passed", "major")]);
+    expect(text).toContain("NEEDS REVISION");
+    expect(text).toContain("1 mandatory Golden Rule couldn't be checked because its approved value is missing or invalid — fix it on the company page.");
+  });
+});
+
+describe("Results page — an invalid saved colour in a mandatory Golden Rule", () => {
+  it("CHECK COMPANY SETTINGS, the rule named under missing settings, never PASS and never an issue", () => {
+    const invalid = f("golden_rules", "unverified", "critical", { ruleId: "golden_rules.rule.approved_color", title: "Golden Rule: Use brand navy", mandatory: true, explanation: "The colour saved for this rule (\"navy\") isn't a colour code (#RRGGBB), so it can't be compared. Fix it on the company page." });
+    const text = render([invalid, f("content", "passed", "major")]);
+    expect(text).toContain("CHECK COMPANY SETTINGS");
+    expect(text).toContain("its approved value is missing or invalid. Fix it on the company page");
+    expect(text).toContain("Company settings missing (1): Use brand navy (Golden Rule) — add them on the company page. They aren't design issues.");
+    expect(text).toContain("0 Issues to fix 0 To verify");
+    expect(text).not.toMatch(/\bPASS\b/);
+  });
+});
+
+describe("Results page — a mandatory Golden Rule the analysis couldn't check", () => {
+  it("listed to verify by eye, with the rule's own note; CHECK BEFORE SENDING, never PASS", () => {
+    const unchecked = f("golden_rules", "unverified", "critical", { ruleId: "golden_rules.rule.approved_color", title: "Golden Rule: Use brand blue", mandatory: true, expected: "#1A64B4", explanation: "The analysis didn't produce what this check needs, so it couldn't be checked. Not counted for or against the result." });
+    const text = render([unchecked, f("content", "passed", "major")]);
+    expect(text).toContain("CHECK BEFORE SENDING");
+    expect(text).toContain("Check the design follows this rule — it can't be checked automatically.");
+    expect(text).not.toContain("the AI wasn't sure");
+    expect(text).toContain("0 Issues to fix 1 To verify");
+    expect(text).not.toMatch(/\bPASS\b/);
   });
 });

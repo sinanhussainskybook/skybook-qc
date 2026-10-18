@@ -1,4 +1,4 @@
-import { isHumanCheck } from "@/lib/analysis/policy";
+import { HUMAN_CHECK, isHumanCheck } from "@/lib/analysis/policy";
 import type { Finding, Severity } from "@/lib/qc/findings";
 
 /**
@@ -93,7 +93,10 @@ export function mergeDuplicateFindings(findings: Finding[]): Finding[] {
       merged.set(shown, {
         ...base,
         severity: worst.severity,
-        alsoCovers: [...(base.alsoCovers ?? []), ...twins.map((t) => ({ ruleId: t.ruleId, category: t.category, title: t.title }))],
+        alsoCovers: [
+          ...(base.alsoCovers ?? []),
+          ...twins.map((t) => ({ ruleId: t.ruleId, category: t.category, title: t.title, ...(t.requirementId ? { requirementId: t.requirementId } : {}) })),
+        ],
       });
     }
   }
@@ -110,8 +113,16 @@ const WORDS_ONLY = /^golden_rules\.rule\.(?:logo_rule|other)$/;
  * for another reason (e.g. no approved value saved) isn't one of them.
  */
 export function needsVerifying(f: Finding): boolean {
-  return isHumanCheck(f) || (f.status === "unverified" && WORDS_ONLY.test(f.ruleId));
+  return isHumanCheck(f) || (f.status === "unverified" && WORDS_ONLY.test(f.ruleId)) || uncheckedMandatoryRule(f);
 }
+
+/**
+ * A MANDATORY Golden Rule the analysis couldn't check (e.g. the colours couldn't be measured): it must be
+ * followed, so a person checks it by eye — the design is never passed with it unchecked. Missing or
+ * invalid company settings are the exception: those are fixed on the company page (missingCompanySetting).
+ */
+const uncheckedMandatoryRule = (f: Finding) =>
+  isGoldenRule(f) && f.mandatory === true && f.status === "unverified" && !missingCompanySetting(f);
 
 /**
  * What the designer should check, and briefly why — e.g. 'Check the design
@@ -119,7 +130,10 @@ export function needsVerifying(f: Finding): boolean {
  * "Check the design follows this rule — it can't be checked automatically."
  */
 export function verifyNote(f: { ruleId?: string; title: string; expected?: string; explanation: string }): string {
-  if (/written in words/i.test(f.explanation) || (f.ruleId && WORDS_ONLY.test(f.ruleId))) return "Check the design follows this rule — it can't be checked automatically.";
+  // A rule in words, or a mandatory rule the analysis couldn't check: anything to verify that isn't an AI doubt.
+  if (/written in words/i.test(f.explanation) || (f.ruleId && WORDS_ONLY.test(f.ruleId)) || !f.explanation.startsWith(HUMAN_CHECK)) {
+    return "Check the design follows this rule — it can't be checked automatically.";
+  }
   const expected = f.expected?.trim();
   return expected && expected !== ruleName(f.title) ? `Check the design for "${expected}" — the AI wasn't sure.` : "Check this on the design — the AI wasn't sure.";
 }
@@ -138,7 +152,7 @@ export const missingCompanySetting = (f: { explanation: string }) => /\bsaved fo
  * design mistake or affects the result.
  */
 export const NOT_CHECKED = {
-  settings: { label: "Company settings missing", note: "add them on the company page. They don't affect the result." },
+  settings: { label: "Company settings missing", note: "add them on the company page. They aren't design issues." },
   auto: { label: "Not checked automatically", note: "they don't affect the result." },
 } as const;
 

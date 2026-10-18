@@ -3,6 +3,8 @@ import os from "node:os";
 import path from "node:path";
 import { claimNextRun, recoverStaleRuns } from "@/lib/db/analysis-runs";
 import { limitsOf, processRun, type RunDeps } from "@/lib/analysis/pipeline";
+import type { ExpiredCursor } from "@/lib/db/qc-sessions";
+import { purgeExpiredBatch, type CleanupBatch } from "@/lib/qc/session";
 
 /**
  * The analysis worker (D10): a separate process from the same codebase
@@ -11,10 +13,56 @@ import { limitsOf, processRun, type RunDeps } from "@/lib/analysis/pipeline";
  *     the local provider: 1 run and 1 model call at a time (limits.ts);
  *   - every 30 s, runs whose worker stopped sending heartbeats are queued
  *     again (or failed once their attempts are used up);
- *   - temporary folders left by a crash are swept when the worker starts.
+ *   - temporary folders left by a crash are swept when the worker starts;
+ *   - expired QC sessions (24 h after their last change, D11) are deleted at
+ *     start and then every hour, one batch at a time (runCleanupLoop).
  */
 
 export const DEFAULT_TEMP_ROOT = path.join(os.tmpdir(), "skybook-qc-runs");
+
+/** How often the worker deletes expired QC sessions. */
+export const CLEANUP_EVERY_MS = 60 * 60 * 1000;
+
+/** Waits `ms`, or less if the worker is stopped. Leaves no listener behind on the signal. */
+export function abortableSleep(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise<void>((resolve) => {
+    if (signal.aborted) return resolve();
+    const done = () => {
+      clearTimeout(timer);
+      signal.removeEventListener("abort", done);
+      resolve();
+    };
+    const timer = setTimeout(done, ms);
+    signal.addEventListener("abort", done, { once: true });
+  });
+}
+
+/**
+ * Deletes expired QC sessions now and then every `everyMs` until the worker stops. One batch at a time
+ * — a batch always finishes before the wait starts, so batches never overlap. Each batch continues where
+ * the previous one stopped (purgeExpiredBatch), so sessions that keep failing can't block newer ones.
+ * A failure is logged (its kind only) and the next hour tries again; it never stops the worker. On stop,
+ * a running batch is finished (deletion is files first, so stopping in between is safe too).
+ */
+export async function runCleanupLoop(
+  purge: (now: Date, after: ExpiredCursor | null) => Promise<CleanupBatch>,
+  options: { signal: AbortSignal; everyMs?: number; now?: () => Date; log?: (line: string) => void }
+): Promise<void> {
+  const log = options.log ?? (() => {});
+  const now = options.now ?? (() => new Date());
+  let after: ExpiredCursor | null = null;
+  while (!options.signal.aborted) {
+    try {
+      const batch = await purge(now(), after);
+      after = batch.next;
+      if (batch.removed) log(`Clean-up: deleted ${batch.removed} expired QC session(s).`);
+      if (batch.kept) log(`Clean-up: ${batch.kept} expired QC session(s) kept — their files couldn't be deleted yet; tried again later.`);
+    } catch (error) {
+      log(`Clean-up failed: ${error instanceof Error ? error.name : "error"}; trying again in an hour.`);
+    }
+    await abortableSleep(options.everyMs ?? CLEANUP_EVERY_MS, options.signal);
+  }
+}
 
 /** Removes every leftover per-run folder (only inside our own temp root). */
 export async function sweepTempRoot(tempRoot: string): Promise<number> {
@@ -39,20 +87,23 @@ export async function recoverStale(deps: Pick<RunDeps, "db" | "now" | "limits">)
   return recoverStaleRuns(deps.db, now, new Date(now.getTime() - limits.staleAfterMs), limits.maxRunAttempts);
 }
 
-export async function runWorker(deps: RunDeps, options: { signal: AbortSignal; idleMs?: number; log?: (line: string) => void }): Promise<void> {
+export async function runWorker(
+  deps: RunDeps,
+  options: {
+    signal: AbortSignal;
+    idleMs?: number;
+    log?: (line: string) => void;
+    cleanupEveryMs?: number;
+    /** The clean-up batch (tests); defaults to purgeExpiredBatch on the worker's database and Storage. */
+    purgeExpired?: (now: Date, after: ExpiredCursor | null) => Promise<CleanupBatch>;
+  }
+): Promise<void> {
   const log = options.log ?? (() => {});
   const idle = options.idleMs ?? 2_000;
   const swept = await sweepTempRoot(deps.tempRoot);
   if (swept) log(`Removed ${swept} leftover temporary folder(s).`);
 
-  const sleep = (ms: number) =>
-    new Promise<void>((resolve) => {
-      const timer = setTimeout(resolve, ms);
-      options.signal.addEventListener("abort", () => {
-        clearTimeout(timer);
-        resolve();
-      });
-    });
+  const sleep = (ms: number) => abortableSleep(ms, options.signal);
 
   const recovery = (async () => {
     while (!options.signal.aborted) {
@@ -74,5 +125,10 @@ export async function runWorker(deps: RunDeps, options: { signal: AbortSignal; i
     }
   };
 
-  await Promise.all([recovery, ...Array.from({ length: limitsOf(deps).maxConcurrentRuns }, (_, i) => slot(i + 1))]);
+  const cleanup = runCleanupLoop(
+    options.purgeExpired ?? ((now, after) => purgeExpiredBatch(deps.db, deps.storage, now, after)),
+    { signal: options.signal, everyMs: options.cleanupEveryMs, now: deps.now, log }
+  );
+
+  await Promise.all([recovery, cleanup, ...Array.from({ length: limitsOf(deps).maxConcurrentRuns }, (_, i) => slot(i + 1))]);
 }

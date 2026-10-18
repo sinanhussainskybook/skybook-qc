@@ -11,7 +11,8 @@ import {
   findFile,
   insertPendingFile,
   insertSession,
-  listExpiredSessionIds,
+  listExpiredSessions,
+  type ExpiredCursor,
   listFiles,
   listStalePendingFiles,
   markFileReady,
@@ -90,17 +91,46 @@ export async function removeSessionCompletely(
   return true;
 }
 
-/** Deletes every expired session (all companies, all designers). Returns how many were removed. */
+/** How many expired sessions one clean-up batch handles at most. */
+export const CLEANUP_BATCH_SIZE = 50;
+
+/** Deletes expired sessions (all companies, all designers), oldest first, one batch. Returns how many were removed. */
 export async function purgeExpiredSessions(
   db: Database,
   storage: QcStorage | null,
   now: Date
 ): Promise<number> {
+  return (await purgeExpiredBatch(db, storage, now, null)).removed;
+}
+
+export type CleanupBatch = {
+  removed: number;
+  /** Tried but kept: their files couldn't be deleted yet (removeSessionCompletely). */
+  kept: number;
+  /** Where the next batch continues; null = start again from the oldest. */
+  next: ExpiredCursor | null;
+};
+
+/**
+ * One clean-up batch for the worker's hourly sweep: up to CLEANUP_BATCH_SIZE expired sessions after
+ * `after`, each removed files first (removeSessionCompletely — a session whose files can't be deleted is
+ * kept). The next batch continues after the last one tried, so sessions that keep failing can't block
+ * newer ones; after the last batch it starts again from the oldest, so kept sessions are retried.
+ */
+export async function purgeExpiredBatch(
+  db: Database,
+  storage: QcStorage | null,
+  now: Date,
+  after: ExpiredCursor | null
+): Promise<CleanupBatch> {
+  const expired = await listExpiredSessions(db, now, CLEANUP_BATCH_SIZE, after);
   let removed = 0;
-  for (const id of await listExpiredSessionIds(db, now)) {
+  for (const { id } of expired) {
     if (await removeSessionCompletely(db, storage, id)) removed++;
   }
-  return removed;
+  const last = expired.at(-1);
+  const full = expired.length === CLEANUP_BATCH_SIZE;
+  return { removed, kept: expired.length - removed, next: full && last ? { expiresAt: last.expires_at, id: last.id } : null };
 }
 
 /**

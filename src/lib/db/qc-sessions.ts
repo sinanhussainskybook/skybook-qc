@@ -203,13 +203,31 @@ export async function deleteSessionRow(db: Database, sessionId: string): Promise
   await db.query("delete from qc_sessions where id = $1", [sessionId]);
 }
 
-/** IDs of sessions past their expiry (any company, any designer) — for clean-up. */
-export async function listExpiredSessionIds(db: Database, now: Date, limit = 50): Promise<string[]> {
-  const rows = await db.query<{ id: string }>(
-    "select id from qc_sessions where expires_at <= $1 order by expires_at limit $2",
-    [now, limit]
+/** Where a clean-up batch stopped: the last expired session it tried (see listExpiredSessions). */
+export type ExpiredCursor = { expiresAt: Date; id: string };
+
+/**
+ * Sessions past their expiry (any company, any designer) — for clean-up — oldest first. With `after`,
+ * only those after that point, so the next batch moves on past sessions that were tried but had to be
+ * kept (their files couldn't be deleted yet) instead of retrying the same ones every time.
+ */
+export async function listExpiredSessions(
+  db: Database,
+  now: Date,
+  limit = 50,
+  after: ExpiredCursor | null = null
+): Promise<{ id: string; expires_at: Date }[]> {
+  return db.query<{ id: string; expires_at: Date }>(
+    `select id, expires_at from qc_sessions
+      where expires_at <= $1 and ($3::timestamptz is null or (expires_at, id) > ($3::timestamptz, $4::uuid))
+      order by expires_at, id limit $2`,
+    [now, limit, after?.expiresAt ?? null, after?.id ?? null]
   );
-  return rows.map((row) => row.id);
+}
+
+/** IDs of sessions past their expiry (any company, any designer) — for clean-up — oldest first. */
+export async function listExpiredSessionIds(db: Database, now: Date, limit = 50): Promise<string[]> {
+  return (await listExpiredSessions(db, now, limit)).map((row) => row.id);
 }
 
 /** The designer's session for the company whatever its expiry — for Start over / clean-up. */

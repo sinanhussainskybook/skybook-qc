@@ -4,7 +4,8 @@
  * The content-analysis worker (Phase 6, D10). Runs next to the Next.js app
  * on the same persistent host and processes queued analysis runs from the
  * database. Stop it with Ctrl+C; a run it was working on is picked up again
- * after it goes stale.
+ * after it goes stale. It also deletes expired QC sessions (D11) at start and
+ * then every hour (runCleanupLoop in lib/analysis/worker.ts).
  *
  * Settings come from the same places as the app (see .env.example):
  * DATABASE_URL, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY and

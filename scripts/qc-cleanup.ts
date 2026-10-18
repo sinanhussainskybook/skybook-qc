@@ -1,10 +1,10 @@
 /**
  * npm run qc:cleanup
  *
- * Deletes every expired QC session (D11) — its requirements, file records
- * and files in the temporary bucket. The app already does this whenever
- * someone opens Start QC; this command covers quiet periods and can be run
- * on a schedule once hosting is chosen (D10).
+ * Deletes expired QC sessions (D11), up to 50 per run — their requirements,
+ * file records and files in the temporary bucket. The worker already does
+ * this every hour and the app whenever someone opens Start QC; this command
+ * is for running it by hand.
  */
 import { purgeExpiredSessions } from "@/lib/qc/session";
 import { getQcStorage } from "@/lib/storage/qc-storage";

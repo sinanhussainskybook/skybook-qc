@@ -18,7 +18,9 @@ import {
   confirmUpload,
   markReady,
   prepareUpload,
+  purgeExpiredBatch,
   purgeExpiredSessions,
+  CLEANUP_BATCH_SIZE,
   readinessProblems,
   removeFile,
   removeSessionCompletely,
@@ -265,6 +267,52 @@ describe("QC session rules (Storage faked)", () => {
       expect(await db.query("select 1 from qc_sessions")).toHaveLength(1);
       fake.failing.list = false;
       expect(await purgeExpiredSessions(db, fake.bucket, hours(25))).toBe(1);
+    });
+
+    it("sessions whose files keep failing can't block newer ones: each batch moves on, then starts again", async () => {
+      // 55 expired sessions (one per designer), a minute apart; the oldest 50 can't have their files deleted.
+      await db.query("delete from qc_sessions");
+      const ids: string[] = [];
+      for (let i = 0; i < 55; i++) {
+        const user = await insertTestUser(db, { name: `D${i}`, email: `batch${i}@skybook.com`, role: "designer" });
+        const s = await startSession(db, fake.bucket, { companyId: acme, userId: user.id, contentType: "design_poster" }, new Date(T0.getTime() + i * 60_000));
+        await fake.bucket.upload(`${s.id}/poster.png`, PNG, "image/png");
+        ids.push(s.id);
+      }
+      const stuck = new Set(ids.slice(0, CLEANUP_BATCH_SIZE));
+      const flaky = { ...fake.bucket, list: (folder: string) => (stuck.has(folder) ? Promise.reject(new Error("fake list failure")) : fake.bucket.list(folder)) };
+      const remaining = async () => (await db.query<{ id: string }>("select id from qc_sessions")).map((r) => r.id);
+
+      // Batch 1: the 50 oldest — all kept (files first: nothing deleted, nothing left unreferenced).
+      const first = await purgeExpiredBatch(db, flaky, hours(48), null);
+      expect(first).toMatchObject({ removed: 0, kept: 50 });
+      expect(first.next?.id).toBe(ids[49]);
+      expect(await remaining()).toHaveLength(55);
+
+      // Batch 2 continues after them: the 5 newer ones are deleted, files and all.
+      const second = await purgeExpiredBatch(db, flaky, hours(48), first.next);
+      expect(second).toEqual({ removed: 5, kept: 0, next: null });
+      expect((await remaining()).sort()).toEqual([...stuck].sort());
+      for (const id of ids.slice(50)) expect([...fake.files.keys()].some((f) => f.startsWith(id))).toBe(false);
+
+      // Batch 3 starts again from the oldest; once Storage answers, they go too.
+      stuck.clear();
+      const third = await purgeExpiredBatch(db, flaky, hours(48), second.next);
+      expect(third).toMatchObject({ removed: 50, kept: 0 });
+      expect(await remaining()).toEqual([]);
+      expect(fake.files.size).toBe(0);
+      // A full batch always hands on where it stopped (more may follow); the next finds none and starts over.
+      expect(await purgeExpiredBatch(db, flaky, hours(48), third.next)).toEqual({ removed: 0, kept: 0, next: null });
+    });
+
+    it("the old one-batch clean-up is unchanged: at most 50, oldest first", async () => {
+      await db.query("delete from qc_sessions");
+      for (let i = 0; i < 52; i++) {
+        const user = await insertTestUser(db, { name: `E${i}`, email: `limit${i}@skybook.com`, role: "designer" });
+        await startSession(db, fake.bucket, { companyId: acme, userId: user.id, contentType: "design_poster" }, new Date(T0.getTime() + i * 60_000));
+      }
+      expect(await purgeExpiredSessions(db, fake.bucket, hours(48))).toBe(50);
+      expect(await purgeExpiredSessions(db, fake.bucket, hours(48))).toBe(2);
     });
   });
 

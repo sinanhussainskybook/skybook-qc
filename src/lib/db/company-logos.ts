@@ -68,3 +68,13 @@ export async function deleteCompanyLogo(db: Database, companyId: string): Promis
   );
   return row?.storage_path ?? null;
 }
+
+/** The logo file paths of these companies, by company ID (companies with no logo are left out). */
+export async function listCompanyLogoPaths(db: Database, companyIds: string[]): Promise<Map<string, string>> {
+  if (companyIds.length === 0) return new Map();
+  const rows = await db.query<{ company_id: string; storage_path: string }>(
+    "select company_id, storage_path from company_logos where company_id = any($1::uuid[])",
+    [companyIds]
+  );
+  return new Map(rows.map((row) => [row.company_id, row.storage_path]));
+}

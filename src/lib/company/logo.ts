@@ -1,7 +1,7 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
 import type { Database } from "@/lib/db/database";
-import { deleteCompanyLogo, upsertCompanyLogo, type CompanyLogo } from "@/lib/db/company-logos";
+import { deleteCompanyLogo, listCompanyLogoPaths, upsertCompanyLogo, type CompanyLogo } from "@/lib/db/company-logos";
 import type { CheckedLogo } from "@/lib/company/logo-file";
 import { LOGO_LINK_SECONDS, type LogoStorage } from "@/lib/storage/logo-storage";
 
@@ -95,6 +95,58 @@ export async function logoImageUrl(
     console.error("Making a logo link failed:", error);
     return null;
   }
+}
+
+/** How long the home page waits for its card logos before showing initial letters instead. */
+export const CARD_LOGOS_TIMEOUT_MS = 2_000;
+
+/**
+ * Links to show the logos of these companies (the home page cards), by company ID. A company with no
+ * logo, or whose link couldn't be made in time, is left out — its card shows the initial letter instead.
+ * `companyIds` must be companies the user may open (from listCompaniesForUser).
+ *
+ * The whole lookup has a short deadline of its own (not Storage's 20-second request timeout), so a slow
+ * Storage never holds up the company list: links made by then are used, the rest are left out. A link
+ * that arrives late is simply ignored; its failure is still logged by logoImageUrl.
+ */
+export async function companyLogoUrls(
+  db: Database,
+  storage: LogoStorage | null,
+  companyIds: string[],
+  timeoutMs: number = CARD_LOGOS_TIMEOUT_MS
+): Promise<Record<string, string>> {
+  if (!storage || companyIds.length === 0) return {};
+  const urls: Record<string, string> = {};
+
+  const lookup = (async () => {
+    let paths: Map<string, string>;
+    try {
+      paths = await listCompanyLogoPaths(db, companyIds);
+    } catch (error) {
+      console.error("Reading company logos failed:", error);
+      return;
+    }
+    await Promise.all(
+      [...paths].map(async ([companyId, storage_path]) => {
+        const url = await logoImageUrl(storage, { storage_path });
+        if (url) urls[companyId] = url;
+      })
+    );
+  })();
+
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<"late">((resolve) => {
+    timer = setTimeout(() => resolve("late"), timeoutMs);
+  });
+  try {
+    if ((await Promise.race([lookup, deadline])) === "late") {
+      console.error(`Company card logos took longer than ${timeoutMs} ms; showing initials for the rest.`);
+    }
+  } finally {
+    clearTimeout(timer);
+  }
+  // A copy: links that arrive after the deadline must not change what the page already has.
+  return { ...urls };
 }
 
 async function removeQuietly(storage: LogoStorage, path: string, what: string): Promise<boolean> {

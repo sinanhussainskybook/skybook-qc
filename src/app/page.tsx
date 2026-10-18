@@ -3,14 +3,18 @@ import { Plus } from "lucide-react";
 import { AppShell } from "@/components/layout/app-shell";
 import { addCompanyButtonClass, CompanyList } from "@/components/company/company-list";
 import { getCompaniesForCurrentUser } from "@/lib/company/access";
+import { companyLogoUrls } from "@/lib/company/logo";
+import { getDatabase } from "@/lib/db/client";
+import { getLogoStorage } from "@/lib/storage/logo-storage";
 import { cn } from "@/lib/utils";
 
 /**
  * Home: the companies this user may open (admins: all; designers: the ones
- * they are a member of — D13). Pick one to check a design for it.
+ * they are a member of — D13), each with its saved logo. Pick one to check a design for it.
  */
 export default async function DashboardPage() {
   const { user, companies } = await getCompaniesForCurrentUser();
+  const logoUrls = await companyLogoUrls(getDatabase(), getLogoStorage(), companies.map((company) => company.id));
 
   return (
     <AppShell
@@ -29,7 +33,7 @@ export default async function DashboardPage() {
         </>
       }
     >
-      <CompanyList companies={companies} />
+      <CompanyList companies={companies} logoUrls={logoUrls} />
     </AppShell>
   );
 }

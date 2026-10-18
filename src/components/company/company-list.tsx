@@ -1,14 +1,22 @@
 import Link from "next/link";
 import { ArrowUpRight, Plus } from "lucide-react";
 import type { CompanySummary } from "@/lib/company/types";
+import { CompanyAvatar } from "@/components/company/company-avatar";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 export const addCompanyButtonClass = cn(buttonVariants({ variant: "outline" }), "h-10 rounded-full px-4");
 
-/** The home page's list of companies the user may open. */
-export function CompanyList({ companies }: { companies: CompanySummary[] }) {
+/** The home page's list of companies the user may open, each with its logo when it has one. */
+export function CompanyList({
+  companies,
+  logoUrls = {},
+}: {
+  companies: CompanySummary[];
+  /** Links to show the logos, by company ID (see companyLogoUrls). */
+  logoUrls?: Record<string, string>;
+}) {
   if (companies.length === 0) {
     return (
       <div className="rounded-3xl border border-dashed border-border px-6 py-16 text-center">
@@ -34,9 +42,7 @@ export function CompanyList({ companies }: { companies: CompanySummary[] }) {
               href={`/companies/${company.id}`}
               className="group flex h-full items-center gap-4 rounded-2xl border border-border p-5 transition-all outline-none hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-[0_16px_40px_-24px_rgb(15_27_45/0.35)] focus-visible:ring-3 focus-visible:ring-ring/50"
             >
-              <span className="flex size-11 shrink-0 items-center justify-center rounded-full bg-secondary text-base font-bold text-secondary-foreground uppercase">
-                {company.name.slice(0, 1)}
-              </span>
+              <CompanyAvatar name={company.name} logoUrl={logoUrls[company.id]} />
               <span className="min-w-0 flex-1">
                 <span className="flex items-center gap-2">
                   <span className="truncate font-semibold">{company.name}</span>

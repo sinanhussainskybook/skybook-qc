@@ -6,7 +6,8 @@ import type { Database } from "@/lib/db/database";
 import { insertCompany } from "@/lib/db/companies";
 import { getCompanyLogo } from "@/lib/db/company-logos";
 import { checkLogoFile, type CheckedLogo } from "@/lib/company/logo-file";
-import { logoImageUrl, removeCompanyLogo, saveCompanyLogo } from "@/lib/company/logo";
+import { CARD_LOGOS_TIMEOUT_MS, companyLogoUrls, logoImageUrl, removeCompanyLogo, saveCompanyLogo } from "@/lib/company/logo";
+import type { LogoStorage } from "@/lib/storage/logo-storage";
 
 function checked(name: string, type: string, bytes: Uint8Array): CheckedLogo {
   const result = checkLogoFile({ name, type, size: bytes.length, bytes });
@@ -137,5 +138,71 @@ describe("saving and removing a company logo (Storage faked)", () => {
     expect(await logoImageUrl(null, logo)).toBeNull();
     fake.failing.sign = true;
     expect(await logoImageUrl(fake.storage, logo)).toBeNull();
+  });
+
+  it("makes a link for each company card's own logo, leaving out companies without one", async () => {
+    const dee = await insertTestUser(db, { name: "Card", email: "card@skybook.com", role: "designer" });
+    const globex = (await insertCompany(db, { name: "Globex", createdBy: dee.id })).id;
+    const initech = (await insertCompany(db, { name: "Initech", createdBy: dee.id })).id;
+    await saveCompanyLogo(db, fake.storage, acme, checked("acme.png", "image/png", PNG));
+    await saveCompanyLogo(db, fake.storage, globex, checked("globex.svg", "image/svg+xml", SAFE_SVG));
+    const acmePath = (await getCompanyLogo(db, acme))!.storage_path;
+    const globexPath = (await getCompanyLogo(db, globex))!.storage_path;
+
+    expect(await companyLogoUrls(db, fake.storage, [acme, globex, initech])).toEqual({
+      [acme]: `https://storage.test/sign/${acmePath}?expires=3600`,
+      [globex]: `https://storage.test/sign/${globexPath}?expires=3600`,
+    });
+    expect(await companyLogoUrls(db, fake.storage, [])).toEqual({});
+  });
+
+  it("card logos: no Storage, Storage down or the database failing → no links (cards show the initial)", async () => {
+    await saveCompanyLogo(db, fake.storage, acme, checked("acme.png", "image/png", PNG));
+    expect(await companyLogoUrls(db, null, [acme])).toEqual({});
+    const failingReads: Database = { exec: db.exec, query: async () => { throw new Error("fake database failure"); } };
+    expect(await companyLogoUrls(failingReads, fake.storage, [acme])).toEqual({});
+    fake.failing.sign = true;
+    expect(await companyLogoUrls(db, fake.storage, [acme])).toEqual({});
+  });
+
+  it("card logos have their own short deadline: a slow Storage link is left out, the fast ones are kept", async () => {
+    const dee = await insertTestUser(db, { name: "Slow", email: "slow@skybook.com", role: "designer" });
+    const globex = (await insertCompany(db, { name: "Globex", createdBy: dee.id })).id;
+    await saveCompanyLogo(db, fake.storage, acme, checked("acme.png", "image/png", PNG));
+    await saveCompanyLogo(db, fake.storage, globex, checked("globex.png", "image/png", PNG));
+    const globexPath = (await getCompanyLogo(db, globex))!.storage_path;
+
+    // Globex's link hangs until released — far longer than the deadline.
+    let release = () => {};
+    const slow: LogoStorage = {
+      ...fake.storage,
+      signedUrl: (path, seconds) =>
+        path === globexPath
+          ? new Promise((resolve) => (release = () => resolve(`https://storage.test/late/${path}`)))
+          : fake.storage.signedUrl(path, seconds),
+    };
+
+    const started = Date.now();
+    const urls = await companyLogoUrls(db, slow, [acme, globex], 100);
+    expect(Date.now() - started).toBeLessThan(1_000);
+    expect(Object.keys(urls)).toEqual([acme]); // Globex's card shows its initial
+    expect(console.error).toHaveBeenCalledWith(expect.stringContaining("took longer than 100 ms"));
+
+    // The late link doesn't change what the page already got.
+    release();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(Object.keys(urls)).toEqual([acme]);
+  });
+
+  it("card logos: a hanging database lookup also gives up at the deadline (all cards show initials)", async () => {
+    await saveCompanyLogo(db, fake.storage, acme, checked("acme.png", "image/png", PNG));
+    const hanging: Database = { exec: db.exec, query: () => new Promise(() => {}) };
+    const started = Date.now();
+    expect(await companyLogoUrls(hanging, fake.storage, [acme], 100)).toEqual({});
+    expect(Date.now() - started).toBeLessThan(1_000);
+  });
+
+  it("the card deadline is short and separate from Storage's 20-second request timeout", () => {
+    expect(CARD_LOGOS_TIMEOUT_MS).toBe(2_000);
   });
 });

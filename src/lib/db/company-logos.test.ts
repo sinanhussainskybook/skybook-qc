@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createTestDatabase, insertTestUser } from "../../../test/db";
 import type { Database } from "@/lib/db/database";
 import { insertCompany } from "@/lib/db/companies";
-import { deleteCompanyLogo, getCompanyLogo, upsertCompanyLogo } from "@/lib/db/company-logos";
+import { deleteCompanyLogo, getCompanyLogo, listCompanyLogoPaths, upsertCompanyLogo } from "@/lib/db/company-logos";
 import { loadCompanyConfiguration } from "@/lib/db/company-config";
 import { findAccessibleCompany } from "@/lib/db/companies";
 
@@ -79,6 +79,13 @@ describe("company_logos (metadata)", () => {
       (await findAccessibleCompany(db, { id: "00000000-0000-4000-8000-000000000000", role: "admin" }, acme))!
     );
     expect(config.logo).toMatchObject({ mime_type: "image/svg+xml" });
+  });
+
+  it("lists the logo paths of several companies at once, each under its own company", async () => {
+    const paths = await listCompanyLogoPaths(db, [acme, globex]);
+    expect([...paths]).toEqual([[acme, `${acme}/${UUID_B}.svg`]]); // Globex has no logo: left out
+    expect(await listCompanyLogoPaths(db, [globex])).toEqual(new Map());
+    expect(await listCompanyLogoPaths(db, [])).toEqual(new Map());
   });
 
   it("deletes the record and returns the file path to remove", async () => {

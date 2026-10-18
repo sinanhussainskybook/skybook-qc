@@ -4,6 +4,10 @@ import { renderToStaticMarkup } from "react-dom/server";
 const getCompaniesForCurrentUser = vi.fn();
 vi.mock("@/lib/company/access", () => ({ getCompaniesForCurrentUser }));
 vi.mock("@/lib/auth/actions", () => ({ signOutAction: vi.fn() }));
+const companyLogoUrls = vi.fn();
+vi.mock("@/lib/company/logo", () => ({ companyLogoUrls }));
+vi.mock("@/lib/db/client", () => ({ getDatabase: () => ({}) }));
+vi.mock("@/lib/storage/logo-storage", () => ({ getLogoStorage: () => null }));
 
 const { default: DashboardPage } = await import("@/app/page");
 
@@ -23,6 +27,8 @@ describe("dashboard", () => {
   beforeEach(() => {
     getCompaniesForCurrentUser.mockReset();
     getCompaniesForCurrentUser.mockResolvedValue({ user: dee, companies: [] });
+    companyLogoUrls.mockReset();
+    companyLogoUrls.mockResolvedValue({});
   });
 
   it("checks sign-in (and company access) on the server before rendering", async () => {
@@ -62,6 +68,22 @@ describe("dashboard", () => {
     expect(html).toContain('href="/companies/c2"');
     expect(html).toContain("Real estate · Dubai, UAE");
     expect(html).toContain("Inactive");
+  });
+
+  it("shows each company's own saved logo on its card, and the initial letter for one without", async () => {
+    getCompaniesForCurrentUser.mockResolvedValue({
+      user: dee,
+      companies: [company("c1", "Acme"), company("c2", "Globex"), company("c3", "Initech")],
+    });
+    companyLogoUrls.mockResolvedValue({ c1: "https://storage.test/sign/c1/a.png", c2: "https://storage.test/sign/c2/b.svg" });
+    const html = renderToStaticMarkup(await DashboardPage());
+    // Only the companies the user may open are asked about.
+    expect(companyLogoUrls).toHaveBeenCalledWith(expect.anything(), null, ["c1", "c2", "c3"]);
+    const cards = html.split(/href="\/companies\/c\d"/).slice(1); // one piece per card, in order
+    expect(cards[0]).toContain('src="https://storage.test/sign/c1/a.png"');
+    expect(cards[1]).toContain('src="https://storage.test/sign/c2/b.svg"');
+    expect(cards[2]).not.toContain("<img");
+    expect(cards[2]).toMatch(/uppercase">I<\/span>/);
   });
 
   it("keeps the page to one question and one list — no role explanations", async () => {

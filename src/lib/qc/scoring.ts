@@ -39,6 +39,12 @@ export type CategoryScore = {
   notVerified: number;
   humanChecks: number;
   notApplicable: number;
+  /**
+   * Other categories where this category's checks are shown, because a finding of theirs was the same
+   * issue and stands for it (lib/qc/consolidate.ts, alsoCovers) — e.g. Brand's font check merged into a
+   * Golden Rule. Display only: such a category ran, even when it has no score of its own.
+   */
+  seeAlso: string[];
 };
 
 export type Scoreboard = {
@@ -114,6 +120,13 @@ export function scoreFindings(findings: Finding[]): Scoreboard {
       notVerified: own.filter((f) => f.status === "unverified").length - humanChecks,
       humanChecks,
       notApplicable: own.filter((f) => f.status === "not_applicable").length,
+      seeAlso: [
+        ...new Set(
+          findings
+            .filter((f) => f.category !== value && f.alsoCovers?.some((c) => c.category === value))
+            .map((f) => CATEGORIES.find((c) => c.value === f.category)?.label ?? f.category)
+        ),
+      ],
     };
   });
 
@@ -140,6 +153,16 @@ export function scoreFindings(findings: Finding[]): Scoreboard {
     categories,
     counting: findings.filter((f) => f.status === "failed").sort((a, b) => ORDER[a.severity] - ORDER[b.severity]),
   };
+}
+
+/**
+ * A category's score as the score table shows it: the score; or, with none of its own, where its checks
+ * are shown when they were merged into another category's finding ("Checked — see Golden Rules"); or
+ * "Not checked". The same words on the website and in the report.
+ */
+export function categoryScoreText(c: Pick<CategoryScore, "score" | "seeAlso">): string {
+  if (c.score !== null) return `${c.score}`;
+  return c.seeAlso.length ? `Checked — see ${c.seeAlso.join(", ")}` : "Not checked";
 }
 
 export const RESULT_LABEL: Record<QcResult, string> = { pass: "PASS", needs_revision: "NEEDS REVISION", fail: "FAIL" };

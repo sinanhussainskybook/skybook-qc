@@ -2,7 +2,7 @@ import { ChevronDown, FileDown } from "lucide-react";
 import { buttonVariants } from "@/components/ui/button";
 import { CATEGORIES, severityLabel, type Finding, type Severity } from "@/lib/qc/findings";
 import { alsoCoversText, alsoNote, isGoldenRule, needsVerifying, NOT_CHECKED, ruleName, splitNotChecked, verifyNote } from "@/lib/qc/golden-rules-view";
-import { possibleCriticalWarning, RESULT_DISPLAY_LABEL, RESULT_DISPLAY_SUMMARY, resultDisplay, scoreNote, settingsWarning, type ResultDisplay, type Scoreboard as Board } from "@/lib/qc/scoring";
+import { categoryScoreText, possibleCriticalWarning, RESULT_DISPLAY_LABEL, RESULT_DISPLAY_SUMMARY, resultDisplay, scoreNote, settingsWarning, type ResultDisplay, type Scoreboard as Board } from "@/lib/qc/scoring";
 import { cn } from "@/lib/utils";
 
 const RESULT_STYLE: Record<ResultDisplay, { text: string; dot: string }> = {
@@ -264,7 +264,7 @@ export function CategoryScores({ board }: { board: Board }) {
             return (
               <tr key={c.category}>
                 <th scope="row" className="px-4 py-2 text-left font-medium">{c.label}</th>
-                <td className="px-4 py-2 tabular-nums">{c.score === null ? <span className="text-muted-foreground">Not checked</span> : c.score}</td>
+                <td className="px-4 py-2 tabular-nums">{c.score === null ? <span className="text-muted-foreground">{categoryScoreText(c)}</span> : c.score}</td>
                 <td className="px-4 py-2">{issues.length ? issues.map((s) => `${c.issues[s]} ${severityLabel(s).toLowerCase()}`).join(", ") : <span className="text-muted-foreground">None</span>}</td>
                 <td className="px-4 py-2 text-muted-foreground">
                   {[c.humanChecks ? `${c.humanChecks} to verify` : "", c.notVerified ? `${c.notVerified} not verified` : ""].filter(Boolean).join(", ") || "—"}

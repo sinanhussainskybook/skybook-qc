@@ -1,4 +1,5 @@
 import { HUMAN_CHECK, isHumanCheck } from "@/lib/analysis/policy";
+import { normalizeWords } from "@/lib/qc/compare";
 import type { Finding, Severity } from "@/lib/qc/findings";
 
 /**
@@ -10,8 +11,11 @@ import type { Finding, Severity } from "@/lib/qc/findings";
  * active Golden Rule included — runs in every QC session. This file only
  * (1) merges findings of different checks that are the SAME issue (a Golden
  * Rule and the brief, the brief and the company's contact details, the
- * company's name and its approved terms), (2) says which findings need
- * verifying by eye, and (3) splits what couldn't be checked.
+ * company's name and its approved terms, a Golden Rule font / colour and the
+ * brand's, the safe zone and text near the edge, two brief requirements for
+ * the same value), (2) says which findings need verifying by eye, and (3)
+ * splits what couldn't be checked. Repeated occurrences of one issue are
+ * grouped after this (lib/qc/consolidate.ts).
  */
 
 export const GOLDEN = "golden_rules";
@@ -43,12 +47,42 @@ const sameFile = (a: Finding, b: Finding) => (a.fileId ?? null) === (b.fileId ??
 /** Both confirmed mistakes, or both for a person to verify — never one of each. */
 const sameKind = (a: Finding, b: Finding) => (a.status === "failed" && b.status === "failed") || (needsVerifying(a) && needsVerifying(b));
 
+/** The quoted texts in a finding's detected value ('"Swipe up" touches the edge'), and whether each was cut off ("…"). */
+const quotedTexts = (value: string | undefined) =>
+  [...(value ?? "").matchAll(/"([^"]+)"/g)]
+    .map((m) => ({ text: m[1].replace(/…$/, "").trim().toLowerCase(), cut: m[1].endsWith("…") }))
+    .filter((q) => q.text.length > 0);
+/**
+ * Two quotes of the same text: equal — or, when one was cut off at a length limit, the other starts with
+ * it. A different text that merely starts the same ("Sale" and "Sale ends Sunday") is not the same text.
+ */
+const sameText = (a: { text: string; cut: boolean }, b: { text: string; cut: boolean }) =>
+  a.text === b.text || (a.cut && b.text.startsWith(a.text)) || (b.cut && a.text.startsWith(b.text));
+/** How a brief finding says its requirement is Must have (lib/qc/rules/brief.ts); the report reads it. */
+const BRIEF_MANDATORY = "The brief marks it as mandatory.";
+const MANDATORY_NOTE = /\bThe brief marks it as mandatory\b/;
+/** "#1A64B4" colour codes in a value, lower case. */
+const colourCodes = (value: string | undefined) => (value ?? "").match(/#[0-9a-f]{6}\b/gi)?.map((c) => c.toLowerCase()) ?? [];
+/** A brief requirement checked against the design's words (not its size or platform, which are per file). */
+const wordedRequirement = (ruleId: string) => ruleId.startsWith("brief.requirement.") && !/^brief\.requirement\.(?:dimensions|platform)$/.test(ruleId);
+/** `inner`'s words appear, in order and whole, inside `outer` ("20%" in "20% off", "AED 1,299" in "From AED 1,299"). */
+const wordsWithin = (outer: string | undefined, inner: string | undefined) => {
+  const o = normalizeWords(outer ?? "");
+  const i = normalizeWords(inner ?? "");
+  return i.length > 0 && ` ${o} `.includes(` ${i} `);
+};
+
 /**
  * The pairs of checks that can report the SAME underlying issue, and the exact
  * test for it. The first check of a pair is the one shown; the other is noted
  * on it ("also in …") and not counted again.
  */
-const PAIRS: { shown: (f: Finding) => boolean; isTwin: (shown: Finding, other: Finding) => boolean }[] = [
+const PAIRS: {
+  shown: (f: Finding) => boolean;
+  isTwin: (shown: Finding, other: Finding) => boolean;
+  /** The order to try findings as "shown" in, when it matters (default: as they come). */
+  first?: (a: Finding, b: Finding) => number;
+}[] = [
   // A Golden Rule and the brief / legal check of the same kind, expecting the same value.
   {
     shown: (f) => f.ruleId in COUNTERPART && Boolean(f.expected),
@@ -68,6 +102,31 @@ const PAIRS: { shown: (f: Finding) => boolean; isTwin: (shown: Finding, other: F
     shown: (f) => f.ruleId === "content.company_name" && Boolean(f.detected),
     isTwin: (n, t) => t.ruleId === "brand.terms" && same(t.expected) === same(n.expected) && same(t.detected) === same(n.detected),
   },
+  // A Golden Rule font and the brand fonts: a font neither allows, found by both.
+  {
+    shown: (f) => f.ruleId === "golden_rules.rule.approved_font" && Boolean(f.detected),
+    isTwin: (g, b) => Boolean(same(b.detected)) && b.ruleId === "brand.fonts" && (g.detected ?? "").split(",").map(same).filter(Boolean).includes(same(b.detected)),
+  },
+  // A Golden Rule colour and the brand colours: the approved colour is one of the brand colours, and it isn't used.
+  {
+    shown: (f) => f.ruleId === "golden_rules.rule.approved_color" && Boolean(f.expected),
+    isTwin: (g, b) => b.ruleId === "brand.colors.present" && Boolean(same(g.expected)) && colourCodes(b.expected).includes(same(g.expected)),
+  },
+  // The platform's safe zone and text near the edge: the same text, in the area the platform covers.
+  {
+    shown: (f) => f.ruleId === "platform.safe_zone" && Boolean(f.detected),
+    isTwin: (z, e) => e.ruleId === "layout.edge_margin" && quotedTexts(e.detected).some((t) => quotedTexts(z.detected).some((u) => sameText(t, u))),
+  },
+  // Two brief requirements for the same value — one's words inside the other's ("20%" and "20% off",
+  // "AED 1,299" and "From AED 1,299"): one mistake on the design. The fuller one is shown (fixing it fixes
+  // both), at the more serious severity; the other requirement is answered by it (alsoCovers keeps its id).
+  {
+    shown: (f) => wordedRequirement(f.ruleId) && Boolean(f.expected),
+    isTwin: (a, b) => wordedRequirement(b.ruleId) && wordsWithin(a.expected, b.expected),
+    // The fullest value first, so it takes in every value inside it ("From AED 1,299 per night" takes
+    // "From AED 1,299" and "AED 1,299") whatever order the requirements came in.
+    first: (a, b) => normalizeWords(b.expected ?? "").length - normalizeWords(a.expected ?? "").length,
+  },
 ];
 
 /**
@@ -83,15 +142,18 @@ export function mergeDuplicateFindings(findings: Finding[]): Finding[] {
   const dropped = new Set<Finding>();
   const merged = new Map<Finding, Finding>();
   for (const pair of PAIRS) {
-    for (const shown of findings) {
+    for (const shown of pair.first ? [...findings].sort(pair.first) : findings) {
       if (dropped.has(shown) || !pair.shown(shown) || (shown.status !== "failed" && !needsVerifying(shown))) continue;
       const twins = findings.filter((f) => f !== shown && !dropped.has(f) && !merged.has(f) && sameKind(shown, f) && sameFile(shown, f) && pair.isTwin(shown, f));
       if (!twins.length) continue;
       twins.forEach((t) => dropped.add(t));
       const base = merged.get(shown) ?? shown;
       const worst = [base, ...twins].reduce((a, b) => (ORDER[b.severity] < ORDER[a.severity] ? b : a));
+      // A brief requirement standing for a MANDATORY one says so — the report marks it Mandatory from this.
+      const mandatoryTwin = wordedRequirement(base.ruleId) && !MANDATORY_NOTE.test(base.explanation) && twins.some((t) => MANDATORY_NOTE.test(t.explanation));
       merged.set(shown, {
         ...base,
+        ...(mandatoryTwin ? { explanation: `${base.explanation} ${BRIEF_MANDATORY}` } : {}),
         severity: worst.severity,
         alsoCovers: [
           ...(base.alsoCovers ?? []),
@@ -177,6 +239,9 @@ export function alsoNote(also: string, toVerify = false): string {
     if (category === "Brief") return { by: "required", what: "the brief" };
     if (category === "Legal & Compliance") return { by: "required", what: "the legal check" };
     if (title === "Terminology") return { by: "flagged", what: "the brand's approved terms" };
+    if (title === "Brand fonts") return { by: "flagged", what: "the brand fonts" };
+    if (title === "Brand colours used") return { by: "flagged", what: "the brand colours" };
+    if (title === "Text near the edge") return { by: "flagged", what: "the text-near-the-edge check" };
     if (category === "Content") return { by: "flagged", what: "the company's contact details" };
     return { by: "flagged", what: x };
   });

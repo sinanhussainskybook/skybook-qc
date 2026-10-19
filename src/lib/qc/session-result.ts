@@ -6,7 +6,7 @@ import { applyConfidencePolicy } from "@/lib/analysis/policy";
 import { loadAnalysisView, type AnalysisView } from "@/lib/analysis/session-view";
 import { runRules } from "@/lib/qc/engine";
 import type { Finding } from "@/lib/qc/findings";
-import { mergeDuplicateFindings } from "@/lib/qc/golden-rules-view";
+import { consolidateFindings } from "@/lib/qc/consolidate";
 import { toQcInput } from "@/lib/qc/qc-input";
 import { QC_RULES, qcContextOf } from "@/lib/qc/rules";
 import { scoreFindings, type Scoreboard } from "@/lib/qc/scoring";
@@ -16,8 +16,9 @@ import { scoreFindings, type Scoreboard } from "@/lib/qc/scoring";
  * the same for the Start QC page and the downloaded report (Phase 8), so
  * both always say the same thing. Nothing here is stored.
  *   findings: Phase 5 rules on the latest detections, after the confidence
- *             policy (6.9), with a Golden Rule and a brief / legal check
- *             that are the same issue merged into one (counted once);
+ *             policy (6.9), each underlying issue once (lib/qc/consolidate.ts):
+ *             checks that found the same issue merged, and one check's
+ *             repeats in a design grouped — counted once;
  *             null until content is uploaded;
  *   board:    the Phase 7 result; null until the content has been analysed,
  *             and null while no requirement is confirmed — a PASS with
@@ -40,7 +41,7 @@ export async function loadSessionResult(db: Database, company: Company, session:
   const analysisView = await loadAnalysisView(db, session.id, content);
   const findings =
     content.length > 0
-      ? mergeDuplicateFindings(
+      ? consolidateFindings(
           applyConfidencePolicy(
             runRules(QC_RULES, session.content_type, {
               ...qcContextOf(toQcInput(config, session, requirements, files), analysisView.detections),

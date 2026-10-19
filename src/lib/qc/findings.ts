@@ -65,6 +65,8 @@ export type Finding = {
   mandatory?: boolean;
   /** The confirmed brief requirement this finding checks (brief and legal checks) — how the report links them. */
   requirementId?: string;
+  /** How many places one check found this same problem in (lib/qc/consolidate.ts); absent = one. */
+  occurrences?: number;
   /** Other checks this finding also stands for, when they were the same issue (lib/qc/golden-rules-view.ts). */
   alsoCovers?: { ruleId: string; category: Category; title: string; requirementId?: string }[];
 };

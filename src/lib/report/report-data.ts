@@ -6,7 +6,7 @@ import { CATEGORIES, severityLabel, sortFindings, type Finding, type Severity } 
 import { alsoCoversText, isGoldenRule, needsVerifying, ruleName } from "@/lib/qc/golden-rules-view";
 import { findPlacement, findPlatform } from "@/lib/qc/platforms";
 import { isCheckable, requirementTypeLabel } from "@/lib/qc/requirements";
-import { possibleCriticalWarning, RESULT_DISPLAY_LABEL, RESULT_DISPLAY_SUMMARY, resultDisplay, scoreNote, settingsWarning, type QcResult, type Scoreboard } from "@/lib/qc/scoring";
+import { categoryScoreText, possibleCriticalWarning, RESULT_DISPLAY_LABEL, RESULT_DISPLAY_SUMMARY, resultDisplay, scoreNote, settingsWarning, type QcResult, type Scoreboard } from "@/lib/qc/scoring";
 
 /**
  * The QC report (Phase 8) as plain data — what the PDF shows, built from the
@@ -165,7 +165,7 @@ export function buildReportData(input: {
       const issues = (["critical", "major", "minor", "suggestion"] as const).filter((s) => c.issues[s] > 0);
       return {
         label: c.label,
-        score: c.score === null ? "Not checked" : `${c.score}`,
+        score: categoryScoreText(c),
         issues: issues.length ? issues.map((s) => `${c.issues[s]} ${severityLabel(s).toLowerCase()}`).join(", ") : "None",
         notCounted: [c.humanChecks ? `${c.humanChecks} to verify` : "", c.notVerified ? `${c.notVerified} not verified` : ""].filter(Boolean).join(", ") || "-",
       };

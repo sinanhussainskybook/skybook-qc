@@ -25,6 +25,8 @@ export type DetectedText = {
   page?: number;
   box?: Box;
   role?: "headline" | "body" | "cta" | "disclaimer" | "other";
+  /** How sure the AI was of that role, 0–1 (absent: as sure as the text itself). */
+  roleConfidence?: number;
   fontFamily?: string;
   /** Text height in pixels of the analysed frame. */
   fontSizePx?: number;
@@ -92,6 +94,14 @@ export function allText(d: ContentDetections | null, withSpeech = true): string 
   const parts = d.texts.map((t) => t.text);
   if (withSpeech && d.speech) parts.push(...d.speech.map((s) => s.text));
   return parts.join("\n");
+}
+
+/**
+ * How sure a finding based on texts' ROLES can be ("this is the CTA"): the least sure of those texts and
+ * of their roles. A wrong CTA or headline is only as certain as the AI's reading of which text it is.
+ */
+export function roleBasedConfidence(texts: DetectedText[]): number {
+  return Math.min(...texts.map((t) => Math.min(t.confidence, t.roleConfidence ?? t.confidence)));
 }
 
 /** The lowest confidence among what a finding is based on (1 when based on nothing uncertain). */

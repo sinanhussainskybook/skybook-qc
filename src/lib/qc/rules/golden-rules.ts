@@ -1,6 +1,6 @@
 import type { GoldenRule } from "@/lib/company/types";
 import { colorDifference, containsText, ctaMatches, findName, sameFontFamily } from "@/lib/qc/compare";
-import { allText, type ContentDetections } from "@/lib/qc/detections";
+import { allText, roleBasedConfidence, type ContentDetections } from "@/lib/qc/detections";
 import type { Finding, Rule } from "@/lib/qc/findings";
 import { BRAND_COLOR_TOLERANCE } from "@/lib/qc/rules/brand";
 import { ALL_TYPES, findingFor, NEEDS_ANALYSIS, notApplicable, notVerified, severityFor, type QcContext } from "@/lib/qc/rules/context";
@@ -35,9 +35,14 @@ function checkOne(rule: GoldenRule, d: ContentDetections | null): Finding {
     case "mandatory_disclaimer": {
       const text = allText(d, false);
       if (text === null) return unverified(NEEDS_ANALYSIS);
-      return containsText(text, value)
-        ? passed("Present", "The required disclaimer appears in full.")
-        : failed("Missing or worded differently", "The required disclaimer doesn't appear word for word.", `Add the disclaimer exactly as approved: "${value}".`);
+      if (containsText(text, value)) return passed("Present", "The required disclaimer appears in full.");
+      // Report what was actually read (as the brief's disclaimer check does): a near-match is the words on the
+      // design, so it's judged on how clearly they were read; only a true absence is "Not found".
+      const fix = `Add the disclaimer exactly as approved: "${value}".`;
+      const close = findName(text, value);
+      if (close.status === "different") return failed(close.found, "The required disclaimer appears with different numbers or details — it must appear word for word.", fix);
+      if (close.status === "misspelt") return failed(close.found, "The required disclaimer appears, but not word for word.", fix);
+      return failed("Not found", "The required disclaimer doesn't appear.", fix);
     }
     case "approved_product_name": {
       const text = allText(d);
@@ -55,7 +60,7 @@ function checkOne(rule: GoldenRule, d: ContentDetections | null): Finding {
         return passed(value, "The call to action is the approved one.");
       }
       if (ctas.length === 0) return notApplicable(`${RULE_ID}.${rule.category}`, CATEGORY, title, "No call to action was found in the content.");
-      return failed(ctas.map((t) => t.text).join(", "), "The call to action isn't the approved wording.", `Use "${value}".`, Math.min(...ctas.map((t) => t.confidence)));
+      return failed(ctas.map((t) => t.text).join(", "), "The call to action isn't the approved wording.", `Use "${value}".`, roleBasedConfidence(ctas));
     }
     case "approved_color": {
       // A company setting to fix, not a design issue: worded like a missing value (golden-rules-view.ts missingCompanySetting).

@@ -136,6 +136,12 @@ export type PolicyOptions = {
  */
 const GEMINI_STILL_MEASURED = ["platform", "brief.requirement.dimensions", "image.audio"];
 
+/** Why a borderline value measured inside Gemini's approximate text position isn't counted (Stage 4). */
+export const GEMINI_ESTIMATE = "this was estimated from Gemini's approximate text position and isn't clearly past the limit.";
+
+/** Why a Gemini "not found" isn't counted (Stage 4). */
+export const GEMINI_DIDNT_LIST = "Gemini didn't list this text, but that isn't proof it's missing — it may still be on the design.";
+
 /**
  * Passes that cover ALL text positions / sizes at once ("No overlaps", "Clear
  * of the edges", "All text is large enough"). The rules check only text that
@@ -171,7 +177,7 @@ function textEvidence(finding: Finding, d: ContentDetections, isAbsence: boolean
   if (ocr.length) return { source: "ocr", confidence: Math.min(...ocr.map((t) => t.confidence)) };
   const speech = (d.speech ?? []).filter((s) => matches(s.text));
   if (speech.length) return { source: "speech", confidence: Math.min(...speech.map((s) => s.confidence)) };
-  // An absence rule whose detected value isn't words from the content ("Missing or worded differently").
+  // An absence rule whose detected value isn't words from the content ("Not found", or wording it reports itself).
   if (isAbsence) return { source: "absent", confidence: d.textCoverage ?? 0 };
   // Can't tell which words — use the weakest reading in the content (the safe side).
   const all = (d.texts ?? []).map((t) => t.confidence);
@@ -231,8 +237,15 @@ export function applyConfidencePolicy(
       if (evidence === "text") {
         const isAbsence = ABSENCE_RULES.some((r) => f.ruleId === r || f.ruleId.startsWith(`${r}.`));
         const found = textEvidence(f, detections, isAbsence);
+        // "It isn't there" based only on Gemini not listing it: Gemini's lines carry no measure of what it
+        // skipped (its "coverage" is just how sure it was of the lines it did return), so text it didn't list
+        // may still be on the design. Never counted; a mandatory one stays a possible critical issue.
+        if (isAbsence && found.source === "absent") return humanCheck(f, critical, GEMINI_DIDNT_LIST);
         confidence = Math.min(confidence, found.confidence);
       }
+      // A value measured inside Gemini's approximate text box (contrast, text colour) counts only when it is
+      // clearly past the limit (the rule says how clear: estimate.clearCut); nearer the limit, a person checks.
+      if (f.estimate && !f.estimate.clearCut) return humanCheck(f, critical, GEMINI_ESTIMATE);
       evidence = "ai";
     }
     if (evidence === "text") {

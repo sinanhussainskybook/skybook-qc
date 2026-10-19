@@ -20,6 +20,11 @@ export const CONTRAST_LARGE = 3;
 export const LARGE_TEXT_SHARE = 0.03;
 export const LARGE_BOLD_TEXT_SHARE = 0.024;
 export const MIN_TEXT_SHARE = 0.015;
+/**
+ * A contrast ratio estimated from approximate text positions (Gemini) counts only when it is clearly too
+ * low: under this share of the ratio needed (approved: 60 %). Nearer the limit it goes to a person.
+ */
+export const CONTRAST_CLEAR_CUT = 0.6;
 /** Captions should cover at least this share of the speech. */
 export const CAPTION_COVERAGE = 0.5;
 
@@ -48,7 +53,7 @@ const contrastRule: Rule<QcContext> = {
         return notVerified(this.id, CATEGORY, "Text contrast", "major", `The colours of ${quote(t)} couldn't be read.`);
       }
       const ok = ratio >= needed;
-      return make({
+      const finding = make({
         severity: "major",
         status: ok ? "passed" : "failed",
         expected: `At least ${needed} : 1${large ? " (large text)" : ""}`,
@@ -58,6 +63,8 @@ const contrastRule: Rule<QcContext> = {
         confidence: t.confidence,
         fileId: t.fileId,
       });
+      // Measured from the colours inside the text's box: say how clear the failure is (policy.ts decides).
+      return ok ? finding : { ...finding, estimate: { value: Math.round(ratio * 100) / 100, limit: needed, clearCut: ratio < needed * CONTRAST_CLEAR_CUT } };
     });
   },
 };

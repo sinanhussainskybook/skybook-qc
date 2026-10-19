@@ -583,10 +583,17 @@ export function colorDifference(a: string, b: string): number | null {
   return Math.hypot(x[0] - y[0], x[1] - y[1], x[2] - y[2]);
 }
 
+/** How far a colour is from grey (its chroma); under NEUTRAL_CHROMA it counts as a neutral. */
+export const NEUTRAL_CHROMA = 8;
+export function chroma(hex: string): number | null {
+  const lab = toLab(hex);
+  return lab === null ? null : Math.hypot(lab[1], lab[2]);
+}
+
 /** Black, white and greys (very low colourfulness) — allowed alongside any palette. */
 export function isNeutral(hex: string): boolean {
-  const lab = toLab(hex);
-  return lab !== null && Math.hypot(lab[1], lab[2]) < 8;
+  const c = chroma(hex);
+  return c !== null && c < NEUTRAL_CHROMA;
 }
 
 /** Fonts are the same family when their names match ignoring case, spaces and style words. */

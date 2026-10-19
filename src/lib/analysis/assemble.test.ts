@@ -38,7 +38,7 @@ describe("assembling ContentDetections", () => {
     expect(d.source).toBe("ai");
     expect(d.frame).toEqual({ width: 2000, height: 2000 });
     expect(d.texts).toEqual([
-      { text: "Summer Sale", fileId: "f1", box: { x: 0.1, y: 0.1, w: 0.5, h: 0.05 }, fontSizePx: 80, confidence: 0.95, role: "headline", fontFamily: "Montserrat", bold: true, color: "#1A64B4", background: "#FFFFFF" },
+      { text: "Summer Sale", fileId: "f1", box: { x: 0.1, y: 0.1, w: 0.5, h: 0.05 }, fontSizePx: 80, confidence: 0.95, role: "headline", roleConfidence: 0.9, fontFamily: "Montserrat", bold: true, color: "#1A64B4", background: "#FFFFFF" },
       { text: "Book now", fileId: "f1", box: { x: 0.1, y: 0.2, w: 0.5, h: 0.05 }, fontSizePx: 80, confidence: 0.95 },
     ]);
     expect(d.textCoverage).toBe(0.96);

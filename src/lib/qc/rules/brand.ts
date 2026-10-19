@@ -1,4 +1,4 @@
-import { colorDifference, containsText, findName, isNeutral, sameFontFamily } from "@/lib/qc/compare";
+import { chroma, colorDifference, containsText, findName, isNeutral, NEUTRAL_CHROMA, sameFontFamily } from "@/lib/qc/compare";
 import { allText } from "@/lib/qc/detections";
 import type { Finding, Rule } from "@/lib/qc/findings";
 import { ALL_TYPES, findingFor, NEEDS_ANALYSIS, notVerified, type QcContext } from "@/lib/qc/rules/context";
@@ -14,6 +14,11 @@ const CATEGORY = "brand" as const;
 
 /** Colours within this ΔE of a brand colour count as that colour (app setting). */
 export const BRAND_COLOR_TOLERANCE = 10;
+/**
+ * A text colour estimated from approximate text positions (Gemini) counts as off-brand only when it is
+ * clearly so: more than this many times the tolerance from every brand colour and from grey (approved: 2×).
+ */
+export const TEXT_COLOR_CLEAR_CUT = 2;
 /** A colour must cover at least this share of the frame to count as "used". */
 export const MIN_COLOR_SHARE = 0.02;
 
@@ -62,7 +67,14 @@ const colorsRule: Rule<QcContext> = {
                 confidence: t.confidence,
                 fileId: t.fileId,
               })
-            )
+            ).map((finding, i) => {
+              // Measured from the colours inside the text's box: say how clear the failure is (policy.ts decides).
+              const hex = offBrand[i].color!;
+              const fromBrand = Math.min(...palette.map((p) => colorDifference(hex, p) ?? Infinity));
+              const fromGrey = chroma(hex) ?? Infinity;
+              const clearCut = fromBrand > TEXT_COLOR_CLEAR_CUT * BRAND_COLOR_TOLERANCE && fromGrey > TEXT_COLOR_CLEAR_CUT * NEUTRAL_CHROMA;
+              return { ...finding, estimate: { value: Math.round(fromBrand * 10) / 10, limit: BRAND_COLOR_TOLERANCE, clearCut } };
+            })
           : [
               findingFor(`${this.id}.text`, CATEGORY, "Text colour")({
                 severity: "minor",

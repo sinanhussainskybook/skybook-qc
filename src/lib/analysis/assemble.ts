@@ -91,7 +91,7 @@ export function assembleDetections(input: AssembleInput): ContentDetections {
           // OCR measured the height in the prepared image; scale to the original frame.
           ...(block.heightPx !== undefined ? { fontSizePx: Math.max(1, Math.round((block.heightPx / f.ocr!.height) * f.frame.height)) } : {}),
           confidence: block.confidence,
-          ...(usable ? { role: label.role } : {}),
+          ...(usable ? { role: label.role, roleConfidence: AI_CONFIDENCE[label.certainty] } : {}),
           ...(usable && label.fontFamily ? { fontFamily: label.fontFamily } : {}),
           ...(usable && label.bold !== null ? { bold: label.bold } : {}),
           ...(colour ? { color: colour.color, background: colour.background } : {}),

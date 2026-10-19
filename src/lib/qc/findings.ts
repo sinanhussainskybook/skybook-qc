@@ -65,6 +65,12 @@ export type Finding = {
   mandatory?: boolean;
   /** The confirmed brief requirement this finding checks (brief and legal checks) — how the report links them. */
   requirementId?: string;
+  /**
+   * A value estimated from detected text positions (contrast ratio, colour distance): the value, the limit
+   * it was judged against, and whether it is clearly past it. With approximate positions (Gemini) only a
+   * clear-cut failure counts (lib/analysis/policy.ts); the rest go to a person.
+   */
+  estimate?: { value: number; limit: number; clearCut: boolean };
   /** How many places one check found this same problem in (lib/qc/consolidate.ts); absent = one. */
   occurrences?: number;
   /** Other checks this finding also stands for, when they were the same issue (lib/qc/golden-rules-view.ts). */

@@ -24,7 +24,7 @@ import {
   type Price,
   websitesMatch,
 } from "@/lib/qc/compare";
-import { allText, type ContentDetections } from "@/lib/qc/detections";
+import { allText, roleBasedConfidence, type ContentDetections } from "@/lib/qc/detections";
 import type { Finding, Rule, Severity } from "@/lib/qc/findings";
 import type { QcInputRequirement } from "@/lib/qc/qc-input";
 import { requirementTypeLabel } from "@/lib/qc/requirements";
@@ -141,14 +141,17 @@ function check(r: QcInputRequirement, d: ContentDetections): Outcome | "unchecke
       const hit = ctas.find((t) => ctaMatches(value, t.text));
       if (hit) return { kind: "present", detected: hit.text, confidence: hit.confidence };
       if (containsText(text, value)) return { kind: "present", detected: value };
-      return ctas.length ? { kind: "wrong", detected: ctas.map((t) => t.text).join(", ") } : { kind: "missing" };
+      // Another text labelled the CTA: only as sure as that text and its role (never "certain" by default).
+      return ctas.length ? { kind: "wrong", detected: ctas.map((t) => t.text).join(", "), confidence: roleBasedConfidence(ctas) } : { kind: "missing" };
     }
     case "headline": {
       const headlines = (d.texts ?? []).filter((t) => t.role === "headline");
       const hit = headlines.find((t) => textMatches(value, t.text));
       if (hit) return { kind: "present", detected: hit.text, confidence: hit.confidence };
       const outcome = textOutcome(value, text);
-      if (outcome.kind === "missing" && headlines.length) return { kind: "wrong", detected: headlines.map((t) => t.text).join(" / ") };
+      if (outcome.kind === "missing" && headlines.length) {
+        return { kind: "wrong", detected: headlines.map((t) => t.text).join(" / "), confidence: roleBasedConfidence(headlines) };
+      }
       return outcome;
     }
     case "required_text":

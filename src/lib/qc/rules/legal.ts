@@ -1,4 +1,4 @@
-import { capitalizationDifference, containsText, findName } from "@/lib/qc/compare";
+import { capitalizationDifference, containsText, datesWrittenOneWay, findName } from "@/lib/qc/compare";
 import { allText } from "@/lib/qc/detections";
 import type { Finding, Rule } from "@/lib/qc/findings";
 import { ALL_TYPES, findingFor, NEEDS_ANALYSIS, notApplicable, notVerified, severityFor, type QcContext } from "@/lib/qc/rules/context";
@@ -39,7 +39,8 @@ const disclaimerRule: Rule<QcContext> = {
       const severity = severityFor(r.mandatory);
       if (text === null) return notVerified(this.id, CATEGORY, title, severity, NEEDS_ANALYSIS, r.expectedValue);
       const make = findingFor(this.id, CATEGORY, title);
-      if (containsText(text, r.expectedValue)) {
+      // Dates compared as dates, however written ("31 Dec 2026" = "31/12/2026"); capitals still from the text as shown.
+      if (containsText(datesWrittenOneWay(text), datesWrittenOneWay(r.expectedValue))) {
         const capitals = r.mandatory ? capitalizationDifference(text, r.expectedValue) : null;
         if (capitals) {
           return make({
@@ -53,14 +54,16 @@ const disclaimerRule: Rule<QcContext> = {
         }
         return make({ severity, status: "passed", expected: r.expectedValue, detected: "Present word for word", explanation: "The disclaimer appears exactly as required." });
       }
-      const close = findName(text, r.expectedValue);
+      const close = findName(datesWrittenOneWay(text), datesWrittenOneWay(r.expectedValue));
       return make({
         severity,
         status: "failed",
         expected: r.expectedValue,
-        detected: close.status === "misspelt" ? close.found : "Not found",
+        detected: close.status === "misspelt" || close.status === "different" ? close.found : "Not found",
         explanation:
-          close.status === "misspelt"
+          close.status === "different"
+            ? "The disclaimer appears with different numbers or details — legal wording must be exact."
+            : close.status === "misspelt"
             ? "The disclaimer appears, but not word for word — legal wording must be exact."
             : `The disclaimer required by the brief isn't shown.${r.mandatory ? " The brief marks it as mandatory." : ""}`,
         suggestedFix: `Show the disclaimer exactly as: "${r.expectedValue}".`,

@@ -3,6 +3,7 @@ import {
   containsText,
   ctaMatches,
   datesMatch,
+  datesWrittenOneWay,
   emailsMatch,
   findDates,
   findEmails,
@@ -12,12 +13,15 @@ import {
   findPrices,
   findTimes,
   findWebsites,
+  normalizeWords,
+  oldPrices,
   parseDimensions,
   parsePercentage,
   parsePrice,
   phonesMatch,
   pricesMatch,
   textMatches,
+  type Price,
   websitesMatch,
 } from "@/lib/qc/compare";
 import { allText, type ContentDetections } from "@/lib/qc/detections";
@@ -60,11 +64,19 @@ type Outcome =
   | { kind: "wrong"; detected: string; confidence?: number }
   | { kind: "missing" };
 
-/** Free-text requirement: whole words present, else a close misspelling, else missing. */
-function textOutcome(expected: string, text: string): Outcome {
-  if (containsText(text, expected)) return { kind: "present", detected: expected };
-  const name = findName(text, expected);
+/**
+ * Free-text requirement: whole words present, else a close misspelling, else — the same words with other
+ * numbers ("iPhone 15" for "iPhone 16") — a wrong value, else missing.
+ */
+function textOutcome(expected: string, raw: string): Outcome {
+  // Dates in the brief's wording and on the design are compared as dates, however they're written
+  // ("31 Dec 2026" = "31 December 2026" = "31/12/2026"); another date is then the same words with
+  // another number — a wrong value — never "missing" plus an unexpected date.
+  const text = datesWrittenOneWay(raw);
+  if (containsText(text, datesWrittenOneWay(expected))) return { kind: "present", detected: expected };
+  const name = findName(text, datesWrittenOneWay(expected));
   if (name.status === "misspelt") return { kind: "mismatched", detected: name.found, why: "It appears, but written differently.", fix: `Write it exactly as "${expected}".` };
+  if (name.status === "different") return { kind: "wrong", detected: name.found };
   return { kind: "missing" };
 }
 
@@ -110,11 +122,12 @@ function check(r: QcInputRequirement, d: ContentDetections): Outcome | "unchecke
       return valueOutcome(findPercentages(text), (p) => p === expected, (p) => `${p}%`);
     }
     case "date": {
-      const [expected] = findDates(value);
+      // Day and month without a year ("18/10") can match the brief's date; only full dates can be "wrong".
+      const [expected] = findDates(value, { withoutYear: true });
       if (!expected) return textOutcome(value, text);
-      const found = findDates(text);
-      const hit = found.find((m) => datesMatch(expected, m));
+      const hit = findDates(text, { withoutYear: true }).find((m) => datesMatch(expected, m));
       if (hit) return { kind: "present", detected: value };
+      const found = findDates(text);
       return found.length ? { kind: "wrong", detected: `${found.length} other date${found.length === 1 ? "" : "s"}` } : { kind: "missing" };
     }
     case "time": {
@@ -269,6 +282,9 @@ const requirementsRule: Rule<QcContext> = {
   },
 };
 
+/** Requirements whose words must appear on the design: a value written in them is one the brief expects. */
+const WORDED_TYPES = new Set(["offer", "required_text", "headline", "cta", "disclaimer", "product_name", "service_name", "location"]);
+
 /** Values of these kinds that appear in the content but aren't in the brief. */
 const unexpectedRule: Rule<QcContext> = {
   id: "brief.unexpected",
@@ -281,6 +297,9 @@ const unexpectedRule: Rule<QcContext> = {
     const text = allText(context.detections);
     if (text === null) return [notVerified(this.id, CATEGORY, "Unexpected offer details", "major", NEEDS_ANALYSIS)];
     const of = (type: string) => context.requirements.filter((r) => r.type === type).map((r) => r.expectedValue);
+    // Values the brief gives inside its own wording ("20% off", "From AED 1,299", "Valid until 31 Dec") are
+    // expected on the design too. Descriptive items (instructions, audience…) never make a value expected.
+    const worded = context.requirements.filter((r) => WORDED_TYPES.has(r.type)).map((r) => r.expectedValue);
     // One mistake, one finding: when a requirement of this kind already reports the
     // content's values as WRONG (its finding lists every value of that kind it found),
     // those values aren't reported a second time here.
@@ -291,6 +310,25 @@ const unexpectedRule: Rule<QcContext> = {
         const outcome = check(r, detections);
         return outcome !== "unchecked" && outcome.kind === "wrong";
       });
+    // Brief wording reported wrong or written differently ("20% off" shown as "25% off") names only the
+    // words it found — so only the values IN those words are skipped here; any other extra value of the
+    // same kind ("and 10% cashback") is still reported.
+    const wordedFound = context.requirements
+      .filter((r) => WORDED_TYPES.has(r.type))
+      .flatMap((r) => {
+        const outcome = check(r, detections);
+        return outcome !== "unchecked" && (outcome.kind === "wrong" || outcome.kind === "mismatched") ? [` ${normalizeWords(outcome.detected)} `] : [];
+      });
+    const inWordedFound = (words: string) => wordedFound.some((w) => w.includes(` ${normalizeWords(words)} `));
+    // A date in those words: read as a date ("30 dec 2026"), or — its slashes gone when the words were
+    // normalised ("30 12 2026") — as the same day, month and year numbers.
+    const dateInWordedFound = (mention: ReturnType<typeof findDates>[number]) =>
+      wordedFound.some((w) => {
+        if (findDates(w, { withoutYear: true }).some((found) => datesMatch(found, mention))) return true;
+        const numbers = new Set(w.match(/\d+/g) ?? []);
+        return mention.some((d) => numbers.has(String(d.day)) && numbers.has(String(d.month)) && (d.year === undefined || numbers.has(String(d.year))));
+      });
+    const skippedAsWorded = new Set<string>();
     const make = findingFor(this.id, CATEGORY, "Unexpected offer details");
     const findings: Finding[] = [];
     const flag = (kind: string, detected: string, briefHasKind: boolean) =>
@@ -307,17 +345,34 @@ const unexpectedRule: Rule<QcContext> = {
         })
       );
 
-    const briefPrices = of("price").map(parsePrice).filter((p) => p !== null);
-    if (!reportedWrong("price")) for (const p of findPrices(text)) {
-      if (!briefPrices.some((b) => pricesMatch(b, p) !== "mismatch")) flag("price", p.text, briefPrices.length > 0);
+    const briefPrices = [...of("price").map(parsePrice).filter((p) => p !== null), ...worded.flatMap(findPrices)];
+    // An offer's old price — introduced as one ("Was AED 1,500", "instead of …") and higher than the brief's
+    // price, which is shown too — is the offer working as intended, not a stray price. Anything else is checked.
+    const shownPrices = findPrices(text);
+    const briefShown = shownPrices.some((p) => briefPrices.some((b) => pricesMatch(b, p) === "match"));
+    const highestBrief = Math.max(...briefPrices.map((b) => b.amount));
+    const asOld = new Set(oldPrices(text).map((p) => p.text));
+    const isOldPrice = (p: Price) => briefShown && asOld.has(p.text) && p.amount > highestBrief;
+    let oldShown = 0;
+    if (!reportedWrong("price")) for (const p of shownPrices) {
+      if (briefPrices.some((b) => pricesMatch(b, p) !== "mismatch")) continue;
+      if (inWordedFound(p.text)) skippedAsWorded.add("price");
+      else if (isOldPrice(p)) oldShown++;
+      else flag("price", p.text, briefPrices.length > 0);
     }
-    const briefPercentages = of("percentage").map(parsePercentage).filter((p) => p !== null);
+    const briefPercentages = [...of("percentage").map(parsePercentage).filter((p) => p !== null), ...worded.flatMap(findPercentages)];
     if (!reportedWrong("percentage")) for (const p of new Set(findPercentages(text))) {
-      if (!briefPercentages.includes(p)) flag("percentage", `${p}%`, briefPercentages.length > 0);
+      if (briefPercentages.includes(p)) continue;
+      if (inWordedFound(`${p}%`)) skippedAsWorded.add("percentage");
+      else flag("percentage", `${p}%`, briefPercentages.length > 0);
     }
-    const briefDates = of("date").flatMap((v) => findDates(v));
+    const briefDates = [...of("date"), ...worded].flatMap((v) => findDates(v, { withoutYear: true }));
     if (!reportedWrong("date")) for (const mention of findDates(text)) {
       if (!briefDates.some((b) => datesMatch(b, mention))) {
+        if (dateInWordedFound(mention)) {
+          skippedAsWorded.add("date");
+          continue;
+        }
         const m = mention[0];
         flag("date", `${m.day}/${m.month}${m.year ? `/${m.year}` : ""}${mention.length > 1 ? " (or the other way round)" : ""}`, briefDates.length > 0);
       }
@@ -325,11 +380,20 @@ const unexpectedRule: Rule<QcContext> = {
     if (findings.length) return findings;
     // A wrong value of some kind was reported under its requirement and skipped here:
     // "nothing unexpected" would be untrue, so this check doesn't claim a pass.
-    const covered = (["price", "percentage", "date"] as const).filter(reportedWrong);
+    const covered = (["price", "percentage", "date"] as const).filter((kind) => reportedWrong(kind) || skippedAsWorded.has(kind));
     if (covered.length) {
       return [notApplicable(this.id, CATEGORY, "Unexpected offer details", `The ${covered.join(", ")} shown differ${covered.length === 1 ? "s" : ""} from the brief — reported under the brief's requirement above, not repeated here.`)];
     }
-    return [make({ severity: "major", status: "passed", detected: "None", explanation: "No prices, percentages or dates beyond those in the brief." })];
+    return [
+      make({
+        severity: "major",
+        status: "passed",
+        detected: "None",
+        explanation: oldShown
+          ? "No prices, percentages or dates beyond those in the brief — apart from the offer's old price, shown as the price it replaces."
+          : "No prices, percentages or dates beyond those in the brief.",
+      }),
+    ];
   },
 };
 

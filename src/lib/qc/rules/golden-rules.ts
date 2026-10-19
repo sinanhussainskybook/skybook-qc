@@ -45,6 +45,7 @@ function checkOne(rule: GoldenRule, d: ContentDetections | null): Finding {
       const check = findName(text, value);
       if (check.status === "exact") return passed(value, "The product name is written as approved.");
       if (check.status === "absent") return notApplicable(`${RULE_ID}.${rule.category}`, CATEGORY, title, "The product isn't mentioned in the content.");
+      if (check.status === "different") return failed(check.found, "A different product (another model or number) is named, not the approved one.", `Use "${value}".`);
       return failed(check.found, "The product name isn't written as approved.", `Write it exactly as "${value}".`);
     }
     case "approved_cta": {

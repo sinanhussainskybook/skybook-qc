@@ -91,11 +91,11 @@ describe("Brief rules", () => {
 
   it("unexpected prices, percentages and dates", () => {
     const findings = byRule(
-      run({ requirements: [requirement("price", "AED 1,299")], detections: detections({ texts: [text("Now AED 1,299, was AED 1,599. Save 20%! Until 31 Dec")] }) }),
+      run({ requirements: [requirement("price", "AED 1,299")], detections: detections({ texts: [text("Now AED 1,299, also AED 1,599. Save 20%! Until 31 Dec")] }) }),
       "brief.unexpected"
     );
     expect(findings.map((f) => [f.detected, f.severity])).toEqual([
-      ["AED 1,599", "major"], // the brief has a price, this isn't it
+      ["AED 1,599", "major"], // the brief has a price, this isn't it (and it isn't introduced as the old price)
       ["20%", "minor"], // the brief has no percentage
       ["31/12", "minor"],
     ]);
@@ -122,8 +122,8 @@ describe("Brief rules", () => {
     // The price is wrong (reported once, under its requirement) — but a date the brief doesn't mention is still flagged.
     const mixed = run({ requirements: [requirement("price", "AED 1,299")], detections: detections({ texts: [text("From AED 1,399 until 31 Dec")] }) });
     expect(byRule(mixed, "brief.unexpected").map((f) => [f.status, f.severity, f.detected])).toEqual([["failed", "minor", "31/12"]]);
-    // The right price is shown AND an old one is left in: the old one is still an unexpected MAJOR (no duplicate there).
-    const leftover = run({ requirements: [requirement("price", "AED 1,299")], detections: detections({ texts: [text("Now AED 1,299, was AED 1,599")] }) });
+    // The right price is shown AND another one is left in (not introduced as the old price): still an unexpected MAJOR.
+    const leftover = run({ requirements: [requirement("price", "AED 1,299")], detections: detections({ texts: [text("Now AED 1,299 · AED 1,599")] }) });
     expect(byRule(leftover, "brief.requirement")).toMatchObject([{ status: "passed" }]);
     expect(byRule(leftover, "brief.unexpected").map((f) => [f.status, f.severity, f.detected])).toEqual([["failed", "major", "AED 1,599"]]);
     // A different currency is a WRONG price too: reported once (CRITICAL, mandatory), not again as unexpected.

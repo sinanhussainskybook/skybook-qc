@@ -12,13 +12,49 @@
 // Text
 // ---------------------------------------------------------------------------
 
-/** Lower-case words: letters, digits and % only; quotes, dashes and punctuation become spaces. */
-export function normalizeWords(value: string): string {
+/**
+ * Arabic-Indic (٠–٩) and Eastern Arabic (۰–۹) digits as 0–9, the Arabic percent sign as %, and the Arabic
+ * thousands / decimal separators as "," / "." — one character for one, so positions in the text don't move.
+ */
+export function asciiNumbers(value: string): string {
   return value
-    .normalize("NFKC")
+    .replace(/[٠-٩]/g, (d) => String(d.charCodeAt(0) - 0x0660))
+    .replace(/[۰-۹]/g, (d) => String(d.charCodeAt(0) - 0x06f0))
+    .replace(/٪/g, "%")
+    .replace(/٬/g, ",")
+    .replace(/٫/g, ".");
+}
+
+/**
+ * Arabic written the ways that mean the same word: without its optional vowel marks (harakat) and the
+ * tatweel stretch, and with the alef forms (أ إ آ ٱ) as ا and alef maqsura (ى) as ي. Teh marbuta (ة) is
+ * kept as it is — it isn't the same letter as ه.
+ */
+function foldArabic(value: string): string {
+  return value
+    .replace(/[ً-ٰٟۖ-ۭـ]/g, "")
+    .replace(/[أإآٱ]/g, "ا")
+    .replace(/ى/g, "ي");
+}
+
+/**
+ * Combining marks belong to the letter before them (Hindi vowel signs); one after anything else — an
+ * emoji's variation selector in "➡️" / "❤️", a keycap in "1️⃣" — is no part of a word and is dropped.
+ */
+const withoutStrayMarks = (value: string) => value.replace(/(?<![\p{L}\p{M}])\p{M}+/gu, "");
+
+/**
+ * Lower-case words: letters (with the marks that are part of them, as in Hindi), digits and % only;
+ * quotes, dashes and punctuation become spaces. "&" is the word "and" ("T&C" = "T and C"); Arabic is
+ * folded (foldArabic) and Arabic-Indic digits read as 0–9, so the same words always compare equal.
+ */
+export function normalizeWords(value: string): string {
+  return withoutStrayMarks(foldArabic(asciiNumbers(value.normalize("NFKC"))))
+    .replace(/&/g, " and ")
     .toLowerCase()
     .replace(/[‘’ʼ']/g, "") // Skybook’s → skybooks
-    .replace(/[^\p{L}\p{N}%]+/gu, " ")
+    .replace(/[^\p{L}\p{M}\p{N}%]+/gu, " ")
+    .replace(/\s+/g, " ")
     .trim();
 }
 
@@ -35,15 +71,21 @@ export function containsText(haystack: string, needle: string): boolean {
 
 type Word = { key: string; raw: string; start: number; end: number };
 
-/** The words of already-normalised text, with where each one is (same word rules as normalizeWords). */
+/**
+ * The words of already-normalised text, with where each one is (same word rules as normalizeWords: "&"
+ * is the word "and", Arabic folded). `raw` keeps the capitals, for the capitals check.
+ */
 function wordsOf(value: string): Word[] {
   const out: Word[] = [];
-  for (const m of value.matchAll(/[\p{L}\p{N}%‘’ʼ']+/gu)) {
-    const raw = m[0].replace(/[‘’ʼ']/g, "");
-    if (raw) out.push({ key: raw.toLowerCase(), raw, start: m.index, end: m.index + m[0].length });
+  for (const m of value.matchAll(/[\p{L}\p{M}\p{N}%‘’ʼ']+|&/gu)) {
+    const raw = m[0] === "&" ? "&" : withoutStrayMarks(foldArabic(asciiNumbers(m[0]))).replace(/[‘’ʼ']/g, "");
+    if (raw) out.push({ key: raw === "&" ? "and" : raw.toLowerCase(), raw, start: m.index, end: m.index + m[0].length });
   }
   return out;
 }
+
+/** The same word as written, capitals included — "&" and "and" are the same word either way. */
+const sameAsWritten = (a: Word, b: Word) => a.raw === b.raw || a.raw === "&" || b.raw === "&";
 
 /**
  * For wording that must be copied exactly: when `needle` is in `haystack` with
@@ -61,10 +103,13 @@ export function capitalizationDifference(haystack: string, needle: string): stri
   for (let i = 0; i + want.length <= found.length; i++) {
     const span = found.slice(i, i + want.length);
     if (!span.every((w, j) => w.key === want[j].key)) continue;
-    const shown = span.map((w) => w.raw).join(" ");
-    const expected = want.map((w) => w.raw).join(" ");
-    if (shown.slice(1) === expected.slice(1)) return null; // the same (perhaps bar the first letter)
-    const letters = shown.replace(/[^\p{L}]/gu, "");
+    // The same (perhaps bar the very first letter, the start of a line).
+    if (span.every((w, j) => sameAsWritten(w, want[j]) || (j === 0 && w.raw.slice(1) === want[j].raw.slice(1)))) return null;
+    const letters = span
+      .filter((w) => w.raw !== "&")
+      .map((w) => w.raw)
+      .join("")
+      .replace(/[^\p{L}]/gu, "");
     if (letters.toUpperCase() === letters) continue; // ALL CAPS styling
     different ??= text.slice(span[0].start, span[span.length - 1].end);
   }
@@ -145,7 +190,16 @@ export function allowedEdits(length: number): number {
 export type NameCheck =
   | { status: "exact" }
   | { status: "misspelt"; found: string }
+  /** The same name with different numbers ("iPhone 15" for "iPhone 16"): a different value, not a misspelling. */
+  | { status: "different"; found: string }
   | { status: "absent" };
+
+/** "Skybook Villas's" / "Skybook Villas’" → "Skybook Villas": a possessive is the name itself, not a misspelling. */
+const withoutPossessives = (text: string) =>
+  text.replace(/(\p{L})['’ʼ]s(?![\p{L}\p{N}])/gu, "$1").replace(/(\p{L}s)['’ʼ](?![\p{L}\p{N}])/gu, "$1");
+
+/** The numbers in a normalised name, in order ("iphone 16 pro" → "16"). */
+const numbersIn = (normalised: string) => (normalised.match(/\d+(?:[.,]\d+)?/g) ?? []).join(" ");
 
 /**
  * Looks for a name (company, product, approved term) in text: exactly, or as
@@ -153,7 +207,7 @@ export type NameCheck =
  * only, so spacing and punctuation differences count as misspellings too.
  */
 export function findName(text: string, name: string): NameCheck {
-  if (containsText(text, name)) return { status: "exact" };
+  if (containsText(text, name) || containsText(withoutPossessives(text), name)) return { status: "exact" };
   const target = normalizeWords(name);
   const compact = target.replace(/ /g, "");
   if (!compact) return { status: "absent" };
@@ -168,7 +222,9 @@ export function findName(text: string, name: string): NameCheck {
       if (distance <= limit && (!best || distance < best.distance)) best = { found: window, distance };
     }
   }
-  return best ? { status: "misspelt", found: best.found } : { status: "absent" };
+  if (!best) return { status: "absent" };
+  // Close in letters but with other numbers: another model, size or year — a wrong value, not a typo.
+  return numbersIn(best.found) !== numbersIn(target) ? { status: "different", found: best.found } : { status: "misspelt", found: best.found };
 }
 
 // ---------------------------------------------------------------------------
@@ -279,18 +335,35 @@ const CURRENCY_TOKENS: [RegExp, string][] = [
   [/^(us\$|\$|usd)$/i, "USD"],
   [/^(€|eur|euro|euros)$/i, "EUR"],
   [/^(£|gbp)$/i, "GBP"],
-  [/^(aed|dhs?|dirhams?|د\.إ)$/i, "AED"],
-  [/^(sar|﷼)$/i, "SAR"],
-  [/^(qar)$/i, "QAR"],
-  [/^(kwd)$/i, "KWD"],
-  [/^(bhd)$/i, "BHD"],
-  [/^(omr)$/i, "OMR"],
+  [/^(aed|dhs?|dirhams?|د\.إ|درهم|دراهم)$/i, "AED"],
+  [/^(sar|﷼|ر\.س)$/i, "SAR"],
+  [/^(qar|ر\.ق)$/i, "QAR"],
+  [/^(kwd|د\.ك)$/i, "KWD"],
+  [/^(bhd|د\.ب)$/i, "BHD"],
+  [/^(omr|ر\.ع)$/i, "OMR"],
   [/^(₹|inr|rs\.?)$/i, "INR"],
   [/^(pkr)$/i, "PKR"],
-  [/^(egp)$/i, "EGP"],
+  [/^(egp|ج\.م)$/i, "EGP"],
 ];
-const CURRENCY_PATTERN = String.raw`(?:US\$|\$|€|£|₹|﷼|د\.إ|USD|EUR|GBP|AED|DHS?|dirhams?|euros?|SAR|QAR|KWD|BHD|OMR|INR|Rs\.?|PKR|EGP)`;
-const AMOUNT_PATTERN = String.raw`\d{1,3}(?:,\d{3})+(?:\.\d{1,2})?|\d+(?:\.\d{1,2})?`;
+const CURRENCY_PATTERN = String.raw`(?:US\$|\$|€|£|₹|﷼|د\.إ|درهم|دراهم|ر\.س|ر\.ق|د\.ك|د\.ب|ر\.ع|ج\.م|USD|EUR|GBP|AED|DHS?|dirhams?|euros?|SAR|QAR|KWD|BHD|OMR|INR|Rs\.?|PKR|EGP)`;
+/**
+ * An amount as written: "1,299" / "1,299.50" (comma thousands), "1.299" / "1.299,50" (dot thousands, as in
+ * much of Europe), or a plain "1299" / "12.50" / "12,50". Which one it is is decided by amountOf.
+ */
+const AMOUNT_PATTERN = String.raw`\d{1,3}(?:,\d{3})+(?:\.\d{1,3})?|\d{1,3}(?:\.\d{3})+(?:,\d{1,2})?|\d+(?:[.,]\d{1,3})?`;
+
+/** Currencies with three decimals (1 dinar / rial = 1,000 fils / baisa): "KWD 1.299" is 1.299, not 1,299. */
+const THREE_DECIMALS = new Set(["KWD", "BHD", "OMR"]);
+
+/** The number an amount stands for, given its currency (see AMOUNT_PATTERN). */
+function amountOf(raw: string, currency: string | undefined): number {
+  if (/^\d{1,3}(?:,\d{3})+(?:\.\d+)?$/.test(raw)) return Number(raw.replace(/,/g, ""));
+  if (/^\d{1,3}(?:\.\d{3})+(?:,\d+)?$/.test(raw)) {
+    if (currency && THREE_DECIMALS.has(currency) && /^\d+\.\d{3}$/.test(raw)) return Number(raw);
+    return Number(raw.replace(/\./g, "").replace(",", "."));
+  }
+  return Number(raw.replace(",", "."));
+}
 
 function currencyOf(token: string | undefined): string | undefined {
   if (!token) return undefined;
@@ -299,25 +372,43 @@ function currencyOf(token: string | undefined): string | undefined {
 
 export type Price = { amount: number; currency?: string; text: string };
 
-/** Amounts written next to a currency ("AED 1,299", "$49.99", "99 dirhams"). */
-export function findPrices(text: string): Price[] {
+/** Prices in text, with where each one is (see findPrices). */
+function priceMatches(text: string): (Price & { index: number })[] {
+  // A currency word is a word of its own ("Doors 7" isn't "Rs 7"), and an amount isn't the end of a longer number.
   const pattern = new RegExp(
-    String.raw`(${CURRENCY_PATTERN})\s?(${AMOUNT_PATTERN})|(${AMOUNT_PATTERN})\s?(${CURRENCY_PATTERN})(?![A-Za-z])`,
-    "gi"
+    String.raw`(?<![\p{L}\p{N}])(${CURRENCY_PATTERN})\s?(${AMOUNT_PATTERN})(?![\p{N}])|(?<![\p{L}\p{N}.,])(${AMOUNT_PATTERN})\s?(${CURRENCY_PATTERN})(?![\p{L}])`,
+    "giu"
   );
-  return [...text.matchAll(pattern)].map((m) => ({
-    amount: Number((m[2] ?? m[3]).replace(/,/g, "")),
-    currency: currencyOf(m[1] ?? m[4]),
-    text: m[0],
-  }));
+  // Read with Western digits; the positions are the same in the original, so its own text is shown.
+  return [...asciiNumbers(text).matchAll(pattern)].map((m) => {
+    const currency = currencyOf(m[1] ?? m[4]);
+    return { amount: amountOf(m[2] ?? m[3], currency), currency, text: text.slice(m.index, m.index + m[0].length), index: m.index };
+  });
+}
+
+/** Amounts written next to a currency ("AED 1,299", "$49.99", "99 dirhams", "١٬٢٩٩ درهم"). */
+export function findPrices(text: string): Price[] {
+  return priceMatches(text).map(({ amount, currency, text: shown }) => ({ amount, currency, text: shown }));
+}
+
+/**
+ * A price shown as the OLD price next to the new one — "Was AED 1,500", "instead of AED 1,500",
+ * "بدلاً من ١٬٥٠٠ درهم": the word right before it says so. Used so an offer's old price isn't taken for
+ * a stray price; anything not introduced this way is still checked.
+ */
+const OLD_PRICE_WORDS = /(?:\b(?:was|before|originally|instead of|regular(?:ly)?|usual(?:ly)?|normally|rrp|old|previously)(?:\s+price)?|بدلاً من|بدلا من|كان|سابقاً|سابقا|السعر الأصلي)[\s:–-]*$/iu;
+export function oldPrices(text: string): Price[] {
+  return priceMatches(text)
+    .filter((p) => OLD_PRICE_WORDS.test(text.slice(Math.max(0, p.index - 30), p.index)))
+    .map(({ amount, currency, text: shown }) => ({ amount, currency, text: shown }));
 }
 
 /** A typed price requirement ("AED 1,299" or just "1299"). */
 export function parsePrice(value: string): Price | null {
   const [withCurrency] = findPrices(value);
   if (withCurrency) return withCurrency;
-  const bare = new RegExp(String.raw`^\s*(${AMOUNT_PATTERN})\s*$`).exec(value);
-  return bare ? { amount: Number(bare[1].replace(/,/g, "")), text: value.trim() } : null;
+  const bare = new RegExp(String.raw`^\s*(${AMOUNT_PATTERN})\s*$`).exec(asciiNumbers(value));
+  return bare ? { amount: amountOf(bare[1], undefined), text: value.trim() } : null;
 }
 
 export type PriceMatch = "match" | "currency_missing" | "mismatch";
@@ -330,13 +421,13 @@ export function pricesMatch(expected: Price, detected: Price): PriceMatch {
 }
 
 export function findPercentages(text: string): number[] {
-  return [...text.matchAll(/(\d+(?:\.\d+)?)\s?(?:%|percent\b|per cent\b)/gi)].map((m) => Number(m[1]));
+  return [...asciiNumbers(text).matchAll(/(\d+(?:\.\d+)?)\s?(?:%|percent\b|per cent\b)/gi)].map((m) => Number(m[1]));
 }
 
 export function parsePercentage(value: string): number | null {
   const [found] = findPercentages(value);
   if (found !== undefined) return found;
-  const bare = /^\s*(\d+(?:\.\d+)?)\s*$/.exec(value);
+  const bare = /^\s*(\d+(?:\.\d+)?)\s*$/.exec(asciiNumbers(value));
   return bare ? Number(bare[1]) : null;
 }
 
@@ -356,9 +447,9 @@ const valid = (d: DateValue) => d.month >= 1 && d.month <= 12 && d.day >= 1 && d
  * Dates in text. Each mention gives every reading it could have: "03/04/2026"
  * is both 3 April and 4 March, so it matches either — never silently one.
  */
-export function findDates(text: string): DateValue[][] {
+export function findDates(text: string, options: { withoutYear?: boolean } = {}): DateValue[][] {
   const mentions: DateValue[][] = [];
-  const t = text.toLowerCase();
+  const t = asciiNumbers(text).toLowerCase();
   for (const m of t.matchAll(/\b(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})\b/g)) {
     mentions.push([{ year: Number(m[1]), month: Number(m[2]), day: Number(m[3]) }].filter(valid));
   }
@@ -373,7 +464,40 @@ export function findDates(text: string): DateValue[][] {
   for (const m of t.matchAll(dayFirst)) mentions.push([{ day: Number(m[1]), month: monthOf(m[2]), year: fullYear(m[3]) }].filter(valid));
   const monthFirst = new RegExp(String.raw`\b${MONTH_WORD}\s+(\d{1,2})(?:st|nd|rd|th)?(?:,?\s+(\d{4}))?\b`, "g");
   for (const m of t.matchAll(monthFirst)) mentions.push([{ day: Number(m[2]), month: monthOf(m[1]), year: fullYear(m[3]) }].filter(valid));
+  // "18/10" with no year, only when asked: it can be read as a date to MATCH a brief's date, but "24/7"
+  // or "3/4" must never be taken for an unexpected date. Not with "." — "12.50" is a price.
+  if (options.withoutYear) {
+    for (const m of t.matchAll(/(?<![\d/.-])(\d{1,2})[/-](\d{1,2})(?![\d/.-])/g)) {
+      const [a, b] = [Number(m[1]), Number(m[2])];
+      const readings = [{ day: a, month: b }, { day: b, month: a }].filter(valid);
+      mentions.push(a === b ? readings.slice(0, 1) : readings);
+    }
+  }
   return mentions.filter((readings) => readings.length > 0);
+}
+
+/**
+ * Dates in text written one way — day/month/year, no leading zeros — so wording that gives a date can be
+ * compared by its words: "31 Dec 2026", "31st December 2026", "December 31, 2026", "2026-12-31" and
+ * "31/12/2026" all read "31/12/2026"; "31 Dec" reads "31/12". A numeric date is written day first when
+ * that's certain (one number over 12: "12/31/2026" → "31/12/2026"); when it isn't ("03/04/2026") its numbers
+ * stay in the order written. Only for comparing wording — values are still compared with findDates.
+ */
+export function datesWrittenOneWay(text: string): string {
+  const write = (day: number, month: number, year?: number) => `${day}/${month}${year !== undefined ? `/${year}` : ""}`;
+  return asciiNumbers(text)
+    .replace(/\b(\d{4})-(\d{1,2})-(\d{1,2})\b/g, (all, y, m, d) => (valid({ day: +d, month: +m }) ? write(+d, +m, +y) : all))
+    .replace(/(?<![\d/.-])(\d{1,2})[/.-](\d{1,2})[/.-](\d{4}|\d{2})(?![\d/.-])/g, (all, a, b, y) => {
+      const [first, second] = [Number(a), Number(b)];
+      const [day, month] = first <= 12 && second > 12 ? [second, first] : [first, second];
+      return valid({ day, month }) ? write(day, month, fullYear(y)) : all;
+    })
+    .replace(new RegExp(String.raw`\b(\d{1,2})(?:st|nd|rd|th)?\s+(?:of\s+)?${MONTH_WORD}(?:,?\s+(\d{4}))?\b`, "gi"), (all, d, m, y) =>
+      valid({ day: +d, month: monthOf(m) }) ? write(+d, monthOf(m), fullYear(y)) : all
+    )
+    .replace(new RegExp(String.raw`\b${MONTH_WORD}\s+(\d{1,2})(?:st|nd|rd|th)?(?:,?\s+(\d{4}))?\b`, "gi"), (all, m, d, y) =>
+      valid({ day: +d, month: monthOf(m) }) ? write(+d, monthOf(m), fullYear(y)) : all
+    );
 }
 
 /** Same date? A missing year on either side matches any year. */
@@ -383,10 +507,13 @@ export function datesMatch(expected: DateValue[], detected: DateValue[]): boolea
   );
 }
 
-/** Times as minutes after midnight: "7 PM", "7:30pm", "19:00", "7.30 a.m.". */
+/** Times as minutes after midnight: "7 PM", "7:30pm", "19:00", "7.30 a.m." — never part of a price ("AED 12.50"). */
 export function findTimes(text: string): number[] {
   const times: number[] = [];
-  for (const m of text.toLowerCase().matchAll(/\b(\d{1,2})(?:[:.](\d{2}))?\s?(a\.?m\.?|p\.?m\.?)(?![a-z])|\b(\d{1,2})[:.](\d{2})\b(?!\s?[ap]\.?m)/g)) {
+  const prices = priceMatches(text).map((p) => [p.index, p.index + p.text.length]);
+  const inPrice = (start: number, end: number) => prices.some(([a, b]) => start < b && a < end);
+  for (const m of asciiNumbers(text).toLowerCase().matchAll(/\b(\d{1,2})(?:[:.](\d{2}))?\s?(a\.?m\.?|p\.?m\.?)(?![a-z])|\b(\d{1,2})[:.](\d{2})\b(?!\s?[ap]\.?m)/g)) {
+    if (inPrice(m.index, m.index + m[0].length)) continue;
     if (m[3]) {
       let hour = Number(m[1]) % 12;
       if (m[3].startsWith("p")) hour += 12;

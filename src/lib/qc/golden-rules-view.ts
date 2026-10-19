@@ -1,5 +1,5 @@
 import { HUMAN_CHECK, isHumanCheck } from "@/lib/analysis/policy";
-import { normalizeWords } from "@/lib/qc/compare";
+import { datesWrittenOneWay, normalizeWords } from "@/lib/qc/compare";
 import type { Finding, Severity } from "@/lib/qc/findings";
 
 /**
@@ -65,10 +65,13 @@ const MANDATORY_NOTE = /\bThe brief marks it as mandatory\b/;
 const colourCodes = (value: string | undefined) => (value ?? "").match(/#[0-9a-f]{6}\b/gi)?.map((c) => c.toLowerCase()) ?? [];
 /** A brief requirement checked against the design's words (not its size or platform, which are per file). */
 const wordedRequirement = (ruleId: string) => ruleId.startsWith("brief.requirement.") && !/^brief\.requirement\.(?:dimensions|platform)$/.test(ruleId);
-/** `inner`'s words appear, in order and whole, inside `outer` ("20%" in "20% off", "AED 1,299" in "From AED 1,299"). */
+/**
+ * `inner`'s words appear, in order and whole, inside `outer` ("20%" in "20% off", "AED 1,299" in "From AED
+ * 1,299"); dates compared as dates, however written ("31/12/2026" in "Valid until 31 Dec 2026").
+ */
 const wordsWithin = (outer: string | undefined, inner: string | undefined) => {
-  const o = normalizeWords(outer ?? "");
-  const i = normalizeWords(inner ?? "");
+  const o = normalizeWords(datesWrittenOneWay(outer ?? ""));
+  const i = normalizeWords(datesWrittenOneWay(inner ?? ""));
   return i.length > 0 && ` ${o} `.includes(` ${i} `);
 };
 

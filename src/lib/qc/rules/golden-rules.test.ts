@@ -33,7 +33,9 @@ describe("Golden Rules", () => {
 
   it("mandatory disclaimer must appear word for word on screen (speech doesn't count)", () => {
     const rule = golden({ category: "mandatory_disclaimer", approved_value: "Terms and conditions apply." });
-    expect(one([rule], detections({ texts: [text("*Terms & conditions apply")] })).status).toBe("failed");
+    // "&" is the word "and" (Stage 3): the same disclaimer, word for word.
+    expect(one([rule], detections({ texts: [text("*Terms & conditions apply")] })).status).toBe("passed");
+    expect(one([rule], detections({ texts: [text("*Terms of conditions apply")] })).status).toBe("failed");
     expect(one([rule], detections({ texts: [text("*Terms and conditions apply")] })).status).toBe("passed");
     expect(one([rule], detections({ texts: [], speech: [{ text: "terms and conditions apply", startMs: 0, endMs: 1, confidence: 1 }] })).status).toBe("failed");
   });

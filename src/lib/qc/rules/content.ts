@@ -113,7 +113,8 @@ const companyNameRule: Rule<QcContext> = {
     if (text === null) return [notVerified(this.id, CATEGORY, "Company name spelling", "major", NEEDS_ANALYSIS, name)];
     const check = findName(text, name);
     if (check.status === "exact") return [make({ severity: "major", status: "passed", expected: name, detected: name, explanation: "The company name is spelt correctly." })];
-    if (check.status === "absent") return [notApplicable(this.id, CATEGORY, "Company name spelling", "The company name doesn't appear in the content.")];
+    // The same words with other numbers ("Studio 55" for "Studio 54") is another name, not a misspelling of this one.
+    if (check.status === "absent" || check.status === "different") return [notApplicable(this.id, CATEGORY, "Company name spelling", "The company name doesn't appear in the content.")];
     return [
       make({
         severity: "major",

@@ -68,6 +68,10 @@ describe("dashboard", () => {
     expect(html).toContain('href="/companies/c2"');
     expect(html).toContain("Real estate · Dubai, UAE");
     expect(html).toContain("Inactive");
+    // Each card is white (bg-card), so it stands out from the blue-grey panel.
+    const cardClasses = (html.match(/<a [^>]*href="\/companies\/c\d"[^>]*>/g) ?? []).map((tag) => tag.match(/class="([^"]*)"/)![1].split(" "));
+    expect(cardClasses).toHaveLength(2);
+    for (const classes of cardClasses) expect(classes).toContain("bg-card");
   });
 
   it("shows each company's own saved logo on its card, and the initial letter for one without", async () => {

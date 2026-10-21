@@ -40,7 +40,7 @@ export function CompanyList({
           <li key={company.id}>
             <Link
               href={`/companies/${company.id}`}
-              className="group flex h-full items-center gap-4 rounded-2xl border border-border p-5 transition-all outline-none hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-[0_16px_40px_-24px_rgb(15_27_45/0.35)] focus-visible:ring-3 focus-visible:ring-ring/50"
+              className="group flex h-full items-center gap-4 rounded-2xl border border-border bg-card p-5 shadow-[0_8px_24px_-18px_rgb(15_27_45/0.35)] transition-all outline-none hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-[0_16px_40px_-24px_rgb(15_27_45/0.35)] focus-visible:ring-3 focus-visible:ring-ring/50"
             >
               <CompanyAvatar name={company.name} logoUrl={logoUrls[company.id]} />
               <span className="min-w-0 flex-1">

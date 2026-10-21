@@ -51,7 +51,7 @@
   /* Surfaces: a pale sky page (see body below); the content panel is a soft blue-grey
      (--surface) and the cards, inputs and menus on it stay white with hairline borders */
   --background: #f5f8ff;
-  --surface: #eef3fa;
+  --surface: #e6edf6;
   --foreground: #0a1328;
   --card: #ffffff;
   --card-foreground: #0a1328;
@@ -297,13 +297,15 @@ a.hero-glass:hover {
 /*
  * The panel holding a page's content, overlapping the hero: a soft
  * blue-grey (--surface), so white is kept for the cards, inputs and menus
- * inside it. Every text colour stays at least 4.5:1 on it (muted text 5.7:1,
- * primary blue 4.6:1). Inside it, chips, progress tracks and hairlines are a
+ * inside it. Every text colour stays at least 4.5:1 on it (muted text 5.4:1,
+ * QC colours 4.6:1 or more). Inside it, the primary blue is a touch deeper
+ * (5.0:1; white on it 5.9:1), and chips, progress tracks and hairlines are a
  * shade deeper so they still stand out from the surface.
  */
 .content-panel {
-  --muted: #e3eaf4;
-  --border: #d3ddec;
+  --primary: #2158e0;
+  --muted: #dae3ef;
+  --border: #cdd8e8;
   position: relative;
   border-radius: 1.75rem;
   background: var(--surface);

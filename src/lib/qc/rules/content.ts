@@ -33,7 +33,8 @@ const CONTACTS: ContactKind[] = [
 
 function approvedContacts(context: QcContext, kind: ContactKind): string[] {
   const { contact } = context.company;
-  const saved = kind.key === "phone" ? [contact.phone, contact.whatsapp] : kind.key === "email" ? [contact.email] : [contact.website];
+  const saved =
+    kind.key === "phone" ? [contact.phone, contact.additional_phone, contact.whatsapp] : kind.key === "email" ? [contact.email] : [contact.website];
   const fromBrief = context.requirements.filter((r) => kind.requirementTypes.includes(r.type)).map((r) => r.expectedValue);
   return [...saved, ...fromBrief].filter((v): v is string => Boolean(v?.trim()));
 }

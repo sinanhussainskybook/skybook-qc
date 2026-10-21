@@ -119,7 +119,7 @@ export function toQcInput(
 export function missingCompanyInformation(config: CompanyConfiguration): string[] {
   const missing: string[] = [];
   const { contact, brand } = config;
-  if (!contact.phone && !contact.whatsapp && !contact.email && !contact.website) missing.push("contact details");
+  if (!contact.phone && !contact.additional_phone && !contact.whatsapp && !contact.email && !contact.website) missing.push("contact details");
   if (!config.logo) missing.push("logo");
   if (brand.colors.length === 0) missing.push("brand colours");
   if (brand.fonts.length === 0) missing.push("fonts");

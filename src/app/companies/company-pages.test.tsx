@@ -52,7 +52,7 @@ const company = {
 
 const config: CompanyConfiguration = {
   company,
-  contact: { phone: "+971 4 123 4567", whatsapp: null, email: "hello@acme.com", website: "https://acme.com" },
+  contact: { phone: "+971 4 123 4567", additional_phone: "+971 4 765 4321", whatsapp: null, email: "hello@acme.com", website: "https://acme.com" },
   logo: null,
   brand: {
     tone: "Warm and confident.",
@@ -100,10 +100,11 @@ describe("company page", () => {
     for (const heading of ["Company information", "Contact information", "Logo", "Brand guidelines", "Golden Rules"]) {
       expect(html, heading).toContain(heading);
     }
-    for (const label of ["Company name", "Description", "Company type / category", "Country", "City", "Address", "Phone", "WhatsApp", "Email", "Website", "Brand tone / voice"]) {
+    for (const label of ["Company name", "Description", "Company type / category", "Country", "City", "Address", "Phone", "Additional phone", "WhatsApp", "Email", "Website", "Brand tone / voice"]) {
       expect(html, label).toContain(`aria-label="Edit ${label}"`);
     }
     expect(html).toContain("+971 4 123 4567");
+    expect(html).toContain("+971 4 765 4321"); // both numbers shown
     expect(html).toContain("Warm and confident.");
     expect(html).toContain("Not set");
   });

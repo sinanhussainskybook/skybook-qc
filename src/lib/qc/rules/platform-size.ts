@@ -595,7 +595,8 @@ export const platformSizeRule: Rule<PlatformContext> = {
   run(context) {
     const platform = findPlatform(context.platform);
     if (!platform) {
-      return [choiceFinding("platform.choice", "Platform", "No platform has been chosen, so platform requirements can't be checked.")];
+      // The platform is optional: without one, its checks are simply not run (never a failure).
+      return [choiceFinding("platform.choice", "Platform", "No platform was chosen (it's optional), so the platform-specific checks — its size, ratio, format and file size — weren't run.")];
     }
     if (platform.custom) {
       if (!context.custom) {

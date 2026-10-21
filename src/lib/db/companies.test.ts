@@ -115,11 +115,22 @@ describe("companies and access (D13)", () => {
       });
     });
 
+    it("saves the optional additional phone next to the existing one; both load with the configuration", async () => {
+      await saveCompanyField(db, "contact", acme.id, "phone", "+971 4 123 4567");
+      await saveCompanyField(db, "contact", acme.id, "additional_phone", "+971 4 765 4321");
+      const company = (await findAccessibleCompany(db, dee, acme.id))!;
+      expect((await loadCompanyConfiguration(db, company)).contact).toMatchObject({ phone: "+971 4 123 4567", additional_phone: "+971 4 765 4321" });
+
+      await saveCompanyField(db, "contact", acme.id, "additional_phone", null); // cleared; the main phone stays
+      expect((await loadCompanyConfiguration(db, company)).contact).toMatchObject({ phone: "+971 4 123 4567", additional_phone: null });
+      await expect(saveCompanyField(db, "contact", acme.id, "additional_phone", "1".repeat(41))).rejects.toThrow();
+    });
+
     it("saves contact details one at a time, creating the row on first save", async () => {
       await saveCompanyField(db, "contact", acme.id, "phone", "+971 4 123 4567");
       await saveCompanyField(db, "contact", acme.id, "website", "https://acme.com");
-      const [row] = await db.query("select phone, whatsapp, email, website from company_contacts where company_id = $1", [acme.id]);
-      expect(row).toEqual({ phone: "+971 4 123 4567", whatsapp: null, email: null, website: "https://acme.com" });
+      const [row] = await db.query("select phone, additional_phone, whatsapp, email, website from company_contacts where company_id = $1", [acme.id]);
+      expect(row).toEqual({ phone: "+971 4 123 4567", additional_phone: null, whatsapp: null, email: null, website: "https://acme.com" });
 
       await saveCompanyField(db, "contact", acme.id, "phone", null); // cleared
       const [after] = await db.query<{ phone: string | null }>("select phone from company_contacts where company_id = $1", [acme.id]);
@@ -149,7 +160,7 @@ describe("companies and access (D13)", () => {
     it("returns empty contact and brand for a new company", async () => {
       const company = await insertCompany(db, { name: "Fresh Co", createdBy: dee.id });
       const config = await loadCompanyConfiguration(db, (await findAccessibleCompany(db, dee, company.id))!);
-      expect(config.contact).toEqual({ phone: null, whatsapp: null, email: null, website: null });
+      expect(config.contact).toEqual({ phone: null, additional_phone: null, whatsapp: null, email: null, website: null });
       expect(config.brand).toMatchObject({ tone: null, colors: [], fonts: [], terms: [] });
       expect(config.goldenRules).toEqual([]);
     });

@@ -145,6 +145,8 @@ describe("company actions and access", () => {
       expect(await save(acme, "contact", "email", "not-an-email")).toMatchObject({ error: /valid email/ });
       expect(await save(acme, "contact", "whatsapp", "050 123 4567")).toMatchObject({ error: /country code/ });
       expect(await save(acme, "contact", "phone", "call me")).toMatchObject({ error: expect.any(String) });
+      expect(await save(acme, "contact", "additional_phone", "call me")).toMatchObject({ error: expect.any(String) });
+      expect(await save(acme, "contact", "additional_phone", "12")).toMatchObject({ error: expect.any(String) });
       expect(await save(acme, "contact", "website", "javascript:alert(1)")).toMatchObject({ error: expect.any(String) });
       expect(await save(acme, "info", "name", "   ")).toMatchObject({ error: /company name/ });
       expect(await companyName(acme)).toBe("Acme");

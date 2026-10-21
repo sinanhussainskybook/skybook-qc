@@ -86,6 +86,14 @@ export const FIELD_SECTIONS = {
       hint: "Saved exactly as you type it.",
       check: checkPhone,
     },
+    additional_phone: {
+      label: "Additional phone",
+      kind: "tel",
+      maxLength: 40,
+      placeholder: "+971 4 765 4321",
+      hint: "Optional. A second number; saved exactly as you type it.",
+      check: checkPhone,
+    },
     whatsapp: {
       label: "WhatsApp",
       kind: "tel",

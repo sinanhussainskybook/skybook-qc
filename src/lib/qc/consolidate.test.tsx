@@ -102,7 +102,7 @@ const villas = () => company();
 const dental = () =>
   company({
     company: { ...company().company, id: "c0000000-0000-4000-8000-000000000002", name: "Harbour Dental Clinic" },
-    contact: { phone: "+44 20 7946 0000", whatsapp: null, email: "hello@harbourdental.co.uk", website: "https://harbourdental.co.uk" },
+    contact: { phone: "+44 20 7946 0000", additional_phone: null, whatsapp: null, email: "hello@harbourdental.co.uk", website: "https://harbourdental.co.uk" },
     brand: {
       ...company().brand,
       colors: [{ id: "d1", name: "Harbour Teal", hex: "#0F766E", cmyk: null, usage: null, created_at: new Date(), updated_at: new Date() }],

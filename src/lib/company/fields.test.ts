@@ -12,7 +12,7 @@ describe("editable fields", () => {
     for (const field of ["name", "description", "category", "country", "city", "address"]) {
       expect(findFieldSpec("info", field), field).not.toBeNull();
     }
-    for (const field of ["phone", "whatsapp", "email", "website"]) {
+    for (const field of ["phone", "additional_phone", "whatsapp", "email", "website"]) {
       expect(findFieldSpec("contact", field), field).not.toBeNull();
     }
     for (const field of ["tone", "capitalization_rules", "naming_conventions", "other_guidelines"]) {

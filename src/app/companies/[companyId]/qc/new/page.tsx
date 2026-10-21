@@ -37,7 +37,7 @@ export const metadata: Metadata = { title: "Start QC · Skybook AI QC" };
  *   → 3. Check Design → QC result → Download PDF.
  * The requirements read from the brief aren't shown or edited here: Check
  * Design confirms the ones that can be checked (descriptive items never are).
- * The platform is asked for only when the brief gives no exact size.
+ * The platform is optional, and offered only when the brief gives no exact size.
  * Everything is a temporary session (D11): only this designer can open it,
  * and it is deleted 24 hours after the last change. The design is analysed
  * in the background (the worker); the result is computed fresh from its
@@ -183,8 +183,8 @@ export default async function StartQcPage({ params }: PageProps<"/companies/[com
         {askPlatform && (
           <Step
             id="platform"
-            title="Platform"
-            description="The brief doesn't give an exact size, so choose where the design will be published. Its size, ratio, format and file size are checked against that platform's published specification."
+            title="Platform (optional)"
+            description="Optional: choose where the design will be published to also check its size, ratio, format and file size against that platform's published specification. Without a platform, all the other checks still run and the platform checks are shown as not checked."
           >
             <PlatformForm
               key={`${session.content_type}-${session.platform ?? ""}-${session.placement ?? ""}`}

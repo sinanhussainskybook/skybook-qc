@@ -53,7 +53,7 @@ const company = { id: ID, name: "Acme Properties", active: true };
 const props = { params: Promise.resolve({ companyId: ID }), searchParams: Promise.resolve({}) };
 const emptyConfig = {
   company,
-  contact: { phone: null, whatsapp: null, email: null, website: null },
+  contact: { phone: null, additional_phone: null, whatsapp: null, email: null, website: null },
   logo: null,
   brand: { colors: [], fonts: [], terms: [] },
   goldenRules: [],
@@ -198,14 +198,15 @@ describe("Start QC page", () => {
       { id: "r1", type: "offer", label: null, expected_value: "20% discount", notes: "Summer only", mandatory: true, confirmed: false, source: "extracted" },
       { id: "r2", type: "cta", label: null, expected_value: "Book now", notes: null, mandatory: false, confirmed: true, source: "extracted" },
     ]);
-    const html = main(renderToStaticMarkup(await StartQcPage(props)));
+    // The platform step is itself labelled "optional"; leave it out here.
+    const html = main(renderToStaticMarkup(await StartQcPage(props))).replace(/<section id="platform"[\s\S]*?<\/section>/, "");
     for (const hidden of ["20% discount", "Must have", "Optional", "Requirement type", "Add requirement", "Needs review"]) {
       expect(html, hidden).not.toContain(hidden);
     }
     expect(html).not.toMatch(/Edit<\/button>|Delete<\/button>/);
   });
 
-  it("the platform is asked for only when the brief gives no exact size", async () => {
+  it("the optional platform is offered only when the brief gives no exact size", async () => {
     findCurrentSession.mockResolvedValue(session());
     const req = (type: string, value: string) => ({ id: type, type, label: null, expected_value: value, notes: null, mandatory: true, confirmed: false, source: "extracted" });
     listRequirements.mockResolvedValue([req("price", "AED 99"), req("dimensions", "1080 × 1080 px")]);
@@ -213,7 +214,8 @@ describe("Start QC page", () => {
     listRequirements.mockResolvedValue([req("price", "AED 99")]);
     const html = main(renderToStaticMarkup(await StartQcPage(props)));
     expect(html).toContain('id="platform"');
-    expect(visible(html)).toContain("The brief doesn't give an exact size, so choose where the design will be published.");
+    expect(visible(html)).toContain("Platform (optional)");
+    expect(visible(html)).toContain("Without a platform, all the other checks still run and the platform checks are shown as not checked.");
     // A platform already chosen stays visible.
     findCurrentSession.mockResolvedValue(session({ platform: "instagram", placement: "feed_image" }));
     listRequirements.mockResolvedValue([req("dimensions", "1080 × 1080 px")]);

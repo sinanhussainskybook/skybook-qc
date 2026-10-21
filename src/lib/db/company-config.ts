@@ -17,7 +17,7 @@ import type {
  * have checked the user may open the company (requireCompanyAccess).
  */
 
-const EMPTY_CONTACT: CompanyContact = { phone: null, whatsapp: null, email: null, website: null };
+const EMPTY_CONTACT: CompanyContact = { phone: null, additional_phone: null, whatsapp: null, email: null, website: null };
 
 const EMPTY_BRAND: BrandProfile = {
   tone: null,
@@ -34,7 +34,7 @@ export async function loadCompanyConfiguration(
 ): Promise<CompanyConfiguration> {
   const [contactRows, brandRows, colors, fonts, terms, goldenRules, logo] = await Promise.all([
     db.query<CompanyContact>(
-      "select phone, whatsapp, email, website from company_contacts where company_id = $1",
+      "select phone, additional_phone, whatsapp, email, website from company_contacts where company_id = $1",
       [company.id]
     ),
     db.query<BrandProfile>(

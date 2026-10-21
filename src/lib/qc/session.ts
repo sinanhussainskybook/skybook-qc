@@ -387,7 +387,6 @@ export const READINESS_MESSAGES = {
   brief: "Upload the client brief.",
   briefReading: "The brief is still being read — this takes a few seconds.",
   briefUnclear: BRIEF_UNCLEAR_MESSAGE,
-  platform: "Choose the platform the design is for — the brief doesn't give an exact size.",
   content: "Upload the design.",
 } as const;
 
@@ -400,11 +399,15 @@ export const hasExactSize = (requirements: Pick<QcRequirement, "type" | "expecte
  * every checkable requirement, so at least one must be there — QC with none
  * would pass a design it never checked against the brief. Descriptive items
  * (campaign, instructions…) don't count: they are never checked.
+ *
+ * The platform is OPTIONAL: without one, the general checks run and the
+ * platform-specific ones are shown as not checked (lib/qc/rules/platform-size.ts).
+ * `session` is kept for callers; it no longer stops Check Design.
  */
 export function readinessProblems(
   requirements: QcRequirement[],
   files: QcFile[],
-  session?: Pick<QcSession, "platform">,
+  _session?: Pick<QcSession, "platform">,
   options: { briefReading?: boolean } = {}
 ): string[] {
   const problems: string[] = [];
@@ -414,10 +417,6 @@ export function readinessProblems(
   else if (checkable.length === 0) problems.push(hasBrief ? READINESS_MESSAGES.briefUnclear : READINESS_MESSAGES.brief);
   if (!files.some((file) => file.kind === "content" && file.status === "ready")) {
     problems.push(READINESS_MESSAGES.content);
-  }
-  // Only once the brief is read: until then it may still give the exact size.
-  if (session && !session.platform && !options.briefReading && checkable.length > 0 && !hasExactSize(checkable)) {
-    problems.push(READINESS_MESSAGES.platform);
   }
   return problems;
 }

@@ -25,6 +25,8 @@ export type CompanySummary = Pick<
 
 export type CompanyContact = {
   phone: string | null;
+  /** Optional second phone number (migration 0010). */
+  additional_phone: string | null;
   whatsapp: string | null;
   email: string | null;
   website: string | null;

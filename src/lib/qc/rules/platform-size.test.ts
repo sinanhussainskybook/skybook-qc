@@ -4,6 +4,7 @@ import type { Finding } from "@/lib/qc/findings";
 import type { FileFormat } from "@/lib/qc/qc-file";
 import type { MediaInfo } from "@/lib/qc/media-info";
 import { PLATFORM_RULES, type CustomChoice, type PlatformContext } from "@/lib/qc/rules/platform-size";
+import { resultDisplay, scoreFindings } from "@/lib/qc/scoring";
 
 /**
  * Platform / Size QC (5.11) against the approved D4 values. Tests B–E of
@@ -226,6 +227,19 @@ describe("Platform / Size rules", () => {
 
     it("no platform chosen", () => {
       expect(check(null, null, [file("png", px(10, 10))])).toMatchObject([{ ruleId: "platform.choice", status: "unverified" }]);
+    });
+
+    it("the platform is optional: without one the platform checks are 'not checked' and never change the result", () => {
+      const findings = check(null, null, [file("png", px(10, 10))]);
+      expect(findings).toHaveLength(1); // no size, ratio, format or file-size check ran
+      expect(findings[0]).toMatchObject({ category: "platform_size", status: "unverified" });
+      expect(findings[0].explanation).toContain("No platform was chosen (it's optional)");
+      // A general check that passed stays a plain PASS: the skipped platform checks don't count, aren't a human check.
+      const general: Finding = { ruleId: "content.cta", category: "content", title: "Call to action", severity: "major", status: "passed", kind: "fact", explanation: "Found.", confidence: 1 };
+      const board = scoreFindings([general, ...findings]);
+      expect(board).toMatchObject({ result: "pass", score: 100, humanChecks: 0, notVerified: 1 });
+      expect(board.categories.find((c) => c.category === "platform_size")).toMatchObject({ score: null, notVerified: 1 });
+      expect(resultDisplay({ ...board, possibleCriticals: 0, settingsBlockers: 0 })).toBe("pass");
     });
   });
 });

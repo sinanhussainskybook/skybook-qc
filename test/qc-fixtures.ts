@@ -19,7 +19,7 @@ const id = () => `00000000-0000-4000-8000-${String(++n).padStart(12, "0")}`;
 export function company(over: Partial<CompanyConfiguration> = {}): CompanyConfiguration {
   return {
     company: { id: "c0000000-0000-4000-8000-000000000001", name: "Skybook Villas", description: null, category: null, country: null, city: null, address: null, active: true, ...stamps },
-    contact: { phone: "+971 4 123 4567", whatsapp: "+971 50 765 4321", email: "sales@skybookvillas.com", website: "https://skybookvillas.com" },
+    contact: { phone: "+971 4 123 4567", additional_phone: null, whatsapp: "+971 50 765 4321", email: "sales@skybookvillas.com", website: "https://skybookvillas.com" },
     logo: { id: id(), file_name: "logo.png", storage_path: "x/logo.png", mime_type: "image/png", file_size: 100, ...stamps },
     brand: {
       tone: null,

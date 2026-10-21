@@ -27,6 +27,17 @@ describe("Content rules", () => {
     expect(phone.suggestedFix).toBe("Replace it with +971 4 123 4567.");
   });
 
+  it("contact details: the optional additional phone is an approved number too", () => {
+    const withExtra = company({ contact: { phone: "+971 4 123 4567", additional_phone: "+971 4 222 3333", whatsapp: null, email: null, website: null } });
+    const findings = byRule(run({ company: withExtra, detections: withText("Call +971 4 222 3333") }), "content.contact_details");
+    expect(findings.map((f) => f.status)).toEqual(["passed"]);
+    const wrong = only(run({ company: withExtra, detections: withText("Call +971 4 999 0000") }), "content.contact_details");
+    expect(wrong).toMatchObject({ status: "failed", expected: "+971 4 123 4567 or +971 4 222 3333" });
+    // Only the additional phone saved: still compared, not "nothing saved".
+    const onlyExtra = company({ contact: { phone: null, additional_phone: "+971 4 222 3333", whatsapp: null, email: null, website: null } });
+    expect(only(run({ company: onlyExtra, detections: withText("Call +971 4 222 3333") }), "content.contact_details").status).toBe("passed");
+  });
+
   it("contact details from the brief are accepted too", () => {
     const findings = byRule(
       run({ detections: withText("Call +971 4 222 3333"), requirements: [requirement("phone", "+971 4 222 3333")] }),
@@ -36,7 +47,7 @@ describe("Content rules", () => {
   });
 
   it("contact details: nothing saved to compare → not verified; none shown → not applicable", () => {
-    const noContact = company({ contact: { phone: null, whatsapp: null, email: null, website: null } });
+    const noContact = company({ contact: { phone: null, additional_phone: null, whatsapp: null, email: null, website: null } });
     expect(only(run({ company: noContact, detections: withText("Call +971 4 123 4567") }), "content.contact_details")).toMatchObject({ status: "unverified" });
     expect(only(run({ detections: withText("Summer sale") }), "content.contact_details")).toMatchObject({ status: "not_applicable" });
   });

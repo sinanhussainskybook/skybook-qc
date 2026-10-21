@@ -181,13 +181,14 @@ describe("QC session rules (Storage faked)", () => {
       const requirements = await listRequirements(db, session.id);
       // Unconfirmed is fine here: the button confirms the list.
       expect(readinessProblems(requirements, [])).toEqual([READINESS_MESSAGES.content]);
-      // While the brief is still being read, wait for it (and don't ask for a platform yet).
+      // While the brief is still being read, wait for it.
       expect(readinessProblems(requirements, [], session, { briefReading: true })).toEqual([READINESS_MESSAGES.briefReading, READINESS_MESSAGES.content]);
 
       await upload("content", "poster.jpg", JPEG);
       const files = await listFiles(db, session.id);
-      expect(await markReady(db, session, requirements, files, T0)).toEqual({ ok: false, problems: [READINESS_MESSAGES.platform] });
-      expect((await listRequirements(db, session.id)).some((r) => r.confirmed)).toBe(false); // nothing changed
+      // The platform is optional: no platform and no exact size in the brief doesn't stop Check Design.
+      expect(session.platform).toBeNull();
+      expect(readinessProblems(requirements, files, session)).toEqual([]);
 
       await setSessionPlatform(db, session.id, { ...NO_PLATFORM, platform: "instagram", placement: "feed_image" }, T0);
       const withPlatform = (await findCurrentSession(db, acme, dee.id, T0))!;
@@ -221,11 +222,11 @@ describe("QC session rules (Storage faked)", () => {
       expect(input.requirements.map((r) => r.type)).toEqual(["dimensions"]);
     });
 
-    it("an exact size in the brief (Dimensions 1080 × 1080) stands in for the platform choice", async () => {
+    it("with or without an exact size in the brief, no platform never stops Check Design (the platform is optional)", async () => {
       await upload("content", "poster.jpg", JPEG);
       const files = await listFiles(db, session.id);
       await insertRequirement(db, session.id, { type: "dimensions", label: null, expected_value: "Square, roughly", notes: null, mandatory: true, confirmed: false }, T0);
-      expect(readinessProblems(await listRequirements(db, session.id), files, session)).toEqual([READINESS_MESSAGES.platform]);
+      expect(readinessProblems(await listRequirements(db, session.id), files, session)).toEqual([]);
       await insertRequirement(db, session.id, { type: "dimensions", label: null, expected_value: "1080 × 1080 px", notes: null, mandatory: true, confirmed: false }, T0);
       const requirements = await listRequirements(db, session.id);
       expect(readinessProblems(requirements, files, session)).toEqual([]);
@@ -343,6 +344,9 @@ describe("QC session rules (Storage faked)", () => {
       expect(input.informationFiles.map((f) => f.fileName)).toEqual(["brief.pdf"]);
       expect(input.contentFiles.map((f) => f.fileName)).toEqual(["poster.png"]);
       expect(missingCompanyInformation(input.company)).toEqual(["contact details", "logo", "brand colours", "fonts", "Golden Rules"]);
+      // An additional phone on its own counts as contact details.
+      const withExtra = { ...input.company, contact: { ...input.company.contact, additional_phone: "+971 4 765 4321" } };
+      expect(missingCompanyInformation(withExtra)).not.toContain("contact details");
     });
   });
 });

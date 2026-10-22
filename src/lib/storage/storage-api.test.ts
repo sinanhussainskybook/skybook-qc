@@ -53,12 +53,12 @@ describe("how the server key is sent (new sb_secret_ keys vs legacy service_role
     return fetchMock.mock.calls.map(([, init]) => init?.headers as Record<string, string>);
   }
 
-  it("a new secret key (sb_…) goes in apikey only — never as Authorization: Bearer — on every operation", async () => {
+  it("a new secret key (sb_…) goes in both apikey and Authorization: Bearer, on every operation", async () => {
     const sent = await headersSent(NEW_KEY);
     expect(sent).toHaveLength(6); // upload, delete, sign, upload-sign, read, list
     for (const headers of sent) {
       expect(headers.apikey).toBe(NEW_KEY);
-      expect(headers).not.toHaveProperty("Authorization");
+      expect(headers.Authorization).toBe(`Bearer ${NEW_KEY}`);
     }
   });
 
@@ -73,8 +73,9 @@ describe("how the server key is sent (new sb_secret_ keys vs legacy service_role
 
   it("operation-specific headers are still added alongside the key headers", async () => {
     const sent = await headersSent(NEW_KEY);
-    expect(sent[0]).toMatchObject({ apikey: NEW_KEY, "Content-Type": "image/png", "x-upsert": "false" }); // upload
-    expect(sent[4]).toMatchObject({ apikey: NEW_KEY, Range: "bytes=0-0" }); // read
+    const auth = `Bearer ${NEW_KEY}`;
+    expect(sent[0]).toMatchObject({ apikey: NEW_KEY, Authorization: auth, "Content-Type": "image/png", "x-upsert": "false" }); // upload
+    expect(sent[4]).toMatchObject({ apikey: NEW_KEY, Authorization: auth, Range: "bytes=0-0" }); // read
   });
 });
 

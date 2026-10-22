@@ -74,12 +74,10 @@ export function createBucketClient(
   fetchImpl: typeof fetch = fetch
 ): BucketClient {
   const base = `${connection.url}/storage/v1`;
-  // Supabase's newer secret keys (sb_secret_…) are not JWTs: they go in `apikey` only — sent as
-  // `Authorization: Bearer` they are rejected ("Invalid Compact JWS"). A legacy service_role key is a JWT
-  // and keeps both headers, as before.
-  const headers: Record<string, string> = connection.serviceKey.startsWith("sb_")
-    ? { apikey: connection.serviceKey }
-    : { apikey: connection.serviceKey, Authorization: `Bearer ${connection.serviceKey}` };
+  // Every server key — a new secret key (sb_secret_…) or a legacy service_role key — goes in both
+  // `apikey` and `Authorization: Bearer`: Storage requires the Authorization header on some operations
+  // and accepts a secret key there (checked read-only against this project, Oct 2026).
+  const headers: Record<string, string> = { apikey: connection.serviceKey, Authorization: `Bearer ${connection.serviceKey}` };
   const object = (path: string) => `${base}/object/${bucket}/${encodePath(path)}`;
 
   async function call(what: string, url: string, init: RequestInit, okStatuses: number[] = []) {

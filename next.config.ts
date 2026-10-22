@@ -10,6 +10,11 @@ const nextConfig: NextConfig = {
   // Don't announce the framework in every response.
   poweredByHeader: false,
 
+  // Native and WebAssembly packages the QC analysis uses (images, PDFs, video, local AI): loaded from
+  // node_modules when needed, never bundled. Required for the worker that can run inside the website
+  // (src/instrumentation.ts, QC_EMBEDDED_WORKER); harmless when it's off.
+  serverExternalPackages: ["sharp", "mupdf", "ffmpeg-static", "onnxruntime-node", "ppu-paddle-ocr"],
+
   experimental: {
     // Turbopack's on-disk cache stores a snapshot of the whole process
     // environment — including the secrets loaded above — in .next/, inside

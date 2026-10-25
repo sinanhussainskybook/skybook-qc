@@ -2,6 +2,7 @@ import { ChevronDown, FileDown } from "lucide-react";
 import { buttonVariants } from "@/components/ui/button";
 import { CATEGORIES, severityLabel, type Finding, type Severity } from "@/lib/qc/findings";
 import { alsoCoversText, alsoNote, isGoldenRule, needsVerifying, NOT_CHECKED, ruleName, splitNotChecked, verifyNote } from "@/lib/qc/golden-rules-view";
+import { issuesToFix } from "@/lib/qc/issue-markers";
 import { categoryScoreText, possibleCriticalWarning, RESULT_DISPLAY_LABEL, RESULT_DISPLAY_SUMMARY, resultDisplay, scoreNote, settingsWarning, type ResultDisplay, type Scoreboard as Board } from "@/lib/qc/scoring";
 import { cn } from "@/lib/utils";
 
@@ -49,7 +50,7 @@ export function Scoreboard({ board, findings = [], mock = false, reportHref }: {
   const note = scoreNote(board);
   const warning = possibleCriticalWarning(board);
   const settings = settingsWarning(board);
-  const toFix = board.counting.filter((f) => f.severity !== "suggestion");
+  const toFix = issuesToFix(board);
   const suggestions = board.counting.filter((f) => f.severity === "suggestion");
   const toVerify = findings.filter(needsVerifying);
   const passed = findings.filter((f) => f.status === "passed");

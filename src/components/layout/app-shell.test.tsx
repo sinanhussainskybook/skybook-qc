@@ -68,20 +68,20 @@ describe("AppShell", () => {
     expect(current(render("admin", "/account/password"))).toBeUndefined();
   });
 
-  it("draws the travelling lights as decorative layers only: hidden from screen readers, one dot per curved line", () => {
+  it("draws the travelling lights only on the hero's two curved lines, as a decorative layer hidden from screen readers", () => {
     const withHero = renderToStaticMarkup(
       <AppShell user={{ name: "Ada Admin", role: "admin" }} hero={<h1>Title</h1>}>
         <p>Body</p>
       </AppShell>
     );
     const layers = withHero.match(/<div class="skyqc-orbit-layer[^"]*" aria-hidden="true">/g) ?? [];
-    expect(layers).toHaveLength(2); // the page background and the hero
-    for (const ring of ["hero-inner", "hero-outer", "sky-inner", "sky-outer"]) {
+    expect(layers).toHaveLength(1); // the hero only: the page background has no curves (they crossed the hero's)
+    for (const ring of ["hero-inner", "hero-outer"]) {
       expect(withHero.match(new RegExp(`skyqc-orbit-dot--${ring}`, "g"))).toHaveLength(1);
     }
-    // Without a hero (no curves there), only the page-background lights.
-    expect(html.match(/skyqc-orbit-layer/g)).toHaveLength(2); // the layer and its --sky modifier on one element
-    expect(html).not.toContain("skyqc-orbit-dot--hero");
+    expect(withHero).not.toContain("skyqc-orbit-dot--sky");
+    // Without a hero, no lights at all.
+    expect(html).not.toContain("skyqc-orbit");
   });
 
   it("no password link in the header (it's on the Users page)", () => {

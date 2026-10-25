@@ -26,6 +26,7 @@ import { isCheckable } from "@/lib/qc/requirements";
 import { getQcStorage } from "@/lib/storage/qc-storage";
 import { loadSessionResult } from "@/lib/qc/session-result";
 import { designPreviews } from "@/lib/qc/design-preview";
+import { issueMarkers, issuesToFix } from "@/lib/qc/issue-markers";
 import type { AnalysisRun } from "@/lib/db/analysis-runs";
 import type { AnalysisStatusView } from "@/lib/qc/actions";
 import { configuredProvider } from "@/lib/analysis/config";
@@ -109,6 +110,9 @@ export default async function StartQcPage({ params }: PageProps<"/companies/[com
   // and the result takes the main area.
   const compact = showResult;
   const previews = showResult ? await designPreviews(storage, content) : [];
+  const markers = board
+    ? issueMarkers(issuesToFix(board), analysisView.detections?.texts, content.map((f) => f.id))
+    : [];
 
   const steps = (
     <>
@@ -263,7 +267,7 @@ export default async function StartQcPage({ params }: PageProps<"/companies/[com
             aria-label="Checked design and files"
             className="order-last space-y-4 lg:order-none lg:sticky lg:top-24 lg:max-h-[calc(100dvh-7rem)] lg:self-start lg:overflow-y-auto"
           >
-            <DesignPreviews previews={previews} />
+            <DesignPreviews previews={previews} markers={markers} />
             {/* Open while the check is running or out of date, so its progress and Check again stay in view. */}
             <details className="group rounded-2xl bg-card shadow-sm ring-1 ring-border" open={!board || analysisView.stale}>
               <summary className="flex cursor-pointer list-none items-center gap-3 px-4 py-3">

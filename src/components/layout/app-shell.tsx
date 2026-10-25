@@ -3,7 +3,7 @@ import Link from "next/link";
 import { SkybookLogo } from "@/components/layout/skybook-mark";
 import { UserMenu } from "@/components/auth/user-menu";
 import { MainNav } from "@/components/layout/main-nav";
-import { HeroOrbitDots, SkyOrbitDots } from "@/components/layout/orbit-dots";
+import { HeroOrbitDots } from "@/components/layout/orbit-dots";
 import type { User } from "@/lib/db/users";
 
 /**
@@ -33,7 +33,6 @@ export function AppShell({
 }) {
   return (
     <div className="flex min-h-full flex-1 flex-col">
-      <SkyOrbitDots />
       <header className="app-header sticky top-0 z-30">
         <div className="mx-auto flex h-16 w-full max-w-5xl items-center gap-4 px-4 sm:px-6">
           <Link href="/" aria-label="Skybook AI QC, home" className="shrink-0 rounded-md transition-opacity hover:opacity-75">

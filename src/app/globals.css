@@ -114,18 +114,19 @@
 /*
  * The blue abstract theme — visual only.
  *
- * Signed-in pages: a pale sky that deepens into a soft blue glow at the
- * bottom of the window, with faint arcs of light. Fixed, so content scrolls
- * over it; every panel stays white, so text keeps its contrast.
+ * Signed-in pages: the same night navy as the header and hero, deepening
+ * into a soft electric-blue glow at the bottom of the window, with faint arcs
+ * of light. Fixed, so content scrolls over it; every panel stays light, so
+ * text keeps its contrast.
  */
 body {
   isolation: isolate;
   background:
-    radial-gradient(1200px 420px at 50% 122%, rgb(37 99 235 / 0.7), transparent 72%),
-    radial-gradient(1600px 520px at 50% 128%, rgb(147 197 253 / 0.4), transparent 75%),
-    radial-gradient(760px 420px at 100% -10%, rgb(59 130 246 / 0.16), transparent 70%),
-    radial-gradient(620px 360px at -5% 30%, rgb(147 197 253 / 0.18), transparent 70%),
-    linear-gradient(180deg, #e2ebff 0%, #c9dbff 55%, #9fbcff 100%);
+    radial-gradient(1200px 420px at 50% 122%, rgb(37 99 235 / 0.55), transparent 72%),
+    radial-gradient(1600px 520px at 50% 128%, rgb(59 130 246 / 0.25), transparent 75%),
+    radial-gradient(760px 420px at 100% -10%, rgb(59 130 246 / 0.12), transparent 70%),
+    radial-gradient(620px 360px at -5% 30%, rgb(30 64 175 / 0.25), transparent 70%),
+    linear-gradient(180deg, #040a1c 0%, #061538 55%, #0b2a78 100%);
   background-attachment: fixed;
 }
 body::before {
@@ -135,8 +136,8 @@ body::before {
   z-index: -1;
   pointer-events: none;
   background:
-    radial-gradient(1400px 1400px at 50% 165%, transparent 49.6%, rgb(37 99 235 / 0.16) 49.8%, transparent 50.2%),
-    radial-gradient(1700px 1700px at 50% 165%, transparent 49.7%, rgb(59 130 246 / 0.10) 49.85%, transparent 50.1%);
+    radial-gradient(1400px 1400px at 50% 165%, transparent 49.6%, rgb(147 197 253 / 0.16) 49.8%, transparent 50.2%),
+    radial-gradient(1700px 1700px at 50% 165%, transparent 49.7%, rgb(147 197 253 / 0.10) 49.85%, transparent 50.1%);
 }
 
 /* The header: night navy, running straight on into the page hero below it. */
@@ -147,9 +148,10 @@ body::before {
 }
 
 /*
- * The page hero (signed-in pages): navy → electric blue → sky, with arcs of
- * light; the page title, intro and main action sit centred on it in white.
- * The page's content follows in a white panel that overlaps its lower edge.
+ * The page hero (signed-in pages): navy → electric blue, fading back into the
+ * navy page, with arcs of light; the page title, intro and main action sit
+ * centred on it in white. The page's content follows in a panel that
+ * overlaps its lower edge.
  */
 .app-hero {
   position: relative;
@@ -157,8 +159,8 @@ body::before {
   overflow: hidden;
   color: #ffffff;
   background:
-    radial-gradient(900px 340px at 50% 104%, rgb(96 165 250 / 0.55), transparent 70%),
-    linear-gradient(180deg, #040a1c 0%, #071a4d 34%, #1450e0 66%, #5b95ff 84%, rgb(245 248 255 / 0) 100%);
+    radial-gradient(900px 340px at 50% 104%, rgb(96 165 250 / 0.4), transparent 70%),
+    linear-gradient(180deg, #040a1c 0%, #071a4d 34%, #1450e0 66%, rgb(20 80 224 / 0.35) 84%, rgb(20 80 224 / 0) 100%);
 }
 .app-hero::before {
   content: "";

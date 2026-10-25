@@ -6,6 +6,7 @@ import { SectionCard } from "@/components/company/section-card";
 import { AnalysisPanel } from "@/components/qc/analysis-panel";
 import { CategoryChecks } from "@/components/qc/category-checks";
 import { CategoryScores, resultWaitingText, Scoreboard } from "@/components/qc/scoreboard";
+import { DesignPreviews } from "@/components/qc/design-preview";
 import { FileUploader } from "@/components/qc/file-uploader";
 import { GeminiFreeTierNotice } from "@/components/qc/gemini-free-tier-notice";
 import { PlatformCheck } from "@/components/qc/platform-check";
@@ -24,6 +25,7 @@ import { hasExactSize, purgeExpiredSessions, READINESS_MESSAGES, readinessProble
 import { isCheckable } from "@/lib/qc/requirements";
 import { getQcStorage } from "@/lib/storage/qc-storage";
 import { loadSessionResult } from "@/lib/qc/session-result";
+import { designPreviews } from "@/lib/qc/design-preview";
 import type { AnalysisRun } from "@/lib/db/analysis-runs";
 import type { AnalysisStatusView } from "@/lib/qc/actions";
 import { configuredProvider } from "@/lib/analysis/config";
@@ -103,8 +105,10 @@ export default async function StartQcPage({ params }: PageProps<"/companies/[com
   const limit = getUploadLimitBytes();
   const view = (list: typeof files) =>
     list.map((f) => ({ id: f.id, file_name: f.file_name, mime_type: f.mime_type, file_size: f.file_size }));
-  // Once there's a result, the steps move to a side pane on the left and the result takes the main area.
+  // Once there's a result, the checked design sits on the left with the files and steps folded under it,
+  // and the result takes the main area.
   const compact = showResult;
+  const previews = showResult ? await designPreviews(storage, content) : [];
 
   const steps = (
     <>
@@ -253,15 +257,26 @@ export default async function StartQcPage({ params }: PageProps<"/companies/[com
       )}
 
       {showResult ? (
-        <div className="grid gap-8 lg:grid-cols-[20rem_minmax(0,1fr)] lg:gap-10">
-          {/* The result first on phones; on wide screens the steps sit in a pane on the left. */}
+        <div className="grid gap-6 lg:grid-cols-[22rem_minmax(0,1fr)] lg:gap-8">
+          {/* The result first on phones; on wide screens the design sits on the left, beside the result. */}
           <aside
-            aria-label="Brief, design and check"
-            className="order-last rounded-2xl bg-card p-4 shadow-sm ring-1 ring-border lg:order-none lg:sticky lg:top-24 lg:max-h-[calc(100dvh-7rem)] lg:self-start lg:overflow-y-auto"
+            aria-label="Checked design and files"
+            className="order-last space-y-4 lg:order-none lg:sticky lg:top-24 lg:max-h-[calc(100dvh-7rem)] lg:self-start lg:overflow-y-auto"
           >
-            {steps}
+            <DesignPreviews previews={previews} />
+            {/* Open while the check is running or out of date, so its progress and Check again stay in view. */}
+            <details className="group rounded-2xl bg-card shadow-sm ring-1 ring-border" open={!board || analysisView.stale}>
+              <summary className="flex cursor-pointer list-none items-center gap-3 px-4 py-3">
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-semibold">Files and Check Design</span>
+                  <span className="block text-xs text-muted-foreground">Change the brief or the design, or check again.</span>
+                </span>
+                <ChevronDown className="size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" aria-hidden />
+              </summary>
+              <div className="border-t border-border p-4">{steps}</div>
+            </details>
           </aside>
-          <div className="min-w-0">
+          <div className="min-w-0 rounded-2xl bg-card p-5 shadow-sm ring-1 ring-border sm:p-6">
             <section id="qc-result" aria-label="QC result" className="scroll-mt-24 pb-8">
               {noRequirements ? (
                 <p className="rounded-xl bg-revision-soft px-4 py-3 text-sm font-medium text-revision">{READINESS_MESSAGES.requirements}</p>

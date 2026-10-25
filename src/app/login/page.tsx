@@ -18,7 +18,7 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
   const nextPath = safeRedirectPath(typeof next === "string" ? next : undefined);
 
   return (
-    <main className="login-hero flex min-h-dvh flex-1 flex-col px-4 py-8 sm:px-8">
+    <main className="page-bg login-hero flex min-h-dvh flex-1 flex-col px-4 py-8 sm:px-8">
       <SkybookLogo sub="AI QC" className="text-white [&_.text-muted-foreground]:text-white/60" />
 
       <div className="mx-auto grid w-full max-w-5xl flex-1 items-center gap-12 py-12 lg:grid-cols-[1.15fr_1fr] lg:gap-20">

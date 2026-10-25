@@ -112,154 +112,46 @@
 }
 
 /*
- * The blue abstract theme — visual only.
+ * The blue theme — visual only.
  *
- * Signed-in pages: a pale sky that deepens into a soft blue glow at the
- * bottom of the window, with faint arcs of light. Fixed, so content scrolls
- * over it; every panel stays white, so text keeps its contrast.
+ * Every page sits on a full-window picture, fixed so content scrolls over it:
+ * Home on the horizon photo (.page-bg--home), every other page and sign-in on
+ * the soft blue glow. Panels stay white / blue-grey, so text keeps its
+ * contrast; the navy underneath shows while a picture loads.
  */
 body {
   isolation: isolate;
-  background:
-    radial-gradient(1200px 420px at 50% 122%, rgb(37 99 235 / 0.7), transparent 72%),
-    radial-gradient(1600px 520px at 50% 128%, rgb(147 197 253 / 0.4), transparent 75%),
-    radial-gradient(760px 420px at 100% -10%, rgb(59 130 246 / 0.16), transparent 70%),
-    radial-gradient(620px 360px at -5% 30%, rgb(147 197 253 / 0.18), transparent 70%),
-    linear-gradient(180deg, #e2ebff 0%, #c9dbff 55%, #9fbcff 100%);
-  background-attachment: fixed;
+  background: #040a1c;
 }
-body::before {
+.page-bg::before {
   content: "";
   position: fixed;
   inset: 0;
   z-index: -1;
   pointer-events: none;
-  background:
-    radial-gradient(1400px 1400px at 50% 165%, transparent 49.6%, rgb(37 99 235 / 0.16) 49.8%, transparent 50.2%),
-    radial-gradient(1700px 1700px at 50% 165%, transparent 49.7%, rgb(59 130 246 / 0.10) 49.85%, transparent 50.1%);
+  background: #040a1c url("./backgrounds/page-glow.jpg") center / cover no-repeat;
+}
+.page-bg--home::before {
+  background-image: url("./backgrounds/home-horizon.jpg");
 }
 
-/* The header: night navy, running straight on into the page hero below it. */
+/* The header: translucent night navy over the picture. */
 .app-header {
   color: #ffffff;
-  background: linear-gradient(180deg, #010208 0%, #040a1c 100%);
-  border-bottom: 1px solid rgb(147 180 255 / 0.08);
+  background: rgb(2 6 23 / 0.55);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid rgb(147 180 255 / 0.1);
 }
 
 /*
- * The page hero (signed-in pages): navy → electric blue → sky, with arcs of
- * light; the page title, intro and main action sit centred on it in white.
- * The page's content follows in a white panel that overlaps its lower edge.
+ * The page hero (signed-in pages): the page title, intro and main action,
+ * centred in white straight on the background picture. The page's content
+ * follows in a panel that overlaps its lower edge.
  */
 .app-hero {
   position: relative;
-  isolation: isolate;
-  overflow: hidden;
   color: #ffffff;
-  background:
-    radial-gradient(900px 340px at 50% 104%, rgb(96 165 250 / 0.55), transparent 70%),
-    linear-gradient(180deg, #040a1c 0%, #071a4d 34%, #1450e0 66%, #5b95ff 84%, rgb(245 248 255 / 0) 100%);
 }
-.app-hero::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  pointer-events: none;
-  background:
-    radial-gradient(1400px 900px at 50% 125%, transparent 49.4%, rgb(191 219 254 / 0.24) 49.7%, transparent 50%),
-    radial-gradient(1800px 1100px at 50% 125%, transparent 49.5%, rgb(191 219 254 / 0.13) 49.7%, transparent 50%);
-}
-/*
- * Travelling lights on the curved lines — one small glowing dot per line.
- * Each dot follows a motion path with exactly the geometry of its line (the
- * rings drawn above in .app-hero::before and body::before: same centre, same
- * radii), so it stays on the curve. Paths are the upper half of each ring,
- * measured from the ring's centre (.skyqc-orbit-center, a 0×0 box placed at
- * that centre); the dot fades in and out where the ring leaves the view, so
- * the loop restarts unseen. Decorative only: aria-hidden, no pointer events,
- * and switched off for people who ask for reduced motion.
- */
-.skyqc-orbit-layer {
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  overflow: hidden;
-  pointer-events: none;
-}
-.skyqc-orbit-layer--sky {
-  position: fixed;
-}
-.skyqc-orbit-center {
-  position: absolute;
-  left: 50%;
-  top: 125%;
-  width: 0;
-  height: 0;
-}
-.skyqc-orbit-layer--sky .skyqc-orbit-center {
-  top: 165%;
-}
-.skyqc-orbit-dot {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 6px;
-  height: 6px;
-  border-radius: 9999px;
-  background: radial-gradient(circle, #ffffff 0%, #dbeafe 45%, rgb(147 197 253 / 0) 75%);
-  box-shadow: 0 0 6px 2px rgb(191 219 254 / 0.85), 0 0 16px 4px rgb(59 130 246 / 0.45);
-  offset-anchor: center;
-  offset-rotate: 0deg;
-  opacity: 0;
-  will-change: offset-distance, opacity;
-  animation: skyqc-orbit-travel 20s linear infinite;
-}
-/* Hero rings: radii 1400×900 and 1800×1100 at 49.7% → 696×447 and 895×547. */
-.skyqc-orbit-dot--hero-inner {
-  offset-path: path("M -696 0 A 696 447 0 0 1 696 0");
-  animation-duration: 17s;
-  animation-delay: -5s;
-}
-.skyqc-orbit-dot--hero-outer {
-  offset-path: path("M 895 0 A 895 547 0 0 0 -895 0");
-  animation-duration: 23s;
-  animation-delay: -14s;
-}
-/* Page-background rings: circles 1400 and 1700 at 49.8% / 49.85% → radius 697 and 848. */
-.skyqc-orbit-dot--sky-inner {
-  offset-path: path("M -697 0 A 697 697 0 0 1 697 0");
-  animation-duration: 26s;
-  animation-delay: -9s;
-}
-.skyqc-orbit-dot--sky-outer {
-  offset-path: path("M 848 0 A 848 848 0 0 0 -848 0");
-  animation-duration: 31s;
-  animation-delay: -20s;
-}
-@keyframes skyqc-orbit-travel {
-  0% {
-    offset-distance: 0%;
-    opacity: 0;
-  }
-  12% {
-    opacity: 0.95;
-  }
-  88% {
-    opacity: 0.95;
-  }
-  100% {
-    offset-distance: 100%;
-    opacity: 0;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .skyqc-orbit-dot {
-    animation: none;
-    display: none;
-  }
-}
-
 /* Text on the hero: readable on navy and blue. */
 .app-hero .text-muted-foreground,
 .app-hero .eyebrow {
@@ -338,26 +230,10 @@ a.hero-glass:hover {
   background: #f3f7ff;
 }
 
-/* The sign-in page: the full night-to-sky hero, with arcs of light. */
+/* The sign-in page: white text on the soft blue glow (.page-bg). */
 .login-hero {
   position: relative;
-  isolation: isolate;
-  overflow: hidden;
   color: #ffffff;
-  background:
-    radial-gradient(900px 520px at 72% 112%, rgb(96 165 250 / 0.6), transparent 70%),
-    radial-gradient(760px 420px at 0% 0%, rgb(30 64 175 / 0.45), transparent 70%),
-    linear-gradient(180deg, #02040b 0%, #06122e 34%, #0d3aa8 74%, #4f8dff 100%);
-}
-.login-hero::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  pointer-events: none;
-  background:
-    radial-gradient(1300px 1300px at 50% 140%, transparent 49.5%, rgb(191 219 254 / 0.22) 49.8%, transparent 50.2%),
-    radial-gradient(1650px 1650px at 50% 140%, transparent 49.6%, rgb(191 219 254 / 0.12) 49.8%, transparent 50.1%);
 }
 
 @layer base {

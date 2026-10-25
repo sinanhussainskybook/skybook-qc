@@ -19,7 +19,6 @@ export default async function DashboardPage() {
   return (
     <AppShell
       user={user}
-      background="home"
       hero={
         <>
           <p className="eyebrow hero-glass">Hi {user.name.split(" ")[0]}</p>

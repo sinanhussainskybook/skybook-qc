@@ -84,17 +84,6 @@ describe("AppShell", () => {
     expect(html).not.toContain("skyqc-orbit-dot--hero");
   });
 
-  it("puts only Home on the horizon photo, without the curved-line lights", () => {
-    const home = renderToStaticMarkup(
-      <AppShell user={{ name: "Ada Admin", role: "admin" }} background="home" hero={<h1>Title</h1>}>
-        <p>Body</p>
-      </AppShell>
-    );
-    expect(home).toContain("page-bg--home");
-    expect(home).not.toContain("skyqc-orbit");
-    expect(html).not.toContain("page-bg--home");
-  });
-
   it("no password link in the header (it's on the Users page)", () => {
     expect(html).not.toContain('href="/account/password"');
     expect(render("designer", "/")).not.toContain('href="/account/password"');

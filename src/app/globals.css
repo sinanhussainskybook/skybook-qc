@@ -260,32 +260,6 @@ body::before {
   }
 }
 
-/*
- * Home only (.page-bg--home): the horizon photo fills the window, fixed
- * behind the page, instead of the gradient. The hero is see-through so the
- * photo shows behind the title, and the header is a translucent navy. The
- * curved lines and their travelling lights are not drawn here.
- */
-.page-bg--home::before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  z-index: -1;
-  pointer-events: none;
-  background: #040a1c url("./backgrounds/home-horizon.jpg") center / cover no-repeat;
-}
-.page-bg--home .app-header {
-  background: rgb(2 6 23 / 0.55);
-  backdrop-filter: blur(12px);
-  border-bottom-color: rgb(147 180 255 / 0.1);
-}
-.page-bg--home .app-hero {
-  background: none;
-}
-.page-bg--home .app-hero::before {
-  content: none;
-}
-
 /* Text on the hero: readable on navy and blue. */
 .app-hero .text-muted-foreground,
 .app-hero .eyebrow {

@@ -141,16 +141,15 @@ body {
  * The page hero (signed-in pages): navy → electric blue, fading back into the
  * navy page, with arcs of light; the page title, intro and main action sit
  * centred on it in white. The page's content follows in a panel that
- * overlaps its lower edge.
+ * overlaps its lower edge. The glow, the arcs and their lights fade out
+ * before the hero's bottom edge, so nothing ends in a hard line there.
  */
 .app-hero {
   position: relative;
   isolation: isolate;
   overflow: hidden;
   color: #ffffff;
-  background:
-    radial-gradient(900px 340px at 50% 104%, rgb(96 165 250 / 0.4), transparent 70%),
-    linear-gradient(180deg, #040a1c 0%, #071a4d 34%, #1450e0 66%, rgb(20 80 224 / 0.35) 84%, rgb(20 80 224 / 0) 100%);
+  background: linear-gradient(180deg, #040a1c 0%, #071a4d 34%, #1450e0 66%, rgb(20 80 224 / 0.35) 84%, rgb(20 80 224 / 0) 100%);
 }
 .app-hero::before {
   content: "";
@@ -160,7 +159,9 @@ body {
   pointer-events: none;
   background:
     radial-gradient(1400px 900px at 50% 125%, transparent 49.4%, rgb(191 219 254 / 0.24) 49.7%, transparent 50%),
-    radial-gradient(1800px 1100px at 50% 125%, transparent 49.5%, rgb(191 219 254 / 0.13) 49.7%, transparent 50%);
+    radial-gradient(1800px 1100px at 50% 125%, transparent 49.5%, rgb(191 219 254 / 0.13) 49.7%, transparent 50%),
+    radial-gradient(900px 340px at 50% 104%, rgb(96 165 250 / 0.4), transparent 70%);
+  mask-image: linear-gradient(180deg, #000 55%, transparent 100%);
 }
 /*
  * Travelling lights on the curved lines — one small glowing dot per line.
@@ -178,6 +179,8 @@ body {
   z-index: -1;
   overflow: hidden;
   pointer-events: none;
+  /* Fades out with the arcs (.app-hero::before), so a light never stops at the hero's edge. */
+  mask-image: linear-gradient(180deg, #000 55%, transparent 100%);
 }
 .skyqc-orbit-center {
   position: absolute;

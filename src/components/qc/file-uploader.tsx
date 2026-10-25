@@ -129,7 +129,7 @@ export function FileUploader({
   return (
     <div className="space-y-3">
       {files.length > 0 && (
-        <ul className="space-y-2">
+        <ul className="@container space-y-2">
           {files.map((file) => {
             const Icon = iconFor(file.mime_type);
             return (
@@ -155,7 +155,8 @@ export function FileUploader({
                     aria-label={`Remove ${file.file_name}`}
                   >
                     <X aria-hidden />
-                    Remove
+                    {/* Just the ✕ in a narrow column (the side pane next to the result), so the file name has room. */}
+                    <span className="hidden @sm:inline">Remove</span>
                   </Button>
                 </form>
               </li>

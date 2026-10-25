@@ -103,10 +103,135 @@ export default async function StartQcPage({ params }: PageProps<"/companies/[com
   const limit = getUploadLimitBytes();
   const view = (list: typeof files) =>
     list.map((f) => ({ id: f.id, file_name: f.file_name, mime_type: f.mime_type, file_size: f.file_size }));
+  // Once there's a result, the steps move to a side pane on the left and the result takes the main area.
+  const compact = showResult;
+
+  const steps = (
+    <>
+      {/* Before any file can reach Google: only when Gemini is the configured provider. */}
+      {configuredProvider() === "gemini" && <GeminiFreeTierNotice />}
+
+      <Step
+        id="information"
+        n={1}
+        compact={compact}
+        className={compact ? "border-t-0 pt-0" : "border-t-0 pt-2 sm:pt-2"}
+        title="Upload client brief"
+        description="The client's brief — a document, an email or a spreadsheet. It's read automatically as soon as it's uploaded."
+      >
+        <FileUploader
+          sessionId={session.id}
+          kind="information"
+          contentType={session.content_type}
+          files={view(information)}
+          maxFiles={maxFiles("information", session.content_type)}
+          generalLimitBytes={limit}
+          storageReady={storage !== null}
+          buttonLabel="Upload brief"
+        />
+        {information.length > 0 && (
+          <div className="mt-4 border-t pt-4">
+            <AnalysisPanel
+              key={infoRun ? `${infoRun.id}-${infoRun.status}` : "none"}
+              kind="information"
+              sessionId={session.id}
+              configured={analysisView.configured}
+              hasContent
+              stale={infoRun?.status === "done" && briefChangedSince(infoRun, files)}
+              found={checkable.length}
+              initial={statusOf(infoRun)}
+            />
+          </div>
+        )}
+      </Step>
+
+      <Step
+        id="content"
+        n={2}
+        compact={compact}
+        title="Upload design"
+        description={
+          contentMedia(session.content_type) === "video"
+            ? "The video you want checked."
+            : "The design you want checked. Several images are fine, e.g. a carousel."
+        }
+      >
+        <FileUploader
+          sessionId={session.id}
+          kind="content"
+          contentType={session.content_type}
+          files={view(content)}
+          maxFiles={maxFiles("content", session.content_type)}
+          generalLimitBytes={limit}
+          storageReady={storage !== null}
+          buttonLabel="Upload design"
+        />
+      </Step>
+
+      {askPlatform && (
+        <Step
+          id="platform"
+          compact={compact}
+          title="Platform (optional)"
+          description="Optional: choose where the design will be published to also check its size, ratio, format and file size against that platform's published specification. Without a platform, all the other checks still run and the platform checks are shown as not checked."
+        >
+          <PlatformForm
+            key={`${session.content_type}-${session.platform ?? ""}-${session.placement ?? ""}`}
+            sessionId={session.id}
+            media={contentMedia(session.content_type)}
+            current={{
+              platform: session.platform,
+              placement: session.placement,
+              customLabel: session.custom_label,
+              customWidth: session.custom_width,
+              customHeight: session.custom_height,
+              customUnit: session.custom_unit,
+              customMinDpi: session.custom_min_dpi,
+              customMaxBytes: session.custom_max_bytes,
+            }}
+          />
+        </Step>
+      )}
+
+      <Step id="check" n={3} compact={compact} title="Check design" description="The design is compared with the brief and the company's brand rules.">
+        <div className="space-y-4">
+          <SessionFooter sessionId={session.id} status={session.status} problems={problems} />
+          {run && (
+            <div className="border-t pt-4">
+              <AnalysisPanel
+                key={`${run.id}-${run.status}`}
+                sessionId={session.id}
+                configured={analysisView.configured}
+                hasContent={content.length > 0}
+                stale={analysisView.stale}
+                runsLeft={analysisView.runsLeft}
+                initial={statusOf(run)}
+              />
+            </div>
+          )}
+        </div>
+      </Step>
+    </>
+  );
+
+  const missingNote = missing.length > 0 && (
+    <p className="mt-6 flex items-start gap-2 border-t border-border pt-6 text-sm text-muted-foreground">
+      <TriangleAlert className="mt-0.5 size-4 shrink-0 text-revision" aria-hidden />
+      <span>
+        This company has no {missing.join(", ")} saved yet. Checks that need them will show as <strong>not verified</strong> when QC
+        runs.{" "}
+        <Link href={`/companies/${company.id}`} className="font-medium text-primary hover:underline">
+          Add them on the company page
+        </Link>
+        .
+      </span>
+    </p>
+  );
 
   return (
     <AppShell
       user={user}
+      wide={showResult}
       hero={
         <>
           {back}
@@ -127,171 +252,76 @@ export default async function StartQcPage({ params }: PageProps<"/companies/[com
         </p>
       )}
 
-      <div>
-        {/* Before any file can reach Google: only when Gemini is the configured provider. */}
-        {configuredProvider() === "gemini" && <GeminiFreeTierNotice />}
-
-        <Step id="information" n={1} className="border-t-0 pt-2 sm:pt-2" title="Upload client brief" description="The client's brief — a document, an email or a spreadsheet. It's read automatically as soon as it's uploaded.">
-          <FileUploader
-            sessionId={session.id}
-            kind="information"
-            contentType={session.content_type}
-            files={view(information)}
-            maxFiles={maxFiles("information", session.content_type)}
-            generalLimitBytes={limit}
-            storageReady={storage !== null}
-            buttonLabel="Upload brief"
-          />
-          {information.length > 0 && (
-            <div className="mt-4 border-t pt-4">
-              <AnalysisPanel
-                key={infoRun ? `${infoRun.id}-${infoRun.status}` : "none"}
-                kind="information"
-                sessionId={session.id}
-                configured={analysisView.configured}
-                hasContent
-                stale={infoRun?.status === "done" && briefChangedSince(infoRun, files)}
-                found={checkable.length}
-                initial={statusOf(infoRun)}
-              />
-            </div>
-          )}
-        </Step>
-
-        <Step
-          id="content"
-          n={2}
-          title="Upload design"
-          description={
-            contentMedia(session.content_type) === "video"
-              ? "The video you want checked."
-              : "The design you want checked. Several images are fine, e.g. a carousel."
-          }
-        >
-          <FileUploader
-            sessionId={session.id}
-            kind="content"
-            contentType={session.content_type}
-            files={view(content)}
-            maxFiles={maxFiles("content", session.content_type)}
-            generalLimitBytes={limit}
-            storageReady={storage !== null}
-            buttonLabel="Upload design"
-          />
-        </Step>
-
-        {askPlatform && (
-          <Step
-            id="platform"
-            title="Platform (optional)"
-            description="Optional: choose where the design will be published to also check its size, ratio, format and file size against that platform's published specification. Without a platform, all the other checks still run and the platform checks are shown as not checked."
+      {showResult ? (
+        <div className="grid gap-8 lg:grid-cols-[20rem_minmax(0,1fr)] lg:gap-10">
+          {/* The result first on phones; on wide screens the steps sit in a pane on the left. */}
+          <aside
+            aria-label="Brief, design and check"
+            className="order-last rounded-2xl bg-card p-4 shadow-sm ring-1 ring-border lg:order-none lg:sticky lg:top-24 lg:max-h-[calc(100dvh-7rem)] lg:self-start lg:overflow-y-auto"
           >
-            <PlatformForm
-              key={`${session.content_type}-${session.platform ?? ""}-${session.placement ?? ""}`}
-              sessionId={session.id}
-              media={contentMedia(session.content_type)}
-              current={{
-                platform: session.platform,
-                placement: session.placement,
-                customLabel: session.custom_label,
-                customWidth: session.custom_width,
-                customHeight: session.custom_height,
-                customUnit: session.custom_unit,
-                customMinDpi: session.custom_min_dpi,
-                customMaxBytes: session.custom_max_bytes,
-              }}
-            />
-          </Step>
-        )}
-
-        <Step id="check" n={3} title="Check design" description="The design is compared with the brief and the company's brand rules.">
-          <div className="space-y-4">
-            <SessionFooter sessionId={session.id} status={session.status} problems={problems} />
-            {run && (
-              <div className="border-t pt-4">
-                <AnalysisPanel
-                  key={`${run.id}-${run.status}`}
-                  sessionId={session.id}
-                  configured={analysisView.configured}
-                  hasContent={content.length > 0}
-                  stale={analysisView.stale}
-                  runsLeft={analysisView.runsLeft}
-                  initial={statusOf(run)}
-                />
-              </div>
-            )}
-          </div>
-        </Step>
-
-        {showResult && (
-          <section id="qc-result" aria-label="QC result" className="scroll-mt-24 border-t border-border py-10">
-            {noRequirements ? (
-              <p className="rounded-xl bg-revision-soft px-4 py-3 text-sm font-medium text-revision">{READINESS_MESSAGES.requirements}</p>
-            ) : board ? (
-              <Scoreboard board={board} findings={findings!} mock={analysisView.detections?.source === "mock"} reportHref={`/companies/${company.id}/qc/report`} />
-            ) : (
-              <p className="rounded-xl bg-muted/60 px-4 py-3 text-sm text-muted-foreground">{resultWaitingText(analysisView.analysis.state)}</p>
-            )}
-          </section>
-        )}
-
-        {showResult && (
-          <details id="all-checks" className="group border-t border-border py-6">
-            <summary className="flex cursor-pointer list-none items-center gap-3">
-              <span className="min-w-0 flex-1">
-                <span className="block text-lg font-semibold tracking-tight">All checks in detail</span>
-                <span className="block text-sm text-muted-foreground">Every check with its full explanation, score by category, and anything that couldn&apos;t be checked.</span>
-              </span>
-              <ChevronDown className="size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" aria-hidden />
-            </summary>
-            <div className="mt-6 space-y-4">
-              {board && (
-                <section aria-label="Score by category">
-                  <CategoryScores board={board} />
-                </section>
+            {steps}
+          </aside>
+          <div className="min-w-0">
+            <section id="qc-result" aria-label="QC result" className="scroll-mt-24 pb-8">
+              {noRequirements ? (
+                <p className="rounded-xl bg-revision-soft px-4 py-3 text-sm font-medium text-revision">{READINESS_MESSAGES.requirements}</p>
+              ) : board ? (
+                <Scoreboard board={board} findings={findings!} mock={analysisView.detections?.source === "mock"} reportHref={`/companies/${company.id}/qc/report`} />
+              ) : (
+                <p className="rounded-xl bg-muted/60 px-4 py-3 text-sm text-muted-foreground">{resultWaitingText(analysisView.analysis.state)}</p>
               )}
-              {platformFindings && (
+            </section>
+
+            <details id="all-checks" className="group border-t border-border py-6">
+              <summary className="flex cursor-pointer list-none items-center gap-3">
+                <span className="min-w-0 flex-1">
+                  <span className="block text-lg font-semibold tracking-tight">All checks in detail</span>
+                  <span className="block text-sm text-muted-foreground">Every check with its full explanation, score by category, and anything that couldn&apos;t be checked.</span>
+                </span>
+                <ChevronDown className="size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" aria-hidden />
+              </summary>
+              <div className="mt-6 space-y-4">
+                {board && (
+                  <section aria-label="Score by category">
+                    <CategoryScores board={board} />
+                  </section>
+                )}
+                {platformFindings && (
+                  <SectionCard
+                    id="platform-check"
+                    title="Platform check"
+                    description="Measured from the uploaded content. Safe zones and anything that couldn't be measured are shown as not verified, never guessed."
+                    icon={ScanSearch}
+                  >
+                    <PlatformCheck findings={platformFindings} />
+                  </SectionCard>
+                )}
                 <SectionCard
-                  id="platform-check"
-                  title="Platform check"
-                  description="Measured from the uploaded content. Safe zones and anything that couldn't be measured are shown as not verified, never guessed."
-                  icon={ScanSearch}
+                  id="content-checks"
+                  title="Content checks"
+                  description="Content, brand, Golden Rules, layout, accessibility, image, brief and legal checks for this session."
+                  icon={ClipboardCheck}
                 >
-                  <PlatformCheck findings={platformFindings} />
+                  <CategoryChecks
+                    findings={findings!}
+                    analysis={analysisView.analysis}
+                    mock={analysisView.detections?.source === "mock"}
+                    local={analysisView.provider === "local"}
+                    gemini={analysisView.provider === "gemini"}
+                  />
                 </SectionCard>
-              )}
-              <SectionCard
-                id="content-checks"
-                title="Content checks"
-                description="Content, brand, Golden Rules, layout, accessibility, image, brief and legal checks for this session."
-                icon={ClipboardCheck}
-              >
-                <CategoryChecks
-                  findings={findings!}
-                  analysis={analysisView.analysis}
-                  mock={analysisView.detections?.source === "mock"}
-                  local={analysisView.provider === "local"}
-                  gemini={analysisView.provider === "gemini"}
-                />
-              </SectionCard>
-            </div>
-          </details>
-        )}
+              </div>
+            </details>
 
-        {missing.length > 0 && (
-          <p className="mt-6 flex items-start gap-2 border-t border-border pt-6 text-sm text-muted-foreground">
-            <TriangleAlert className="mt-0.5 size-4 shrink-0 text-revision" aria-hidden />
-            <span>
-              This company has no {missing.join(", ")} saved yet. Checks that need them will show as{" "}
-              <strong>not verified</strong> when QC runs.{" "}
-              <Link href={`/companies/${company.id}`} className="font-medium text-primary hover:underline">
-                Add them on the company page
-              </Link>
-              .
-            </span>
-          </p>
-        )}
-      </div>
+            {missingNote}
+          </div>
+        </div>
+      ) : (
+        <div>
+          {steps}
+          {missingNote}
+        </div>
+      )}
     </AppShell>
   );
 }

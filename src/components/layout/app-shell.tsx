@@ -15,6 +15,8 @@ import type { User } from "@/lib/db/users";
  * navy-to-blue hero; the page's content (`children`) then sits in a white
  * panel overlapping the hero's lower edge. Visual only.
  *
+ * `wide`: a wider content panel, for a page with a side pane (the QC result).
+ *
  * The page passes in the user it got from requireUser(); the shell does no
  * checking of its own.
  */
@@ -22,10 +24,12 @@ export function AppShell({
   children,
   hero,
   user,
+  wide = false,
 }: {
   children?: ReactNode;
   hero?: ReactNode;
   user: Pick<User, "name" | "role">;
+  wide?: boolean;
 }) {
   return (
     <div className="flex min-h-full flex-1 flex-col">
@@ -52,7 +56,7 @@ export function AppShell({
             </div>
           </section>
           {children && (
-            <div className="relative mx-auto -mt-28 w-full max-w-5xl px-4 pb-20 sm:-mt-32 sm:px-6">
+            <div className={`relative mx-auto -mt-28 w-full px-4 pb-20 sm:-mt-32 sm:px-6 ${wide ? "max-w-7xl" : "max-w-5xl"}`}>
               <div className="content-panel p-5 sm:p-8">{children}</div>
             </div>
           )}

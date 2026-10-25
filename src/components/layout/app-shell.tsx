@@ -3,6 +3,7 @@ import Link from "next/link";
 import { SkybookLogo } from "@/components/layout/skybook-mark";
 import { UserMenu } from "@/components/auth/user-menu";
 import { MainNav } from "@/components/layout/main-nav";
+import { HeroOrbitDots, SkyOrbitDots } from "@/components/layout/orbit-dots";
 import type { User } from "@/lib/db/users";
 
 /**
@@ -11,11 +12,11 @@ import type { User } from "@/lib/db/users";
  * signed-in user and Sign out), and the page below.
  *
  * `hero`: the page's title, intro and main action, centred in white on the
- * background picture; the page's content (`children`) then sits in a panel
- * overlapping the hero's lower edge. Visual only.
+ * navy-to-blue hero; the page's content (`children`) then sits in a white
+ * panel overlapping the hero's lower edge. Visual only.
  *
- * `background`: "home" puts the page on the horizon photo (Home); every other
- * page is on the soft blue glow.
+ * `background`: "home" puts the page on the horizon photo instead (Home only),
+ * without the curved lines and their travelling lights.
  *
  * The page passes in the user it got from requireUser(); the shell does no
  * checking of its own.
@@ -31,8 +32,10 @@ export function AppShell({
   hero?: ReactNode;
   user: Pick<User, "name" | "role">;
 }) {
+  const home = background === "home";
   return (
-    <div className={`page-bg flex min-h-full flex-1 flex-col${background === "home" ? " page-bg--home" : ""}`}>
+    <div className={`flex min-h-full flex-1 flex-col${home ? " page-bg--home" : ""}`}>
+      {!home && <SkyOrbitDots />}
       <header className="app-header sticky top-0 z-30">
         <div className="mx-auto flex h-16 w-full max-w-5xl items-center gap-4 px-4 sm:px-6">
           <Link href="/" aria-label="Skybook AI QC, home" className="shrink-0 rounded-md transition-opacity hover:opacity-75">
@@ -49,6 +52,7 @@ export function AppShell({
       {hero ? (
         <main className="flex-1">
           <section className="app-hero">
+            {!home && <HeroOrbitDots />}
             <div className={`mx-auto flex w-full max-w-5xl flex-col items-center px-4 pt-10 text-center sm:px-6 sm:pt-14 ${children ? "pb-36 sm:pb-40" : "pb-24"}`}>
               {hero}
             </div>

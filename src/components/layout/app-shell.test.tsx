@@ -68,14 +68,30 @@ describe("AppShell", () => {
     expect(current(render("admin", "/account/password"))).toBeUndefined();
   });
 
-  it("puts Home on the horizon picture and every other page on the blue glow", () => {
+  it("draws the travelling lights as decorative layers only: hidden from screen readers, one dot per curved line", () => {
+    const withHero = renderToStaticMarkup(
+      <AppShell user={{ name: "Ada Admin", role: "admin" }} hero={<h1>Title</h1>}>
+        <p>Body</p>
+      </AppShell>
+    );
+    const layers = withHero.match(/<div class="skyqc-orbit-layer[^"]*" aria-hidden="true">/g) ?? [];
+    expect(layers).toHaveLength(2); // the page background and the hero
+    for (const ring of ["hero-inner", "hero-outer", "sky-inner", "sky-outer"]) {
+      expect(withHero.match(new RegExp(`skyqc-orbit-dot--${ring}`, "g"))).toHaveLength(1);
+    }
+    // Without a hero (no curves there), only the page-background lights.
+    expect(html.match(/skyqc-orbit-layer/g)).toHaveLength(2); // the layer and its --sky modifier on one element
+    expect(html).not.toContain("skyqc-orbit-dot--hero");
+  });
+
+  it("puts only Home on the horizon photo, without the curved-line lights", () => {
     const home = renderToStaticMarkup(
       <AppShell user={{ name: "Ada Admin", role: "admin" }} background="home" hero={<h1>Title</h1>}>
         <p>Body</p>
       </AppShell>
     );
-    expect(home).toMatch(/^<div class="page-bg [^"]*page-bg--home"/);
-    expect(html).toMatch(/^<div class="page-bg /);
+    expect(home).toContain("page-bg--home");
+    expect(home).not.toContain("skyqc-orbit");
     expect(html).not.toContain("page-bg--home");
   });
 

@@ -431,6 +431,23 @@ function findingsTable(d: Doc, title: string, groups: TableGroup[], o: { heading
 
 const MANDATORY = /\bmandatory\b/i;
 
+/** What a check records when something the brief asks for isn't in the content. */
+const NOT_FOUND = "Not found";
+
+/**
+ * The Found line(s) for what was read: the values found, and — for something not on the design at all —
+ * "Missing: not on the design" (the result page's words), never "Found: Not found".
+ */
+function foundBlocks(found: string[], gapBefore: number): Block[] {
+  const values = found.filter((v) => v !== NOT_FOUND);
+  const blocks: Block[] = [];
+  if (values.length) blocks.push({ spans: [{ text: "Found:", bold: true, color: C.muted }, ...valueSpans(values)], size: 8.2, gapBefore });
+  if (values.length < found.length) {
+    blocks.push({ spans: [{ text: "Missing:", bold: true, color: TONE.critical.strong }, { text: "not on the design", color: C.ink }], size: 8.2, gapBefore: values.length ? 1 : gapBefore });
+  }
+  return blocks;
+}
+
 /** Every value found: joined with "·" so a long list wraps compactly. */
 function valueSpans(values: string[]): Span[] {
   const spans: Span[] = [];
@@ -457,7 +474,7 @@ function issueRow(g: Related, tone: Tone): TableRow {
   if (where) issue.push({ spans: [{ text: where, color: C.muted }], size: 7.6, gapBefore: 1 });
   for (const p of g.pairs) {
     if (p.expected && p.found.length) issue.push({ spans: [{ text: "Expected:", bold: true, color: C.muted }, { text: p.expected, color: C.ink }], size: 8.2, gapBefore: 3 });
-    if (p.found.length) issue.push({ spans: [{ text: "Found:", bold: true, color: C.muted }, ...valueSpans(p.found)], size: 8.2, gapBefore: p.expected ? 1 : 3 });
+    issue.push(...foundBlocks(p.found, p.expected ? 1 : 3));
   }
   if (it.alsoCovers) issue.push({ spans: [{ text: alsoNote(it.alsoCovers), color: C.muted }], size: 7.6, gapBefore: 3 });
   const fix: Block[] = g.fixes.map((f, i) => ({ spans: [{ text: f, bold: true }], size: 8.6, gapBefore: i ? 3 : 0 }));
@@ -477,7 +494,7 @@ function verifyRow(g: Related, tone: Tone, severity: string): TableRow {
   for (const p of g.pairs) {
     const found = p.found.filter((v) => v !== "Not checked");
     if (p.expected && p.expected !== it.title) issue.push({ spans: [{ text: "Expected:", bold: true, color: C.muted }, { text: p.expected, color: C.ink }], size: 8.2, gapBefore: 3 });
-    if (found.length) issue.push({ spans: [{ text: "Found:", bold: true, color: C.muted }, ...valueSpans(found)], size: 8.2, gapBefore: 1 });
+    issue.push(...foundBlocks(found, 1));
   }
   if (it.alsoCovers) issue.push({ spans: [{ text: alsoNote(it.alsoCovers, true), color: C.muted }], size: 7.6, gapBefore: 3 });
   const cell: Block[] = [

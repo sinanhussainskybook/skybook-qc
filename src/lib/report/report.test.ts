@@ -121,7 +121,7 @@ describe("QC report", () => {
     expect(lines).not.toContain("HUMAN REVIEW"); // no separate section
     for (const c of ["1 Critical", "0 Major", "1 Minor", "1 Suggestion", "1 To verify", "2 Passed"]) expect(lines).toContain(c);
     // Each group: a divider (name and count), then its rows — severity | issue (Expected / Found when there is something to compare) | fix.
-    inOrder(r.text, "CRITICAL", "1", "CRITICAL", "Price", "Brief", "Expected: AED 1,299", "Found: Not found", 'Add "AED 1,299".');
+    inOrder(r.text, "CRITICAL", "1", "CRITICAL", "Price", "Brief", "Expected: AED 1,299", "Missing: not on the design", 'Add "AED 1,299".');
     inOrder(r.text, "MINOR", "1", "MINOR", "Brand colours used", "Brand", "Found: #FFFFFF (99%)", "Use the brand colours.");
     inOrder(r.text, "SUGGESTIONS", "1", "SUGGESTION", "Recommended resolution", "Platform / Size", "Found: 1080 × 1350", "Export larger.");
     // The Logo the AI wasn't sure about: in the Major group (its severity), with a short note — not counted (0 Major).
@@ -607,6 +607,20 @@ describe("QC report — the 13 Oct Travel Mart report", () => {
     f("legal", "failed", "minor", { ruleId: "legal.disclaimer", title: "Disclaimer", expected: "T&C apply", detected: "T&C Apply", suggestedFix: 'Show the disclaimer exactly as: "T&C apply".' }),
     ...Array.from({ length: 34 }, () => f("content", "passed")),
   ];
+
+  it("something missing reads 'Missing: not on the design' (as on the result page), never 'Found: Not found'", async () => {
+    const r = await report(findings());
+    expect(r.text).not.toContain("Not found");
+    // The product name the AI wasn't sure about, beside the major issues.
+    expect(flat(r.text)).toMatch(/Product name: Product \/ Service .*Expected: Customized Azerbaijan Travel Packages Missing: not on the design/);
+    const missing = await report([
+      f("brief", "failed", "critical", { ruleId: "brief.requirement.cta", title: "Call to action", expected: "Book now", detected: "Not found", suggestedFix: 'Add "Book now".' }),
+    ]);
+    expect(missing.text).toContain("Missing: not on the design");
+    expect(missing.text).not.toContain("Found:");
+    // Something on the design but wrong still says what was found.
+    expect(r.text).toContain("Found: 1254 × 1254 px");
+  });
 
   it("text contrast and text colour: every ratio, colour pair and text value is shown whole on one line — none split, none lost", async () => {
     const r = await report(findings());

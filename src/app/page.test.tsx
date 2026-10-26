@@ -49,6 +49,15 @@ describe("dashboard", () => {
     expect(html).toContain("Sign out");
   });
 
+  it("says in one line how a QC check works, with what it checks one click away", async () => {
+    const html = renderToStaticMarkup(await DashboardPage());
+    const steps = html.slice(html.indexOf('<ol aria-label="How a QC check works"'), html.indexOf("</ol>"));
+    expect(steps.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ")).toMatch(/1 Upload the brief .*2 Upload the design .*3 Check Design .*✓ Result \+ PDF report/);
+    expect(html).toContain("What does QC check?");
+    expect(html).not.toMatch(/<details[^>]* open/); // folded by default
+    expect(html).toContain("Use sample designs only while Gemini is on the free tier.");
+  });
+
   it("invites the user to add the first company", async () => {
     const html = renderToStaticMarkup(await DashboardPage());
     expect(html).toContain("No companies yet");

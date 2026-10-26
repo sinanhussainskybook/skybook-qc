@@ -85,6 +85,14 @@ describe("dashboard", () => {
     for (const classes of rows) expect(classes).toContain("bg-card");
   });
 
+  it("has a search box above the companies (none when there are no companies yet)", async () => {
+    expect(renderToStaticMarkup(await DashboardPage())).not.toContain('aria-label="Search companies"');
+    getCompaniesForCurrentUser.mockResolvedValue({ user: dee, companies: [company("c1", "Acme")] });
+    const html = renderToStaticMarkup(await DashboardPage());
+    expect(html).toContain('aria-label="Search companies"');
+    expect(html.indexOf('aria-label="Search companies"')).toBeLessThan(html.indexOf('href="/companies/c1"'));
+  });
+
   it("Home's panel is see-through frosted glass (every company sits on its own white row)", async () => {
     const html = renderToStaticMarkup(await DashboardPage());
     expect(html).toMatch(/class="content-panel [^"]*content-panel--glass"/);

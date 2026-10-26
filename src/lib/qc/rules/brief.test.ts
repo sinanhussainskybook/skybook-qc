@@ -46,10 +46,19 @@ describe("Brief rules", () => {
     expect(check(requirement("phone", "+971 4 123 4567"), "Call +971 4 123 9999")).toMatchObject({ status: "failed", severity: "critical" });
   });
 
+  it("UK and US spellings of the same words pass (\"Customised\" for \"Customized\"); a real typo is still caught", () => {
+    expect(check(requirement("required_text", "Customized Packages"), "Customised Packages")).toMatchObject({ status: "passed" });
+    expect(check(requirement("required_text", "Explore our colourful centre"), "Explore our colorful center")).toMatchObject({ status: "passed" });
+    expect(check(requirement("product_name", "Travelling Made Easy"), "Traveling made easy")).toMatchObject({ status: "passed" });
+    expect(check(requirement("cta", "Organize your trip"), "Organise your trip")).toMatchObject({ status: "passed" });
+    // A typo in either spelling is still a typo.
+    expect(check(requirement("required_text", "Customized Packages"), "Custmised Packages")).toMatchObject({ status: "failed", severity: "major", detected: "custmised packages" });
+  });
+
   it("mismatched: misspelt, currency left out, country code left out — MAJOR", () => {
     expect(check(requirement("product_name", "Palm Residence"), "The Palm Residense")).toMatchObject({ status: "failed", severity: "major", detected: "palm residense" });
     // A misspelt OPTIONAL item counts no more than a missing one: MINOR (a mandatory one's typo stays MAJOR, above).
-    expect(check(requirement("required_text", "Customized Packages", { mandatory: false }), "Customised Packages")).toMatchObject({ status: "failed", severity: "minor", suggestedFix: 'Write it exactly as "Customized Packages".' });
+    expect(check(requirement("required_text", "Customized Packages", { mandatory: false }), "Custmized Packages")).toMatchObject({ status: "failed", severity: "minor", suggestedFix: 'Write it exactly as "Customized Packages".' });
     // Only typos change: an optional number shown without its country code is still MAJOR.
     expect(check(requirement("phone", "+971 4 123 4567", { mandatory: false }), "Call 04 123 4567")).toMatchObject({ status: "failed", severity: "major" });
     expect(check(requirement("price", "AED 1,299"), "Only 1,299 AED"))

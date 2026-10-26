@@ -58,15 +58,49 @@ export function normalizeWords(value: string): string {
     .trim();
 }
 
-export function textMatches(expected: string, detected: string): boolean {
-  const a = normalizeWords(expected);
-  return a.length > 0 && a === normalizeWords(detected);
+/** -our words written -or in US English ("colour" / "color"), with what follows ("colourful", "favourite"). */
+const OUR_WORDS = ["colour", "favour", "flavour", "honour", "harbour", "neighbour", "behaviour", "labour", "humour", "rumour", "savour", "endeavour", "vapour", "armour", "parlour", "odour", "vigour", "splendour"];
+/** -re words written -er in US English ("centre" / "center"). */
+const RE_WORDS = ["centre", "theatre", "metre", "litre", "fibre", "calibre", "spectre", "sombre", "lustre", "sabre", "kilometre", "centimetre", "millimetre"];
+/** Words whose l is doubled in UK English before -ed / -ing / -er ("travelled" / "traveled"). */
+const DOUBLE_L = ["travel", "cancel", "label", "model", "fuel", "signal", "level", "counsel", "marvel", "total", "dial", "jewel", "channel", "tunnel", "panel", "equal", "pedal", "shovel", "snorkel", "duel"];
+/** Other UK spellings and their US form. */
+const UK_US: Record<string, string> = {
+  programme: "program", programmes: "programs", catalogue: "catalog", catalogues: "catalogs", dialogue: "dialog", dialogues: "dialogs",
+  grey: "gray", jewellery: "jewelry", aluminium: "aluminum", licence: "license", licences: "licenses", defence: "defense",
+  offence: "offense", enrolment: "enrollment", enrol: "enroll", fulfil: "fulfill", fulfilment: "fulfillment", practise: "practice",
+  ageing: "aging", cosy: "cozy", mould: "mold", pyjamas: "pajamas", plough: "plow", tyre: "tire", tyres: "tires",
+};
+
+/**
+ * One word in a single spelling for comparing, so UK and US spellings are the same word ("customised" /
+ * "customized", "colour" / "color", "centre" / "center", "travelling" / "traveling"). Only for comparing:
+ * what the content shows is always reported as written. Real misspellings are still different words.
+ */
+function oneSpelling(word: string): string {
+  if (Object.hasOwn(UK_US, word)) return UK_US[word];
+  const our = OUR_WORDS.find((w) => word.startsWith(w));
+  if (our) return `${our.slice(0, -2)}r${word.slice(our.length)}`;
+  const re = RE_WORDS.find((w) => word === w || word === `${w}s`);
+  if (re) return `${re.slice(0, -2)}er${word.slice(re.length)}`;
+  const doubled = DOUBLE_L.find((w) => new RegExp(`^${w}l(?:ed|ing|er|ers)$`).test(word));
+  if (doubled) return doubled + word.slice(doubled.length + 1);
+  // -ise / -yse ("organise", "organisation", "analysed"): written with z in US English.
+  return word.replace(/^(\p{L}{2,}[iy])s(e|es|ed|ing|ation|ations|er|ers)$/u, "$1z$2");
 }
 
-/** Is `needle` present in `haystack` as whole words (case, punctuation and spacing ignored)? */
+/** normalizeWords text with every word in one spelling (oneSpelling). */
+const oneSpellingWords = (normalised: string) => normalised.split(" ").map(oneSpelling).join(" ");
+
+export function textMatches(expected: string, detected: string): boolean {
+  const a = normalizeWords(expected);
+  return a.length > 0 && oneSpellingWords(a) === oneSpellingWords(normalizeWords(detected));
+}
+
+/** Is `needle` present in `haystack` as whole words (case, punctuation, spacing and UK / US spelling ignored)? */
 export function containsText(haystack: string, needle: string): boolean {
   const n = normalizeWords(needle);
-  return n.length > 0 && ` ${normalizeWords(haystack)} `.includes(` ${n} `);
+  return n.length > 0 && ` ${oneSpellingWords(normalizeWords(haystack))} `.includes(` ${oneSpellingWords(n)} `);
 }
 
 type Word = { key: string; raw: string; start: number; end: number };
@@ -84,8 +118,15 @@ function wordsOf(value: string): Word[] {
   return out;
 }
 
-/** The same word as written, capitals included — "&" and "and" are the same word either way. */
-const sameAsWritten = (a: Word, b: Word) => a.raw === b.raw || a.raw === "&" || b.raw === "&";
+/** Where a word has capitals: its first letter, and any after it ("Customised" and "Customized" alike). */
+const capitalsOf = (raw: string) => [raw[0] !== raw[0].toLowerCase(), raw.slice(1) !== raw.slice(1).toLowerCase()].join();
+
+/**
+ * The same word as written, capitals included — "&" and "and" are the same word either way, and a UK / US
+ * spelling of it counts as written when its capitals are the same.
+ */
+const sameAsWritten = (a: Word, b: Word) =>
+  a.raw === b.raw || a.raw === "&" || b.raw === "&" || (a.key !== b.key && capitalsOf(a.raw) === capitalsOf(b.raw));
 
 /**
  * For wording that must be copied exactly: when `needle` is in `haystack` with
@@ -102,7 +143,7 @@ export function capitalizationDifference(haystack: string, needle: string): stri
   let different: string | null = null;
   for (let i = 0; i + want.length <= found.length; i++) {
     const span = found.slice(i, i + want.length);
-    if (!span.every((w, j) => w.key === want[j].key)) continue;
+    if (!span.every((w, j) => oneSpelling(w.key) === oneSpelling(want[j].key))) continue;
     // The same (perhaps bar the very first letter, the start of a line).
     if (span.every((w, j) => sameAsWritten(w, want[j]) || (j === 0 && w.raw.slice(1) === want[j].raw.slice(1)))) return null;
     const letters = span
@@ -209,7 +250,7 @@ const numbersIn = (normalised: string) => (normalised.match(/\d+(?:[.,]\d+)?/g) 
 export function findName(text: string, name: string): NameCheck {
   if (containsText(text, name) || containsText(withoutPossessives(text), name)) return { status: "exact" };
   const target = normalizeWords(name);
-  const compact = target.replace(/ /g, "");
+  const compact = oneSpellingWords(target).replace(/ /g, "");
   if (!compact) return { status: "absent" };
   const words = normalizeWords(text).split(" ").filter(Boolean);
   const n = target.split(" ").length;
@@ -218,7 +259,7 @@ export function findName(text: string, name: string): NameCheck {
   for (let size = Math.max(1, n - 1); size <= n + 1; size++) {
     for (let i = 0; i + size <= words.length; i++) {
       const window = words.slice(i, i + size).join(" ");
-      const distance = editDistance(window.replace(/ /g, ""), compact);
+      const distance = editDistance(oneSpellingWords(window).replace(/ /g, ""), compact);
       if (distance <= limit && (!best || distance < best.distance)) best = { found: window, distance };
     }
   }

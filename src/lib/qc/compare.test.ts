@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  capitalizationDifference,
   colorDifference,
   containsText,
   contrastRatio,
@@ -32,6 +33,34 @@ describe("comparison helpers", () => {
     expect(textMatches("", "")).toBe(false);
     expect(containsText("Book now — Skybook’s summer sale ends soon", "skybooks summer sale")).toBe(true);
     expect(containsText("Summer salesman", "summer sale")).toBe(false);
+  });
+
+  it("UK and US spellings are the same word; the content is still reported as written", () => {
+    for (const [uk, us] of [
+      ["Customised Packages", "Customized Packages"],
+      ["Organisation", "Organization"],
+      ["analysed", "analyzed"],
+      ["Colourful favourites", "Colorful favorites"],
+      ["City Centre", "City Center"],
+      ["Travelled", "Traveled"],
+      ["travellers", "travelers"],
+      ["Holiday Programme", "Holiday Program"],
+      ["grey", "gray"],
+      ["Jewellery", "Jewelry"],
+    ]) {
+      expect([uk, textMatches(us, uk)]).toEqual([uk, true]);
+      expect([uk, containsText(`Our ${uk} today`, us)]).toEqual([uk, true]);
+      expect([uk, findName(`Our ${uk} today`, us)]).toEqual([uk, { status: "exact" }]);
+    }
+    // Different words stay different: "filled" isn't "filed", "four" isn't "for", "tour" isn't "tor".
+    expect(textMatches("filed", "filled")).toBe(false);
+    expect(textMatches("for", "four")).toBe(false);
+    expect(textMatches("tor", "tour")).toBe(false);
+    // A real typo is still a misspelling, shown as written.
+    expect(findName("Our Custmised Packages", "Customized Packages")).toEqual({ status: "misspelt", found: "custmised packages" });
+    // Capitals: the other spelling with the same capitals is no capitals difference; other capitals still are.
+    expect(capitalizationDifference("Customised Packages", "Customized Packages")).toBeNull();
+    expect(capitalizationDifference("Customised packages", "Customized Packages")).toBe("Customised packages");
   });
 
   it("names: exact, close misspellings, and absent", () => {

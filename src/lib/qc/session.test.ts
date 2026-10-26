@@ -128,6 +128,41 @@ describe("QC session rules (Storage faked)", () => {
       expect(await upload("content", "reel2.mp4", MP4, "video/mp4")).toMatchObject({ ok: false, error: /up to 1 file/ });
     });
 
+    it("Replace: a full design area still takes the replacement, which is checked like any upload; the original stays until it's removed", async () => {
+      await changeContentType(db, session, "reel_short", T0);
+      session = (await findCurrentSession(db, acme, dee.id, T0))!;
+      expect(await upload("content", "reel.mp4", MP4, "video/mp4")).toMatchObject({ ok: true });
+      const [old] = await listFiles(db, session.id);
+      // Without saying what it replaces, the one-video area is full.
+      expect(await prepareUpload(db, fake.bucket, session, { kind: "content", name: "fixed.mp4", size: MP4.length, type: "video/mp4" }, LIMIT, T0)).toMatchObject({ ok: false, error: /up to 1 file/ });
+      // Replacing it: room for the new file; the old one is still there (the page removes it once the new one is confirmed).
+      const prepared = await prepareUpload(db, fake.bucket, session, { kind: "content", name: "fixed.mp4", size: MP4.length, type: "video/mp4", replacing: old.id }, LIMIT, T0);
+      if (!prepared.ok) throw new Error(prepared.error);
+      fake.browserPut(prepared.uploadUrl, MP4);
+      expect(await confirmUpload(db, fake.bucket, session, prepared.fileId, LIMIT, T0)).toMatchObject({ ok: true });
+      expect((await listFiles(db, session.id)).map((f) => f.file_name).sort()).toEqual(["fixed.mp4", "reel.mp4"]);
+    });
+
+    it("Replace: a bad replacement is refused and deleted — the original is untouched", async () => {
+      expect(await upload("content", "poster.png", PNG, "image/png")).toMatchObject({ ok: true });
+      const [old] = await listFiles(db, session.id);
+      const prepared = await prepareUpload(db, fake.bucket, session, { kind: "content", name: "fixed.png", size: EXE.length, type: "image/png", replacing: old.id }, LIMIT, T0);
+      if (!prepared.ok) throw new Error(prepared.error);
+      fake.browserPut(prepared.uploadUrl, EXE);
+      expect(await confirmUpload(db, fake.bucket, session, prepared.fileId, LIMIT, T0)).toMatchObject({ ok: false });
+      expect((await listFiles(db, session.id, "any")).map((f) => f.id)).toEqual([old.id]);
+      expect([...fake.files.keys()]).toEqual([old.storage_path]);
+    });
+
+    it("Replace: only a file of the same area in this session can be replaced", async () => {
+      expect(await upload("information", "brief.pdf", PDF, "application/pdf")).toMatchObject({ ok: true });
+      const [brief] = await listFiles(db, session.id);
+      const asDesign = await prepareUpload(db, fake.bucket, session, { kind: "content", name: "fixed.png", size: 10, type: "image/png", replacing: brief.id }, LIMIT, T0);
+      expect(asDesign).toEqual({ ok: false, error: "The file you're replacing is no longer here. Upload the new one instead." });
+      const unknown = await prepareUpload(db, fake.bucket, session, { kind: "content", name: "fixed.png", size: 10, type: "image/png", replacing: "0b6d0f0e-8c1a-4a57-9a4e-2a6f1d6c9e99" }, LIMIT, T0);
+      expect(unknown).toMatchObject({ ok: false });
+    });
+
     it("an upload that never arrived is refused and cleaned up", async () => {
       const prepared = await prepareUpload(db, fake.bucket, session, { kind: "content", name: "a.png", size: 10, type: "" }, LIMIT, T0);
       if (!prepared.ok) throw new Error(prepared.error);

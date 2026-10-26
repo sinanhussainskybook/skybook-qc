@@ -2,7 +2,7 @@
 
 import { useActionState, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { FileText, Film, Image as ImageIcon, Upload, X } from "lucide-react";
+import { FileText, Film, Image as ImageIcon, RefreshCw, Upload, X } from "lucide-react";
 import {
   cancelUploadAction,
   confirmUploadAction,
@@ -20,6 +20,10 @@ import { cn } from "@/lib/utils";
  *   quick check here → server checks the request and hands out a one-time
  *   upload link for a path it chose → the file goes straight to Supabase
  *   Storage → server checks what actually arrived (a bad file is deleted).
+ *
+ * Replace (designs): the new file goes through the same steps first; the old
+ * one is removed only once the new one is confirmed, so a failed replacement
+ * never loses the original.
  */
 
 export type FileView = { id: string; file_name: string; mime_type: string; file_size: number };
@@ -77,19 +81,25 @@ export function FileUploader({
   const input = useRef<HTMLInputElement>(null);
   const [uploads, setUploads] = useState<Upload[]>([]);
   const [removeState, removeAction, removing] = useActionState(removeFileAction, {});
+  const [replaceError, setReplaceError] = useState<string | null>(null);
+  const replaceCount = useRef(0);
   const busy = uploads.some((u) => u.step !== "failed");
   const full = files.length >= maxFiles;
 
   const update = (key: string, change: Partial<Upload>) =>
     setUploads((list) => list.map((u) => (u.key === key ? { ...u, ...change } : u)));
 
-  async function uploadOne(file: File, key: string) {
-    const fail = (error: string) => update(key, { step: "failed", error });
+  /** Uploads one file; true once the server has confirmed it. */
+  async function uploadOne(file: File, key: string, replacing?: string): Promise<boolean> {
+    const fail = (error: string) => {
+      update(key, { step: "failed", error });
+      return false;
+    };
 
     const quick = checkUploadRequest(file, kind, contentType, generalLimitBytes);
     if (!quick.ok) return fail(quick.error);
 
-    const prepared = await prepareUploadAction({ sessionId, kind, name: file.name, size: file.size, type: file.type }).catch(
+    const prepared = await prepareUploadAction({ sessionId, kind, name: file.name, size: file.size, type: file.type, replacing }).catch(
       () => ({ ok: false as const, error: "The upload couldn't start. Please try again." })
     );
     if (!prepared.ok) return fail(prepared.error);
@@ -107,7 +117,32 @@ export function FileUploader({
     }));
     if (!confirmed.ok) return fail(confirmed.error ?? "The file couldn't be checked.");
     setUploads((list) => list.filter((u) => u.key !== key));
+    return true;
   }
+
+  /** Replace: upload and confirm the new file first, then remove the old one — never the other way round. */
+  async function onReplace(old: FileView, list: FileList | null) {
+    const file = list?.[0];
+    if (!file) return;
+    const key = `replace-${++replaceCount.current}-${file.name}`;
+    setReplaceError(null);
+    setUploads((current) => [
+      ...current.filter((u) => u.step !== "failed"),
+      { key, name: `${file.name} (replacing ${old.file_name})`, step: "sending", progress: 0 },
+    ]);
+    if (await uploadOne(file, key, old.id)) {
+      const form = new FormData();
+      form.set("sessionId", sessionId);
+      form.set("fileId", old.id);
+      const removed = await removeFileAction({}, form).catch(() => ({ error: "it couldn't be reached" }));
+      if (removed.error) {
+        setReplaceError(`The new file was added, but ${old.file_name} couldn't be removed (${removed.error}). Remove it before checking again.`);
+      }
+    }
+    router.refresh();
+  }
+
+  const dismiss = (key: string) => setUploads((list) => list.filter((u) => u.key !== key));
 
   async function onPick(list: FileList | null) {
     if (!list || list.length === 0) return;
@@ -143,6 +178,30 @@ export function FileUploader({
                     {formatLabelForMime(file.mime_type)} · {formatBytes(file.file_size)}
                   </span>
                 </span>
+                {kind === "content" && (
+                  <label
+                    className={cn(
+                      buttonVariants({ variant: "ghost", size: "sm" }),
+                      "cursor-pointer rounded-full hover:text-primary focus-within:ring-3 focus-within:ring-ring/50",
+                      (!storageReady || removing || busy) && "pointer-events-none opacity-50"
+                    )}
+                    aria-label={`Replace ${file.file_name}`}
+                  >
+                    <RefreshCw aria-hidden />
+                    <span className="hidden @sm:inline">Replace</span>
+                    <input
+                      type="file"
+                      accept={acceptList(kind, contentType)}
+                      disabled={!storageReady || removing || busy}
+                      onChange={(event) => {
+                        const picked = event.target.files;
+                        void onReplace(file, picked);
+                        event.target.value = "";
+                      }}
+                      className="sr-only"
+                    />
+                  </label>
+                )}
                 <form action={removeAction}>
                   <input type="hidden" name="sessionId" value={sessionId} />
                   <input type="hidden" name="fileId" value={file.id} />
@@ -177,8 +236,15 @@ export function FileUploader({
             >
               <div className="flex items-center justify-between gap-3">
                 <span className="min-w-0 truncate font-medium">{upload.name}</span>
-                <span className={cn("shrink-0 text-xs", upload.step === "failed" ? "text-fail" : "text-muted-foreground")}>
-                  {upload.step === "sending" ? `Uploading ${upload.progress}%` : upload.step === "checking" ? "Checking…" : "Not uploaded"}
+                <span className="flex shrink-0 items-center gap-1">
+                  <span className={cn("text-xs", upload.step === "failed" ? "text-fail" : "text-muted-foreground")}>
+                    {upload.step === "sending" ? `Uploading ${upload.progress}%` : upload.step === "checking" ? "Checking…" : "Not uploaded"}
+                  </span>
+                  {upload.step === "failed" && (
+                    <Button type="button" variant="ghost" size="icon-xs" className="rounded-full" onClick={() => dismiss(upload.key)} aria-label={`Dismiss ${upload.name}`}>
+                      <X aria-hidden />
+                    </Button>
+                  )}
                 </span>
               </div>
               {upload.step === "sending" && (
@@ -190,6 +256,12 @@ export function FileUploader({
             </li>
           ))}
         </ul>
+      )}
+
+      {replaceError && (
+        <p role="alert" className="text-sm font-medium text-fail">
+          {replaceError}
+        </p>
       )}
 
       {removeState.error && (

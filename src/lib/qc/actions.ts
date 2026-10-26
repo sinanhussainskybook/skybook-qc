@@ -243,6 +243,8 @@ export async function prepareUploadAction(input: {
   name: string;
   size: number;
   type: string;
+  /** A file of the same kind this upload replaces: the page removes it only after the new one is confirmed. */
+  replacing?: string;
 }): Promise<PrepareResult> {
   const found = await findSessionForUser(input?.sessionId);
   if (!found) return { ok: false, error: MESSAGES.notAvailable };
@@ -255,7 +257,13 @@ export async function prepareUploadAction(input: {
       getDatabase(),
       storage,
       found.session,
-      { kind: input.kind, name: String(input.name ?? ""), size: Number(input.size), type: String(input.type ?? "") },
+      {
+        kind: input.kind,
+        name: String(input.name ?? ""),
+        size: Number(input.size),
+        type: String(input.type ?? ""),
+        replacing: isUuid(input.replacing) ? input.replacing : undefined,
+      },
       getUploadLimitBytes(),
       new Date()
     );

@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { ChevronDown, FileDown } from "lucide-react";
 import { buttonVariants } from "@/components/ui/button";
 import { CATEGORIES, severityLabel, type Finding, type Severity } from "@/lib/qc/findings";
@@ -43,7 +44,20 @@ const short = (text: string | undefined, max = 140) => (text && text.length > ma
  * result are computed elsewhere and unchanged; every check's full detail stays
  * in "All checks in detail" further down the page.
  */
-export function Scoreboard({ board, findings = [], mock = false, reportHref }: { board: Board; findings?: Finding[]; mock?: boolean; reportHref?: string }) {
+export function Scoreboard({
+  board,
+  findings = [],
+  mock = false,
+  reportHref,
+  nextStep,
+}: {
+  board: Board;
+  findings?: Finding[];
+  mock?: boolean;
+  reportHref?: string;
+  /** Shown under "Issues to fix" when there is something to fix: how to check the fixed design. */
+  nextStep?: ReactNode;
+}) {
   const shown = resultDisplay(board);
   if (!shown) {
     return <p className="rounded-xl bg-muted/60 px-4 py-3 text-sm text-muted-foreground">No result yet: none of the checks could be verified.</p>;
@@ -153,6 +167,7 @@ export function Scoreboard({ board, findings = [], mock = false, reportHref }: {
             ))}
           </ol>
         )}
+        {toFix.length > 0 && nextStep}
         {suggestions.length > 0 && (
           <Collapsed summary={`${suggestions.length} optional suggestion${suggestions.length === 1 ? "" : "s"}`}>
             <ul className="space-y-1.5 text-sm">

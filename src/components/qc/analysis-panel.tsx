@@ -6,6 +6,7 @@ import { CircleAlert, CircleCheck, Cpu, FlaskConical, LoaderCircle, Sparkles } f
 import { analysisStatusAction, startAnalysisAction, type AnalysisStatusView, type QcFormState } from "@/lib/qc/actions";
 import type { RunKind } from "@/lib/db/analysis-runs";
 import { BRIEF_UNCLEAR_MESSAGE } from "@/lib/qc/requirements";
+import { expectedTime, progressLine } from "@/lib/qc/progress-text";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 
@@ -13,6 +14,9 @@ export const MOCK_BADGE = "Sample data — not real AI";
 export const LOCAL_BADGE = "Local AI — runs on this server";
 export const LOCAL_SLOW = "Local AI can take several minutes per design.";
 export const GEMINI_BADGE = "Gemini (Google AI Studio)";
+/** The way forward once a check's analysis runs are used up. */
+export const RUNS_USED_UP =
+  "This check has used all its analysis runs. To check again, press Start over (next to Check Design): it deletes this check's brief, design and result (your company details stay), then upload them again.";
 const POLL_MS = 2_500;
 const active = (s?: string) => s === "queued" || s === "processing";
 
@@ -156,8 +160,7 @@ export function AnalysisPanel({
             <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${percent}%` }} />
           </div>
           <p className="text-xs text-muted-foreground">
-            {run.total > 0 ? `${run.done} of ${run.total} steps` : "Preparing"} · you can leave this page; it carries on.
-            {run.provider === "local" ? ` ${LOCAL_SLOW}` : ""}
+            {progressLine(run, words.working)} · {expectedTime(kind, run.provider)} You can leave this page; it carries on.
           </p>
         </div>
       )}
@@ -198,7 +201,7 @@ export function AnalysisPanel({
           {state.error}
         </p>
       )}
-      {runsLeft === 0 && <p className="text-xs text-muted-foreground">This session has used all its analysis runs.</p>}
+      {runsLeft === 0 && <p className="text-xs text-muted-foreground">{RUNS_USED_UP}</p>}
     </div>
   );
 }

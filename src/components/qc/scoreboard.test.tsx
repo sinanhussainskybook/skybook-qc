@@ -44,6 +44,14 @@ describe("Results page — issues to fix", () => {
     for (const [, classes] of numbers) expect(classes.split(" ")).not.toContain("hidden");
   });
 
+  it("the next step (checking a fixed design) shows under the issues — and only when there is something to fix", () => {
+    const next = <p>NEXT STEP</p>;
+    const withIssues = visible(renderToStaticMarkup(<Scoreboard board={scoreFindings(issues())} findings={issues()} nextStep={next} />));
+    expect(withIssues.indexOf("NEXT STEP")).toBeGreaterThan(withIssues.indexOf("Issues to fix"));
+    const clean = [f("brief", "passed", "critical", { title: "Price" })];
+    expect(visible(renderToStaticMarkup(<Scoreboard board={scoreFindings(clean)} findings={clean} nextStep={next} />))).not.toContain("NEXT STEP");
+  });
+
   it("something missing reads 'Missing: not on the design', never 'Found: Not found'", () => {
     const text = render(issues());
     expect(text).toContain("Missing not on the design");

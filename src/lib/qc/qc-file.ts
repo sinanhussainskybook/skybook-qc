@@ -42,8 +42,10 @@ export type FileFormat = keyof typeof FILE_FORMATS;
 /** The two upload areas on the page. */
 export type FileKind = "information" | "content";
 
+// Old .doc / .xls briefs aren't accepted: they can't be read, so they're refused at upload (oldOffice) rather
+// than failing after it.
 export const INFORMATION_FORMATS: readonly FileFormat[] = [
-  "pdf", "doc", "docx", "xls", "xlsx", "txt", "jpeg", "png", "webp",
+  "pdf", "docx", "xlsx", "txt", "jpeg", "png", "webp",
 ];
 const VISUAL_CONTENT_FORMATS: readonly FileFormat[] = ["jpeg", "png", "webp", "pdf"];
 const VIDEO_CONTENT_FORMATS: readonly FileFormat[] = ["mp4", "mov", "webm"];
@@ -97,6 +99,8 @@ export const QC_FILE_MESSAGES = {
     "The file's name or type doesn't match what's inside it. Save it again in its proper format and retry.",
   macros: "Office files with macros can't be uploaded. Save it as a normal .docx or .xlsx file.",
   tooMany: (count: number) => `You can upload up to ${count} file${count === 1 ? "" : "s"} here. Remove one first.`,
+  oldOffice: "Old .doc and .xls files can't be read. Save it as .docx or .xlsx and upload that.",
+  replaceGone: "The file you're replacing is no longer here. Upload the new one instead.",
 } as const;
 
 export type Checked<T> = { ok: true; value: T } | { ok: false; error: string };
@@ -126,7 +130,10 @@ export function checkUploadRequest(
   const format = allowedFormats(kind, contentType).find((f) =>
     (FILE_FORMATS[f].extensions as readonly string[]).includes(ext)
   );
-  if (!format) return { ok: false, error: QC_FILE_MESSAGES.wrongType(kind, contentType) };
+  if (!format) {
+    if (kind === "information" && (ext === "doc" || ext === "xls")) return { ok: false, error: QC_FILE_MESSAGES.oldOffice };
+    return { ok: false, error: QC_FILE_MESSAGES.wrongType(kind, contentType) };
+  }
 
   const declared = file.type.split(";")[0].trim().toLowerCase();
   const acceptableDeclared = ["", "application/octet-stream", FILE_FORMATS[format].mime];

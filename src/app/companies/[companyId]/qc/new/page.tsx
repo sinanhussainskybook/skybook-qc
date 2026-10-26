@@ -7,6 +7,7 @@ import { AnalysisPanel } from "@/components/qc/analysis-panel";
 import { CategoryChecks } from "@/components/qc/category-checks";
 import { CategoryScores, resultWaitingText, Scoreboard } from "@/components/qc/scoreboard";
 import { DesignPreviews } from "@/components/qc/design-preview";
+import { FILES_BOX_ID, FixedDesignStep } from "@/components/qc/fixed-design-step";
 import { FileUploader } from "@/components/qc/file-uploader";
 import { GeminiFreeTierNotice } from "@/components/qc/gemini-free-tier-notice";
 import { PlatformCheck } from "@/components/qc/platform-check";
@@ -269,7 +270,7 @@ export default async function StartQcPage({ params }: PageProps<"/companies/[com
           >
             <DesignPreviews previews={previews} markers={markers} />
             {/* Open while the check is running or out of date, so its progress and Check again stay in view. */}
-            <details className="group rounded-2xl bg-card shadow-sm ring-1 ring-border" open={!board || analysisView.stale}>
+            <details id={FILES_BOX_ID} className="group scroll-mt-24 rounded-2xl bg-card shadow-sm ring-1 ring-border" open={!board || analysisView.stale}>
               <summary className="flex cursor-pointer list-none items-center gap-3 px-4 py-3">
                 <span className="min-w-0 flex-1">
                   <span className="block text-sm font-semibold">Files and Check Design</span>
@@ -285,7 +286,13 @@ export default async function StartQcPage({ params }: PageProps<"/companies/[com
               {noRequirements ? (
                 <p className="rounded-xl bg-revision-soft px-4 py-3 text-sm font-medium text-revision">{READINESS_MESSAGES.requirements}</p>
               ) : board ? (
-                <Scoreboard board={board} findings={findings!} mock={analysisView.detections?.source === "mock"} reportHref={`/companies/${company.id}/qc/report`} />
+                <Scoreboard
+                  board={board}
+                  findings={findings!}
+                  mock={analysisView.detections?.source === "mock"}
+                  reportHref={`/companies/${company.id}/qc/report`}
+                  nextStep={<FixedDesignStep />}
+                />
               ) : (
                 <p className="rounded-xl bg-muted/60 px-4 py-3 text-sm text-muted-foreground">{resultWaitingText(analysisView.analysis.state)}</p>
               )}

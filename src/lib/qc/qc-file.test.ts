@@ -6,6 +6,7 @@ import {
   checkFormatBytes,
   checkUploadedFile,
   checkUploadRequest,
+  formatsLabel,
   maxFiles,
   QC_FILE_MESSAGES,
   VIDEO_MAX_BYTES,
@@ -36,10 +37,11 @@ describe("content types", () => {
 describe("which files each area accepts", () => {
   it("Upload Information: documents, spreadsheets, text and images — whatever the content type", () => {
     for (const type of CONTENT_TYPES) {
-      expect(allowedFormats("information", type.value)).toEqual([
-        "pdf", "doc", "docx", "xls", "xlsx", "txt", "jpeg", "png", "webp",
-      ]);
+      expect(allowedFormats("information", type.value)).toEqual(["pdf", "docx", "xlsx", "txt", "jpeg", "png", "webp"]);
     }
+    // The list shown beside the button matches what can actually be read: no old DOC / XLS.
+    expect(formatsLabel("information", "design_poster")).toBe("PDF, DOCX, XLSX, TXT, JPG, PNG, WEBP");
+    expect(acceptList("information", "design_poster")).not.toMatch(/\.doc,|\.xls,|msword|ms-excel/);
   });
 
   it("Upload Content follows the content type", () => {
@@ -59,12 +61,23 @@ describe("which files each area accepts", () => {
 
 describe("before upload: name, type and size", () => {
   it("accepts each allowed type with a matching name", () => {
-    for (const name of ["brief.pdf", "brief.doc", "brief.docx", "sheet.xls", "sheet.xlsx", "notes.txt", "ref.jpg", "ref.JPEG", "ref.png", "ref.webp"]) {
+    for (const name of ["brief.pdf", "brief.docx", "sheet.xlsx", "notes.txt", "ref.jpg", "ref.JPEG", "ref.png", "ref.webp"]) {
       expect(checkUploadRequest(req(name), "information", "design_poster", LIMIT).ok, name).toBe(true);
     }
     for (const name of ["reel.mp4", "reel.MOV", "reel.webm"]) {
       expect(checkUploadRequest(req(name), "content", "reel_short", LIMIT).ok, name).toBe(true);
     }
+  });
+
+  it("refuses old .doc / .xls briefs at upload, saying how to fix it (they can't be read)", () => {
+    for (const name of ["brief.doc", "sheet.xls", "BRIEF.DOC"]) {
+      expect(checkUploadRequest(req(name), "information", "design_poster", LIMIT), name).toEqual({
+        ok: false,
+        error: "Old .doc and .xls files can't be read. Save it as .docx or .xlsx and upload that.",
+      });
+    }
+    // In the design area they're simply not accepted, as before.
+    expect(checkUploadRequest(req("brief.doc"), "content", "design_poster", LIMIT)).toMatchObject({ ok: false, error: /This area accepts/ });
   });
 
   it("rejects types the area doesn't accept, and anything executable or web", () => {

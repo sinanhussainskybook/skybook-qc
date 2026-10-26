@@ -218,7 +218,8 @@ export async function prepareUpload(
   db: Database,
   storage: QcStorage,
   session: QcSession,
-  request: { kind: FileKind; name: string; size: number; type: string },
+  /** `replacing`: the id of a file of the same kind this upload will replace (removed only once the new one is confirmed). */
+  request: { kind: FileKind; name: string; size: number; type: string; replacing?: string },
   generalLimitBytes: number,
   now: Date
 ): Promise<PrepareResult> {
@@ -227,8 +228,15 @@ export async function prepareUpload(
   const plan = checkUploadRequest(request, request.kind, session.content_type, generalLimitBytes);
   if (!plan.ok) return plan;
 
+  // A replacement takes the old file's place, so a full area still has room for it.
+  let replacingOne = false;
+  if (request.replacing) {
+    const old = (await listFiles(db, session.id)).find((f) => f.id === request.replacing && f.kind === request.kind);
+    if (!old) return { ok: false, error: QC_FILE_MESSAGES.replaceGone };
+    replacingOne = true;
+  }
   const limit = maxFiles(request.kind, session.content_type);
-  if ((await countFiles(db, session.id, request.kind)) >= limit) {
+  if ((await countFiles(db, session.id, request.kind)) - (replacingOne ? 1 : 0) >= limit) {
     return { ok: false, error: QC_FILE_MESSAGES.tooMany(limit) };
   }
 

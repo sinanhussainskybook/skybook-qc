@@ -414,7 +414,8 @@ describe("Start QC page", () => {
       countRuns.mockResolvedValue(5);
       const text = await page();
       expect(countRuns).toHaveBeenCalledWith(expect.anything(), SESSION, "content");
-      expect(text).toContain("This session has used all its analysis runs.");
+      // The way forward is said plainly: Start over, and what it deletes.
+      expect(text).toContain("This check has used all its analysis runs. To check again, press Start over (next to Check Design): it deletes this check's brief, design and result (your company details stay), then upload them again.");
       expect(text.match(/used all its analysis runs/g)).toHaveLength(1); // the design panel only
       expect(text).toContain("Read again");
       expect(text).not.toContain("Analyse again");
@@ -450,7 +451,8 @@ describe("Start QC page", () => {
       expect(text).not.toMatch(NO_RESULT_BANNER);
       expect(text).not.toContain("Download QC report");
       expect(text).toContain("Checking the design…");
-      expect(text).toContain("2 of 4 steps");
+      // The step it's on, by name, and how long to expect (the sample provider is quick).
+      expect(text).toContain("Step 3 of 4: Reading text · Sample data: a few seconds. You can leave this page; it carries on.");
       expect(text).toContain("Sample data — not real AI");
       expect(text).toContain("The content is being analysed");
     });

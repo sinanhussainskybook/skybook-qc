@@ -75,12 +75,28 @@ describe("dashboard", () => {
     const html = renderToStaticMarkup(await DashboardPage());
     expect(html).toContain('href="/companies/c1"');
     expect(html).toContain('href="/companies/c2"');
-    expect(html).toContain("Real estate · Dubai, UAE");
+    // The full type (never cut to one line) and the place as its own chip.
+    expect(html).toMatch(/line-clamp-2[^"]*">Real estate<\/span>/);
+    expect(html).toMatch(/rounded-full[^"]*">Dubai, UAE<\/span>/);
     expect(html).toContain("Inactive");
-    // Each card is white (bg-card), so it stands out from the blue-grey panel.
-    const cardClasses = (html.match(/<a [^>]*href="\/companies\/c\d"[^>]*>/g) ?? []).map((tag) => tag.match(/class="([^"]*)"/)![1].split(" "));
-    expect(cardClasses).toHaveLength(2);
-    for (const classes of cardClasses) expect(classes).toContain("bg-card");
+    // One company per row, the whole row one white (bg-card) link, so it stands out from the panel.
+    const rows = (html.match(/<a class="[^"]*" href="\/companies\/c\d"/g) ?? []).map((tag) => tag.match(/class="([^"]*)"/)![1].split(" "));
+    expect(rows).toHaveLength(2);
+    for (const classes of rows) expect(classes).toContain("bg-card");
+  });
+
+  it("Home's panel is see-through frosted glass (every company sits on its own white row)", async () => {
+    const html = renderToStaticMarkup(await DashboardPage());
+    expect(html).toMatch(/class="content-panel [^"]*content-panel--glass"/);
+  });
+
+  it("each row ends in a simple arrow — no separate Start QC button", async () => {
+    getCompaniesForCurrentUser.mockResolvedValue({ user: dee, companies: [company("c1", "Acme"), company("c2", "Globex")] });
+    const html = renderToStaticMarkup(await DashboardPage());
+    expect(html).not.toContain("/qc/new");
+    expect(html).not.toContain("Start QC for");
+    const rows = html.split(/href="\/companies\/c\d"/).slice(1);
+    for (const row of rows) expect(row.slice(0, row.indexOf("</a>"))).toContain("lucide-arrow-up-right");
   });
 
   it("shows each company's own saved logo on its card, and the initial letter for one without", async () => {
@@ -96,7 +112,7 @@ describe("dashboard", () => {
     expect(cards[0]).toContain('src="https://storage.test/sign/c1/a.png"');
     expect(cards[1]).toContain('src="https://storage.test/sign/c2/b.svg"');
     expect(cards[2]).not.toContain("<img");
-    expect(cards[2]).toMatch(/uppercase">I<\/span>/);
+    expect(cards[2]).toMatch(/uppercase[^"]*">I<\/span>/);
   });
 
   it("keeps the page to one question and one list — no role explanations", async () => {

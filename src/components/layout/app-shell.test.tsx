@@ -84,6 +84,17 @@ describe("AppShell", () => {
     expect(html).not.toContain("skyqc-orbit");
   });
 
+  it("the content panel is frosted but readable by default; the see-through glass one only when asked for", () => {
+    const panel = (glass: boolean) =>
+      renderToStaticMarkup(
+        <AppShell user={{ name: "Ada Admin", role: "admin" }} hero={<h1>Title</h1>} glass={glass}>
+          <p>Body</p>
+        </AppShell>
+      ).match(/class="(content-panel[^"]*)"/)![1];
+    expect(panel(false)).not.toContain("content-panel--glass");
+    expect(panel(true)).toContain("content-panel--glass");
+  });
+
   it("no password link in the header (it's on the Users page)", () => {
     expect(html).not.toContain('href="/account/password"');
     expect(render("designer", "/")).not.toContain('href="/account/password"');

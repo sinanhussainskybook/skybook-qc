@@ -114,19 +114,17 @@
 /*
  * The blue abstract theme — visual only.
  *
- * Signed-in pages: the same night navy as the header and hero, deepening
- * into a soft electric-blue glow at the bottom of the window. Fixed, so
- * content scrolls over it; every panel stays light, so text keeps its
- * contrast. The arcs of light are only in the hero, so lines never cross.
+ * Signed-in pages: deep navy lit by soft electric-blue light from the top
+ * right and teal light from the bottom left, behind frosted-glass panels.
+ * Fixed, so content scrolls over it. The arcs of light are only in the hero,
+ * so lines never cross.
  */
 body {
   isolation: isolate;
   background:
-    radial-gradient(1200px 420px at 50% 122%, rgb(37 99 235 / 0.55), transparent 72%),
-    radial-gradient(1600px 520px at 50% 128%, rgb(59 130 246 / 0.25), transparent 75%),
-    radial-gradient(760px 420px at 100% -10%, rgb(59 130 246 / 0.12), transparent 70%),
-    radial-gradient(620px 360px at -5% 30%, rgb(30 64 175 / 0.25), transparent 70%),
-    linear-gradient(180deg, #040a1c 0%, #061538 55%, #0b2a78 100%);
+    radial-gradient(120% 80% at 85% 0%, rgb(29 78 216 / 0.85) 0%, transparent 55%),
+    radial-gradient(90% 70% at 0% 100%, rgb(14 116 144 / 0.75) 0%, transparent 60%),
+    #050b1e;
   background-attachment: fixed;
 }
 
@@ -278,7 +276,9 @@ a.hero-glass:hover {
  * inside it. Every text colour stays at least 4.5:1 on it (muted text 5.4:1,
  * QC colours 4.6:1 or more). Inside it, the primary blue is a touch deeper
  * (5.0:1; white on it 5.9:1), and chips, progress tracks and hairlines are a
- * shade deeper so they still stand out from the surface.
+ * shade deeper so they still stand out from the surface. It is frosted —
+ * 94% opaque with the page blurred behind it — so text placed straight on
+ * it keeps that contrast (muted text about 4.8:1).
  */
 .content-panel {
   --primary: #2158e0;
@@ -286,10 +286,29 @@ a.hero-glass:hover {
   --border: #cdd8e8;
   position: relative;
   border-radius: 1.75rem;
-  background: var(--surface);
+  background: rgb(230 237 246 / 0.94);
   backdrop-filter: blur(14px);
   outline: 1px solid rgb(255 255 255 / 0.7);
   box-shadow: 0 40px 90px -30px rgb(10 30 90 / 0.45), 0 1px 0 rgb(255 255 255 / 0.9) inset;
+}
+
+/*
+ * A see-through frosted-glass panel (Home): only for content that sits on its
+ * own white cards. Text placed straight on the glass is white; inside a white
+ * card (.bg-card) the normal dark text and muted colours come back.
+ */
+.content-panel--glass {
+  --muted-foreground: rgb(255 255 255 / 0.75);
+  --border: rgb(255 255 255 / 0.25);
+  color: #ffffff;
+  background: rgb(255 255 255 / 0.1);
+  outline: 1px solid rgb(255 255 255 / 0.2);
+  box-shadow: 0 40px 90px -30px rgb(0 0 0 / 0.55), 0 1px 0 rgb(255 255 255 / 0.15) inset;
+}
+.content-panel--glass .bg-card {
+  --muted-foreground: #556074;
+  --border: #cdd8e8;
+  color: var(--card-foreground);
 }
 
 /* Glossy electric-blue pill — the primary action on signed-in pages. */

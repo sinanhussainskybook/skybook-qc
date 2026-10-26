@@ -41,6 +41,8 @@ describe("issueMarkers", () => {
 
   it("a missing value, a value read without a position, or no analysis: no circle", () => {
     expect(issueMarkers([issue({ detected: undefined })], texts, ["d1"])).toEqual([]);
+    // "Not found" is never looked for on the design, even if those words happen to be on it.
+    expect(issueMarkers([issue({ detected: "Not found" })], [{ text: "Not found", confidence: 0.9, fileId: "d1", box: box(0.1, 0.1) }], ["d1"])).toEqual([]);
     expect(issueMarkers([issue({ detected: "AED 4,500" })], [{ text: "AED 4,500", confidence: 0.9, fileId: "d1" }], ["d1"])).toEqual([]);
     expect(issueMarkers([issue({ detected: "AED 4,500" })], undefined, ["d1"])).toEqual([]);
   });

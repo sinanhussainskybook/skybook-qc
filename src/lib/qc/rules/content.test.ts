@@ -27,6 +27,26 @@ describe("Content rules", () => {
     expect(phone.suggestedFix).toBe("Replace it with +971 4 123 4567.");
   });
 
+  it("contact details: an EXTRA one beside the approved one is MAJOR, to check it's intended; with no approved one shown it stays CRITICAL", () => {
+    // The approved phone is on the design, and so is another: the other one may be intended (a second branch).
+    const extra = byRule(run({ detections: withText("Call +971 4 123 4567 or +971 4 999 0000") }), "content.contact_details");
+    expect(extra.map((f) => [f.status, f.severity, f.detected]).sort()).toEqual([
+      ["failed", "major", "+971 4 999 0000"],
+      ["passed", "critical", "+971 4 123 4567"],
+    ]);
+    const check = extra.find((f) => f.status === "failed")!;
+    expect(check.suggestedFix).toBe("Check it's intended; if not, remove it.");
+    expect(check.explanation).toMatch(/approved one is also on the design/);
+    // The approved one shown without its country code still counts as shown.
+    const local = byRule(run({ detections: withText("Call 04 123 4567 or +971 4 999 0000") }), "content.contact_details");
+    expect(local.find((f) => f.detected === "+971 4 999 0000")).toMatchObject({ severity: "major" });
+    // Per kind: an approved phone doesn't make an unknown email "intended".
+    const otherKind = byRule(run({ detections: withText("Call +971 4 123 4567", "info@other.com") }), "content.contact_details");
+    expect(otherKind.find((f) => f.title === "Email address")).toMatchObject({ status: "failed", severity: "critical" });
+    // No approved phone anywhere: still CRITICAL — people would be sent to the wrong place.
+    expect(only(run({ detections: withText("Call +971 4 999 0000") }), "content.contact_details")).toMatchObject({ severity: "critical", suggestedFix: "Replace it with +971 4 123 4567." });
+  });
+
   it("contact details: the optional additional phone is an approved number too", () => {
     const withExtra = company({ contact: { phone: "+971 4 123 4567", additional_phone: "+971 4 222 3333", whatsapp: null, email: null, website: null } });
     const findings = byRule(run({ company: withExtra, detections: withText("Call +971 4 222 3333") }), "content.contact_details");

@@ -29,6 +29,8 @@ const titleOf = (title: string) => {
   const [head, ...rest] = title.split(": ");
   return rest.length && rest.join(": ").trim().toLowerCase() === head.trim().toLowerCase() ? head : title;
 };
+/** What a check records when something the brief asks for isn't in the content. */
+const NOT_FOUND = "Not found";
 /** Keeps every line short in the summary (the full text stays in "All checks in detail"). */
 const short = (text: string | undefined, max = 140) => (text && text.length > max ? `${text.slice(0, max - 1).trimEnd()}…` : text);
 
@@ -112,8 +114,9 @@ export function Scoreboard({ board, findings = [], mock = false, reportHref }: {
         ) : (
           <ol className="mt-2 divide-y divide-border">
             {toFix.map((f, i) => (
-              <li key={`${f.ruleId}-${f.fileId ?? ""}-${i}`} className="grid gap-x-4 py-4 sm:grid-cols-[2rem_1fr]">
-                <span className="hidden text-lg font-bold text-primary tabular-nums sm:block" aria-hidden>
+              <li key={`${f.ruleId}-${f.fileId ?? ""}-${i}`} className="grid grid-cols-[1.5rem_1fr] gap-x-3 py-4 sm:grid-cols-[2rem_1fr] sm:gap-x-4">
+                {/* Shown at every width: it matches the numbered circle on the design. */}
+                <span className="text-lg font-bold text-primary tabular-nums" aria-hidden>
                   {i + 1}
                 </span>
                 <div className="min-w-0">
@@ -124,11 +127,18 @@ export function Scoreboard({ board, findings = [], mock = false, reportHref }: {
                     <Marker f={f} />
                   </div>
                   <dl className="mt-2 grid gap-x-4 gap-y-1 text-sm sm:grid-cols-[4.5rem_1fr]">
-                    {f.detected && (
+                    {f.detected === NOT_FOUND ? (
                       <>
-                        <dt className="text-muted-foreground">Found</dt>
-                        <dd className="min-w-0 break-words">{short(f.detected)}</dd>
+                        <dt className="text-muted-foreground">Missing</dt>
+                        <dd className="min-w-0 break-words">not on the design</dd>
                       </>
+                    ) : (
+                      f.detected && (
+                        <>
+                          <dt className="text-muted-foreground">Found</dt>
+                          <dd className="min-w-0 break-words">{short(f.detected)}</dd>
+                        </>
+                      )
                     )}
                     {(f.suggestedFix || f.expected) && (
                       <>

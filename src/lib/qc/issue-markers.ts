@@ -28,6 +28,8 @@ export function issueMarkers(toFix: Finding[], texts: DetectedText[] | undefined
 
   const markers: IssueMarker[] = [];
   toFix.forEach((f, i) => {
+    // Something missing isn't on the design to circle.
+    if (f.detected === "Not found") return;
     // "Found" can list several values ("AED 1,399, AED 1,499"); the first one read on the design is used.
     const values = (f.detected ?? "").split(/,\s+(?=\S)/).map((v) => v.trim()).filter((v) => normalizeWords(v).length >= 2);
     for (const value of values) {

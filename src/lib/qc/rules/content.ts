@@ -62,10 +62,13 @@ const contactRule: Rule<QcContext> = {
         );
         continue;
       }
+      const resultsFor = (value: string) =>
+        approved.map((a) => (kind.key === "phone" ? phonesMatch(a, value) : (kind.key === "email" ? emailsMatch(a, value) : websitesMatch(a, value)) ? "match" : "mismatch"));
+      // An approved one is on the design too (with or without its country code): another one beside it may
+      // well be intended (a second branch, a partner) — to check, not "people sent to the wrong place".
+      const approvedShown = shown.some((value) => resultsFor(value).some((r) => r !== "mismatch"));
       for (const value of shown) {
-        const results = approved.map((a) =>
-          kind.key === "phone" ? phonesMatch(a, value) : (kind.key === "email" ? emailsMatch(a, value) : websitesMatch(a, value)) ? "match" : "mismatch"
-        );
+        const results = resultsFor(value);
         const expected = approved.join(" or ");
         if (results.includes("match")) {
           findings.push(make({ severity: "critical", status: "passed", expected, detected: value, explanation: "Matches the approved contact details." }));
@@ -78,6 +81,17 @@ const contactRule: Rule<QcContext> = {
               detected: value,
               explanation: "The number is right but shown without its country code, so people outside the country can't call it as written.",
               suggestedFix: `Show the number with its country code: ${approved[0]}.`,
+            })
+          );
+        } else if (approvedShown) {
+          findings.push(
+            make({
+              severity: "major",
+              status: "failed",
+              expected,
+              detected: value,
+              explanation: `This extra ${kind.label.toLowerCase()} isn't the company's saved one or the one in the brief. The approved one is also on the design, so this may be intended — check it.`,
+              suggestedFix: "Check it's intended; if not, remove it.",
             })
           );
         } else {

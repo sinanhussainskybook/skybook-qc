@@ -48,6 +48,10 @@ describe("Brief rules", () => {
 
   it("mismatched: misspelt, currency left out, country code left out — MAJOR", () => {
     expect(check(requirement("product_name", "Palm Residence"), "The Palm Residense")).toMatchObject({ status: "failed", severity: "major", detected: "palm residense" });
+    // A misspelt OPTIONAL item counts no more than a missing one: MINOR (a mandatory one's typo stays MAJOR, above).
+    expect(check(requirement("required_text", "Customized Packages", { mandatory: false }), "Customised Packages")).toMatchObject({ status: "failed", severity: "minor", suggestedFix: 'Write it exactly as "Customized Packages".' });
+    // Only typos change: an optional number shown without its country code is still MAJOR.
+    expect(check(requirement("phone", "+971 4 123 4567", { mandatory: false }), "Call 04 123 4567")).toMatchObject({ status: "failed", severity: "major" });
     expect(check(requirement("price", "AED 1,299"), "Only 1,299 AED"))
       .toMatchObject({ status: "passed" });
     const noCurrency = byRule(
@@ -56,6 +60,31 @@ describe("Brief rules", () => {
     )[0];
     expect(noCurrency).toMatchObject({ status: "failed", severity: "critical" }); // $ is a different currency → wrong
     expect(check(requirement("phone", "+971 4 123 4567"), "Call 04 123 4567")).toMatchObject({ status: "failed", severity: "major" });
+  });
+
+  it("CTA: a misspelt CTA is a typo to correct (with the expected wording), never a different or missing CTA", () => {
+    // Read without a role (as Gemini often does): a typo, not "Not found".
+    expect(check(requirement("cta", "Ready for a Snowy Escape?"), "Ready for a Snowy Ecsape?")).toMatchObject({
+      status: "failed",
+      severity: "major",
+      detected: "ready for a snowy ecsape",
+      suggestedFix: 'Write it exactly as "Ready for a Snowy Escape?".',
+    });
+    // Read AS the CTA: still a typo, not a "different CTA" (which would be CRITICAL when mandatory).
+    const asCta = byRule(
+      run({ requirements: [requirement("cta", "Book now")], detections: detections({ texts: [text("Bok now", { role: "cta" })] }) }),
+      "brief.requirement"
+    )[0];
+    expect(asCta).toMatchObject({ status: "failed", severity: "major", detected: "bok now" });
+    // Optional: MINOR, like any optional typo.
+    expect(check(requirement("cta", "Book now", { mandatory: false }), "Bok now")).toMatchObject({ severity: "minor" });
+    // A genuinely different CTA is still WRONG, and none at all still missing.
+    const different = byRule(
+      run({ requirements: [requirement("cta", "Book now")], detections: detections({ texts: [text("Learn more", { role: "cta" })] }) }),
+      "brief.requirement"
+    )[0];
+    expect(different).toMatchObject({ status: "failed", detected: "Learn more" });
+    expect(check(requirement("cta", "Book now"), "Summer sale")).toMatchObject({ status: "failed", severity: "critical", detected: "Not found" });
   });
 
   it("headline: a different headline is wrong", () => {
@@ -112,7 +141,11 @@ describe("Brief rules", () => {
     expect(byRule(price, "brief.unexpected")[0].explanation).toMatch(/price shown differs from the brief — reported under the brief's requirement above/);
     // Wrong optional date (the live Version 1 case: "30 October" instead of "31 October"): one MAJOR, not two.
     const date = run({ requirements: [requirement("date", "31 October 2026", { mandatory: false })], detections: detections({ texts: [text("Offer ends 30 October 2026")] }) });
-    expect(failedFor(date)).toEqual([["brief.requirement.date", "major", "1 other date"]]);
+    // The date actually shown, so the designer sees which one is wrong.
+    expect(failedFor(date)).toEqual([["brief.requirement.date", "major", "30/10/2026"]]);
+    // Several dates: each one listed; one that reads both ways says so.
+    const two = run({ requirements: [requirement("date", "31 October 2026")], detections: detections({ texts: [text("From 01/11/2026 to 05/11/2026")] }) });
+    expect(byRule(two, "brief.requirement")[0].detected).toBe("1/11/2026 (or the other way round), 5/11/2026 (or the other way round)");
     // Wrong percentage.
     const pct = run({ requirements: [requirement("percentage", "20%")], detections: detections({ texts: [text("Save 25% today")] }) });
     expect(failedFor(pct)).toEqual([["brief.requirement.percentage", "critical", "25%"]]);
@@ -219,7 +252,8 @@ describe("Brief rules", () => {
 
     it("still checked when it is on the design, misspelt, or Must have", () => {
       expect(check(requirement("product_name", "Palm Residence", { mandatory: false }), "The Palm Residence collection")).toMatchObject({ status: "passed" });
-      expect(check(requirement("product_name", "Palm Residence", { mandatory: false }), "The Palm Residense collection")).toMatchObject({ status: "failed", severity: "major" });
+      expect(check(requirement("product_name", "Palm Residence", { mandatory: false }), "The Palm Residense collection")).toMatchObject({ status: "failed", severity: "minor" }); // optional typo
+      expect(check(requirement("product_name", "Palm Residence"), "The Palm Residense collection")).toMatchObject({ status: "failed", severity: "major" }); // Must have typo
       expect(check(requirement("product_name", "Palm Residence"), "Summer sale")).toMatchObject({ status: "failed", severity: "critical", detected: "Not found" });
       // Other kinds of text are unchanged: an optional offer that's missing is still MINOR.
       expect(check(requirement("offer", "Free airport transfer", { mandatory: false }), "Summer sale")).toMatchObject({ status: "failed", severity: "minor" });

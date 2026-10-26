@@ -267,7 +267,7 @@ describe("cross-checks: two companies, both content types, Stage 2 and the safeg
       return byRule(applyConfidencePolicy(run({ requirements: req, detections: d }), d, { state: "done" }, { provider: "google" }), "brief.requirement")[0];
     };
     expect(policy(0.5)).toMatchObject({ status: "unverified", detected: "عرض الصيف المميزز" });
-    expect(policy(0.95)).toMatchObject({ status: "failed", severity: "major" });
+    expect(policy(0.95)).toMatchObject({ status: "failed", severity: "minor" }); // an optional item's typo: MINOR
   });
 });
 

@@ -31,6 +31,28 @@ function render(findings: Finding[]) {
   return visible(renderToStaticMarkup(<Scoreboard board={scoreFindings(findings)} findings={findings} />));
 }
 
+describe("Results page — issues to fix", () => {
+  const issues = () => [
+    f("brief", "failed", "critical", { title: "Price", expected: "AED 4,999", detected: "AED 4,500", suggestedFix: 'Change it to "AED 4,999".' }),
+    f("brief", "failed", "minor", { title: "Required text", expected: "Free transfers", detected: "Not found", suggestedFix: 'Add "Free transfers".' }),
+  ];
+
+  it("each issue keeps its number at every width — it matches the numbered circle on the design", () => {
+    const html = renderToStaticMarkup(<Scoreboard board={scoreFindings(issues())} findings={issues()} />);
+    const numbers = [...html.matchAll(/<span class="([^"]*)" aria-hidden="true">(\d)<\/span>/g)];
+    expect(numbers.map((m) => m[2])).toEqual(["1", "2"]);
+    for (const [, classes] of numbers) expect(classes.split(" ")).not.toContain("hidden");
+  });
+
+  it("something missing reads 'Missing: not on the design', never 'Found: Not found'", () => {
+    const text = render(issues());
+    expect(text).toContain("Missing not on the design");
+    expect(text).not.toContain("Not found");
+    // A value that was found still reads "Found".
+    expect(text).toContain("Found AED 4,500");
+  });
+});
+
 describe("Results page — Golden Rules and items to verify", () => {
   const findings = () =>
     mergeDuplicateFindings([

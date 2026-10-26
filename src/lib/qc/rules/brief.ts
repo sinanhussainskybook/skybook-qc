@@ -60,9 +60,14 @@ const RULE_ID = "brief.requirement";
 
 type Outcome =
   | { kind: "present"; detected: string; confidence?: number }
-  | { kind: "mismatched"; detected: string; why: string; fix: string; confidence?: number }
+  /** `typo`: the same words, misspelt — MINOR for an optional item (no worse than leaving it out), else MAJOR. */
+  | { kind: "mismatched"; detected: string; why: string; fix: string; confidence?: number; typo?: boolean }
   | { kind: "wrong"; detected: string; confidence?: number }
   | { kind: "missing" };
+
+/** A date as the checks show it ("30/10/2026"), noting when it could also be read the other way round. */
+const showDate = (mention: { day: number; month: number; year?: number }[]) =>
+  `${mention[0].day}/${mention[0].month}${mention[0].year ? `/${mention[0].year}` : ""}${mention.length > 1 ? " (or the other way round)" : ""}`;
 
 /**
  * Free-text requirement: whole words present, else a close misspelling, else — the same words with other
@@ -75,9 +80,13 @@ function textOutcome(expected: string, raw: string): Outcome {
   const text = datesWrittenOneWay(raw);
   if (containsText(text, datesWrittenOneWay(expected))) return { kind: "present", detected: expected };
   const name = findName(text, datesWrittenOneWay(expected));
-  if (name.status === "misspelt") return { kind: "mismatched", detected: name.found, why: "It appears, but written differently.", fix: `Write it exactly as "${expected}".` };
+  if (name.status === "misspelt") return misspelt(name.found, expected);
   if (name.status === "different") return { kind: "wrong", detected: name.found };
   return { kind: "missing" };
+}
+
+function misspelt(found: string, expected: string): Outcome {
+  return { kind: "mismatched", detected: found, why: "It appears, but written differently.", fix: `Write it exactly as "${expected}".`, typo: true };
 }
 
 /** Typed values: find all of that kind; one equal → present; others → wrong; none → missing. */
@@ -127,8 +136,9 @@ function check(r: QcInputRequirement, d: ContentDetections): Outcome | "unchecke
       if (!expected) return textOutcome(value, text);
       const hit = findDates(text, { withoutYear: true }).find((m) => datesMatch(expected, m));
       if (hit) return { kind: "present", detected: value };
-      const found = findDates(text);
-      return found.length ? { kind: "wrong", detected: `${found.length} other date${found.length === 1 ? "" : "s"}` } : { kind: "missing" };
+      // The dates actually shown, so the designer sees which one is wrong.
+      const found = findDates(text).filter((mention) => mention.length > 0);
+      return found.length ? { kind: "wrong", detected: found.map(showDate).join(", ") } : { kind: "missing" };
     }
     case "time": {
       const [expected] = findTimes(value);
@@ -141,6 +151,9 @@ function check(r: QcInputRequirement, d: ContentDetections): Outcome | "unchecke
       const hit = ctas.find((t) => ctaMatches(value, t.text));
       if (hit) return { kind: "present", detected: hit.text, confidence: hit.confidence };
       if (containsText(text, value)) return { kind: "present", detected: value };
+      // The same words, misspelt ("Book Nwo"): a typo to correct, never a different or missing CTA.
+      const near = findName(text, value);
+      if (near.status === "misspelt") return misspelt(near.found, value);
       // Another text labelled the CTA: only as sure as that text and its role (never "certain" by default).
       return ctas.length ? { kind: "wrong", detected: ctas.map((t) => t.text).join(", "), confidence: roleBasedConfidence(ctas) } : { kind: "missing" };
     }
@@ -238,7 +251,8 @@ function judge(r: QcInputRequirement, d: ContentDetections | null, files: Conten
     }
     case "mismatched":
       return make({
-        severity: "major" as Severity,
+        // A misspelt optional item counts no more than a missing one; a mandatory item's typo stays MAJOR.
+        severity: outcome.typo && !r.mandatory ? "minor" : "major",
         status: "failed",
         expected: r.expectedValue,
         detected: outcome.detected,

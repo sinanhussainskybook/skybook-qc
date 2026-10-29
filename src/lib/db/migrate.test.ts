@@ -22,6 +22,7 @@ describe("migrations", () => {
       "0008_qc_gemini_provider.sql",
       "0009_user_must_change_password.sql",
       "0010_company_additional_phone.sql",
+      "0011_revoke_public_role_privileges.sql",
     ]);
   });
 

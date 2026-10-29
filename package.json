@@ -16,6 +16,7 @@
     "check": "npm run typecheck && npm run lint && npm test",
     "db:migrate": "tsx --conditions=react-server scripts/migrate.ts",
     "user:create": "tsx --conditions=react-server scripts/create-user.ts",
+    "user:reset-password": "tsx --conditions=react-server scripts/reset-password.ts",
     "company:grant": "tsx --conditions=react-server scripts/grant-company.ts",
     "qc:cleanup": "tsx --conditions=react-server scripts/qc-cleanup.ts",
     "qc:worker": "tsx --conditions=react-server scripts/qc-worker.ts",

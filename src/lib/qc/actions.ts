@@ -348,6 +348,8 @@ export async function markReadyAction(_previous: QcFormState, formData: FormData
     return { ok: false as const, error: MESSAGES.failed };
   });
   refresh(found.company.id);
+  // A per-user AI limit is shown as it is (the design stays ready, to check once the limit allows).
+  if (!queued.ok && "limited" in queued && queued.limited) return { error: queued.error };
   return { ok: true, message: queued.ok ? "Checking the design…" : "Ready to check." };
 }
 

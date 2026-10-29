@@ -65,6 +65,12 @@ export async function refreshQueuedFingerprint(db: Database, runId: string, fing
   return rows.length > 0;
 }
 
+/** Is a run of this session waiting or running? (One at a time per session.) */
+export async function hasActiveRun(db: Database, sessionId: string): Promise<boolean> {
+  const rows = await db.query("select 1 from qc_analysis_runs where session_id = $1 and status in ('queued', 'processing') limit 1", [sessionId]);
+  return rows.length > 0;
+}
+
 /** How many runs a session has had — of one kind when `kind` is given. */
 export async function countRuns(db: Database, sessionId: string, kind?: RunKind): Promise<number> {
   const [row] = await db.query<{ count: number }>(

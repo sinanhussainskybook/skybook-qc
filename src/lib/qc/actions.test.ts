@@ -363,6 +363,35 @@ describe("Phase 4 actions and authorization", () => {
       expect(after.map((r) => [r.expected_value, r.confirmed])).toEqual([["20% off", false]]);
     });
 
+    it("Sam's own session can't reach Dee's requirements or files by putting their IDs in the form", async () => {
+      // Dee's design, uploaded into Dee's session.
+      const prepared = await actions.prepareUploadAction({ sessionId: deesSession, kind: "content", name: "poster.png", size: PNG.length, type: "image/png" });
+      if (!prepared.ok) throw new Error(prepared.error);
+      const deesFile = fake.browserPut(prepared.uploadUrl, PNG);
+      expect(await actions.confirmUploadAction({ sessionId: deesSession, fileId: prepared.fileId })).toEqual({ ok: true });
+      const [deesRequirement] = await listRequirements(state.db, deesSession);
+
+      // Sam, a member of the same company, with a session of his own.
+      state.user = sam;
+      await actions.startSessionAction({}, form({ companyId: acme, contentType: "design_poster" }));
+      const samsSession = (await sessionOf(sam, acme)).id;
+      const notAvailable = { error: expect.stringMatching(/isn't available/) };
+      expect(await actions.saveRequirementAction({}, form({ sessionId: samsSession, requirementId: deesRequirement.id, type: "offer", expected_value: "hijacked" }))).toMatchObject(notAvailable);
+      expect(await actions.setRequirementConfirmedAction({}, form({ sessionId: samsSession, requirementId: deesRequirement.id, confirmed: "true" }))).toMatchObject(notAvailable);
+      expect(await actions.deleteRequirementAction({}, form({ sessionId: samsSession, requirementId: deesRequirement.id }))).toMatchObject(notAvailable);
+      expect(await actions.removeFileAction({}, form({ sessionId: samsSession, fileId: prepared.fileId }))).toMatchObject({ error: expect.any(String) });
+      expect(await actions.confirmUploadAction({ sessionId: samsSession, fileId: prepared.fileId })).toMatchObject({ ok: false });
+      await actions.cancelUploadAction({ sessionId: samsSession, fileId: prepared.fileId });
+      // Replacing names a file of Dee's: Sam's upload goes into his own session; Dee's file is untouched.
+      const replacing = await actions.prepareUploadAction({ sessionId: samsSession, kind: "content", name: "x.png", size: PNG.length, type: "image/png", replacing: prepared.fileId });
+      if (replacing.ok) expect(fake.browserPut(replacing.uploadUrl, PNG)).toMatch(new RegExp(`^${samsSession}/`));
+
+      // Dee's requirement and file are exactly as they were.
+      expect((await listRequirements(state.db, deesSession)).map((r) => [r.id, r.expected_value, r.confirmed])).toEqual([[deesRequirement.id, "20% off", false]]);
+      expect((await listFiles(state.db, deesSession)).map((f) => f.id)).toEqual([prepared.fileId]);
+      expect(fake.files.has(deesFile)).toBe(true);
+    });
+
     it("even an admin can't open another designer's session", async () => {
       state.user = ada;
       for (const result of await everyAction(deesSession)) {

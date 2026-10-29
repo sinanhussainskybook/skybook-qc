@@ -79,6 +79,7 @@ describe("analysis actions", () => {
     state.storage = fake.bucket;
     state.user = dee;
     await state.db.query("delete from qc_sessions");
+    await state.db.query("delete from login_throttle"); // the per-user AI counts
     vi.spyOn(console, "error").mockImplementation(() => {});
     await actions.startSessionAction({}, form({ companyId: acme, contentType: "social_post" }));
     sessionId = (await findCurrentSession(state.db, acme, dee.id, new Date()))!.id;
@@ -228,6 +229,166 @@ describe("analysis actions", () => {
     expect(await actions.markReadyAction({}, form({ sessionId }))).toMatchObject({ ok: true, message: "Checking the design…" });
     await state.db.query("update qc_analysis_runs set status = 'done' where session_id = $1", [sessionId]);
     expect(await actions.startAnalysisAction({}, form({ sessionId }))).toMatchObject({ error: expect.stringMatching(/used its 5 analysis runs/) });
+  });
+
+  describe("per-user AI limits: 30 analyses a day (design checks and brief readings together), 2 at once", () => {
+    const usageRows = () => state.db.query<{ key: string }>("select key from login_throttle where key like 'ai:' || $1 || ':%'", [dee.id]);
+    /** `count` analyses already used by Dee, `hoursAgo` hours ago (not tied to any session). */
+    const used = (count: number, hoursAgo = 1) =>
+      state.db.query(
+        `insert into login_throttle (key, attempts, window_started_at)
+         select 'ai:' || $1 || ':' || gen_random_uuid(), 1, now() - ($3::int * interval '1 hour') from generate_series(1, $2::int)`,
+        [dee.id, count, hoursAgo]
+      );
+    const done = () => state.db.query("update qc_analysis_runs set status = 'done' where requested_by = $1", [dee.id]);
+    /** A check of Dee's for `companyId`, with a design and a confirmed requirement: ready to analyse. */
+    async function readyCheck(companyId: string) {
+      await actions.startSessionAction({}, form({ companyId, contentType: "social_post" }));
+      sessionId = (await findCurrentSession(state.db, companyId, dee.id, new Date()))!.id;
+      await upload("content", "post.png", pngOf(1440, 1800));
+      await addRequirement();
+      await confirmAll();
+      return sessionId;
+    }
+    let beta: string;
+    let gamma: string;
+    beforeAll(async () => {
+      beta = (await insertCompany(state.db, { name: "Beta", createdBy: dee.id })).id;
+      gamma = (await insertCompany(state.db, { name: "Gamma", createdBy: dee.id })).id;
+    });
+
+    it("the 30th analysis in 24 hours runs; the 31st is refused with a clear message, withdrawn and not counted", async () => {
+      const check = await readyCheck(acme);
+      await used(29, 3);
+      expect(await actions.startAnalysisAction({}, form({ sessionId: check }))).toEqual({ ok: true });
+      await done();
+      const refused = await actions.startAnalysisAction({}, form({ sessionId: check }));
+      expect(refused).toEqual({
+        error: "You've used your 30 AI checks for the last 24 hours (design checks and brief readings together). You can start another in about 21 hours, or ask an admin.",
+      });
+      expect(await usageRows()).toHaveLength(30);
+      expect((await runs()).filter((r) => r.status === "queued")).toHaveLength(0); // the refused run never waits for the worker
+    });
+
+    it("the limit survives Start over and a new check, and a brief reading counts too", async () => {
+      await used(30);
+      const check = await readyCheck(acme);
+      expect(await actions.startAnalysisAction({}, form({ sessionId: check }))).toMatchObject({ error: expect.stringMatching(/used your 30 AI checks/) });
+      // Check Design says so too (the design stays ready).
+      expect(await actions.markReadyAction({}, form({ sessionId: check }))).toMatchObject({ error: expect.stringMatching(/used your 30 AI checks/) });
+      // Start over, then a fresh check: still refused.
+      expect(await actions.startOverAction({}, form({ sessionId: check }))).toEqual({ ok: true });
+      const fresh = await readyCheck(acme);
+      expect(await actions.startAnalysisAction({}, form({ sessionId: fresh }))).toMatchObject({ error: expect.stringMatching(/used your 30 AI checks/) });
+      // Reading the brief counts towards the same 30.
+      await upload("information", "brief.txt", new TextEncoder().encode("Price AED 1,299"));
+      expect(await actions.startAnalysisAction({}, form({ sessionId: fresh, kind: "information" }))).toMatchObject({ error: expect.stringMatching(/used your 30 AI checks/) });
+      expect(await state.db.query("select id from qc_analysis_runs")).toHaveLength(0);
+      expect(await usageRows()).toHaveLength(30);
+    });
+
+    it("it's a rolling 24 hours: analyses older than that no longer count", async () => {
+      await used(29, 25);
+      await used(1, 2);
+      const check = await readyCheck(acme);
+      expect(await actions.startAnalysisAction({}, form({ sessionId: check }))).toEqual({ ok: true });
+      expect(await usageRows()).toHaveLength(2); // the old ones are forgotten
+    });
+
+    it("another designer has their own 30", async () => {
+      await used(30);
+      state.user = sam;
+      await actions.startSessionAction({}, form({ companyId: acme, contentType: "social_post" }));
+      sessionId = (await findCurrentSession(state.db, acme, sam.id, new Date()))!.id;
+      await upload("content", "post.png", pngOf(1440, 1800));
+      await addRequirement();
+      await confirmAll();
+      expect(await actions.startAnalysisAction({}, form({ sessionId }))).toEqual({ ok: true });
+    });
+
+    it("at most 2 waiting or running at once, across all the user's checks", async () => {
+      const first = await readyCheck(acme);
+      const second = await readyCheck(beta);
+      const third = await readyCheck(gamma);
+      expect(await actions.startAnalysisAction({}, form({ sessionId: first }))).toEqual({ ok: true });
+      expect(await actions.startAnalysisAction({}, form({ sessionId: second }))).toEqual({ ok: true });
+      expect(await actions.startAnalysisAction({}, form({ sessionId: third }))).toEqual({
+        error: "You already have 2 AI checks waiting or running. Wait for one to finish, then try again.",
+      });
+      expect(await state.db.query("select id from qc_analysis_runs where session_id = $1", [third])).toHaveLength(0);
+      expect(await usageRows()).toHaveLength(2); // the refused one isn't counted
+      // One finishes: the third can start.
+      await state.db.query("update qc_analysis_runs set status = 'done' where session_id = $1", [first]);
+      expect(await actions.startAnalysisAction({}, form({ sessionId: third }))).toEqual({ ok: true });
+    });
+
+    it("a refused analysis is never written as a run, so no worker can ever pick it up", async () => {
+      // Every row ever written to the runs table is logged, whatever happens to it afterwards.
+      await state.db.query("create table if not exists run_inserts (id uuid)");
+      await state.db.query("delete from run_inserts");
+      await state.db.query(
+        `create or replace function log_run_insert() returns trigger language plpgsql as $$ begin insert into run_inserts values (new.id); return new; end $$`
+      );
+      await state.db.query("drop trigger if exists log_run_insert on qc_analysis_runs");
+      await state.db.query("create trigger log_run_insert after insert on qc_analysis_runs for each row execute function log_run_insert()");
+      try {
+        const check = await readyCheck(acme);
+        await used(30);
+        expect(await actions.startAnalysisAction({}, form({ sessionId: check }))).toMatchObject({ error: expect.stringMatching(/used your 30 AI checks/) });
+        await state.db.query("delete from login_throttle");
+        const busy = [await readyCheck(beta), await readyCheck(gamma)];
+        for (const id of busy) expect(await actions.startAnalysisAction({}, form({ sessionId: id }))).toEqual({ ok: true });
+        expect(await actions.startAnalysisAction({}, form({ sessionId: check }))).toMatchObject({ error: expect.stringMatching(/2 AI checks waiting or running/) });
+        // Only the two accepted runs were ever written; nothing is left queued for the refused ones.
+        expect((await state.db.query<{ id: string }>("select id from run_inserts")).length).toBe(2);
+        expect(await state.db.query("select id from qc_analysis_runs where session_id = $1", [check])).toHaveLength(0);
+      } finally {
+        await state.db.query("drop trigger if exists log_run_insert on qc_analysis_runs");
+      }
+    });
+
+    it("a request still being queued elsewhere (another server or connection) holds its place; a stale one stops after 2 minutes", async () => {
+      const [first, second] = [await readyCheck(acme), await readyCheck(beta)];
+      expect(await actions.startAnalysisAction({}, form({ sessionId: first }))).toEqual({ ok: true });
+      // Another request of Dee's has reserved its place and not yet queued its run.
+      const slot = (minutesAgo: number) =>
+        state.db.query("insert into login_throttle (key, attempts, window_started_at) values ('ai-slot:' || $1 || ':' || gen_random_uuid(), 1, now() - ($2::int * interval '1 minute'))", [dee.id, minutesAgo]);
+      await slot(0);
+      expect(await actions.startAnalysisAction({}, form({ sessionId: second }))).toMatchObject({ error: expect.stringMatching(/2 AI checks waiting or running/) });
+      // A reservation left behind 3 minutes ago (a crash) no longer counts.
+      await state.db.query("delete from login_throttle where key like 'ai-slot:%'");
+      await slot(3);
+      expect(await actions.startAnalysisAction({}, form({ sessionId: second }))).toEqual({ ok: true });
+      // Each accepted run keeps its place in the 24 hours, but holds no reservation once queued.
+      expect(await usageRows()).toHaveLength(2);
+      expect(await state.db.query("select key from login_throttle where key like 'ai-slot:%' and window_started_at > now() - interval '2 minutes'")).toHaveLength(0);
+    });
+
+    it("a brief uploaded while a reading is still waiting joins that reading — not refused, not counted again", async () => {
+      await used(29);
+      await actions.startSessionAction({}, form({ companyId: acme, contentType: "social_post" }));
+      sessionId = (await findCurrentSession(state.db, acme, dee.id, new Date()))!.id;
+      await upload("information", "brief-1.txt", new TextEncoder().encode("Price AED 1,299"));
+      await upload("information", "brief-2.txt", new TextEncoder().encode("Valid until 31 Dec 2026"));
+      expect((await runs()).filter((r) => r.kind === "information")).toHaveLength(1);
+      expect(await usageRows()).toHaveLength(30);
+    });
+
+    it("requests sent at the same moment can't get past either limit", async () => {
+      const checks = [await readyCheck(acme), await readyCheck(beta), await readyCheck(gamma)];
+      // Two at once: at most 2 run.
+      const together = await Promise.all(checks.map((id) => actions.startAnalysisAction({}, form({ sessionId: id }))));
+      expect(together.filter((r) => r.ok).length).toBeLessThanOrEqual(2);
+      expect(Number((await state.db.query<{ n: number }>("select count(*)::int as n from qc_analysis_runs where status in ('queued', 'processing')"))[0].n)).toBeLessThanOrEqual(2);
+      await done();
+      // One left of the 30: of three at once, at most one runs.
+      const usedSoFar = (await usageRows()).length;
+      await used(29 - usedSoFar);
+      const lastOne = await Promise.all(checks.map((id) => actions.startAnalysisAction({}, form({ sessionId: id }))));
+      expect(lastOne.filter((r) => r.ok).length).toBeLessThanOrEqual(1);
+      expect((await usageRows()).length).toBeLessThanOrEqual(30);
+      for (const r of [...together, ...lastOne]) if (!r.ok) expect(r.error).toMatch(/AI checks/);
+    });
   });
 
   describe("authorization", () => {

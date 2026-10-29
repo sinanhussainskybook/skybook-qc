@@ -14,6 +14,12 @@ export const ANALYSIS_LIMITS = {
   maxKeyFramesPerVideo: 8,
   /** Design analysis runs per session (Try again included). Brief readings don't count. */
   maxRunsPerSession: 5,
+  /**
+   * Per user, across all their checks, and kept through Start over and new checks: AI analyses (design
+   * checks and brief readings together) in any 24 hours, and how many may wait or run at once.
+   */
+  maxRunsPerUserPerDay: 30,
+  maxActiveRunsPerUser: 2,
 
   /** Prepared images sent to providers. Both Vision and Gemini accept about 7 MB inline. */
   ocrImageLongEdge: 4096,

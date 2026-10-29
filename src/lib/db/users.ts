@@ -88,6 +88,15 @@ export async function findUserByEmail(db: Database, email: string): Promise<User
   return row ? toUser(row) : null;
 }
 
+/**
+ * Replaces ONE user's password hash (npm run user:reset-password). Only the
+ * password_hash column of that row changes — nothing else.
+ */
+export async function setPasswordHash(db: Database, userId: string, passwordHash: string): Promise<boolean> {
+  const rows = await db.query<{ id: string }>("update app_users set password_hash = $2 where id = $1 returning id", [userId, passwordHash]);
+  return rows.length === 1;
+}
+
 /** A user by id (the analysis worker re-checks who asked for a run). */
 export async function findUserById(db: Database, id: string): Promise<User | null> {
   const [row] = await db.query<UserRow>(`select ${USER_COLUMNS} from app_users where id = $1`, [id]);

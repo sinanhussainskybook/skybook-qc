@@ -14,4 +14,10 @@ export interface Database {
    * Used only for migrations — never with user input.
    */
   exec(script: string): Promise<void>;
+
+  /**
+   * Runs `fn` as one transaction on one connection: committed when it resolves, rolled back when it
+   * throws. Row locks taken inside (`select … for update`) are held until then. Not nested.
+   */
+  transaction<T>(fn: (tx: Database) => Promise<T>): Promise<T>;
 }

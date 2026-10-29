@@ -36,7 +36,7 @@ export function isDatabaseConfigured(): boolean {
 }
 
 /** Wraps a `postgres` connection in the app's Database shape. */
-export function wrapPostgres(sql: postgres.Sql): Database {
+export function wrapPostgres(sql: postgres.Sql | postgres.TransactionSql): Database {
   return {
     async query<Row>(text: string, params: readonly unknown[] = []) {
       const rows = await sql.unsafe(text, params as postgres.ParameterOrJSON<never>[]);
@@ -45,6 +45,10 @@ export function wrapPostgres(sql: postgres.Sql): Database {
     async exec(script: string) {
       // The simple protocol runs a multi-statement script as one transaction.
       await sql.unsafe(script).simple();
+    },
+    async transaction<T>(fn: (tx: Database) => Promise<T>): Promise<T> {
+      if (!("begin" in sql)) throw new Error("Nested database transactions aren't supported.");
+      return (await sql.begin((tx) => fn(wrapPostgres(tx)))) as T;
     },
   };
 }

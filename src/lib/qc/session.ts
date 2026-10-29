@@ -40,6 +40,19 @@ import {
   type FileKind,
 } from "@/lib/qc/qc-file";
 import type { QcStorage } from "@/lib/storage/qc-storage";
+import { hasActiveRun } from "@/lib/db/analysis-runs";
+
+/** What the designer is told when a check can't be removed because its analysis is waiting or running. */
+export const ANALYSIS_RUNNING_MESSAGE =
+  "This check's design check or brief reading is still waiting or running. Wait until it finishes, then try again.";
+
+/** A check can't be removed (Start over, a new check) while its analysis is waiting or running. */
+export class AnalysisRunningError extends Error {
+  constructor() {
+    super(ANALYSIS_RUNNING_MESSAGE);
+    this.name = "AnalysisRunningError";
+  }
+}
 
 /**
  * Temporary QC sessions (D11) — the rules on top of lib/db/qc-sessions.ts.
@@ -66,14 +79,59 @@ export const SESSION_MESSAGES = {
  * Deletes a session's files from Storage, then the session itself (its
  * requirements and file records go with it). If Storage can't be reached
  * the session is kept, so the clean-up can be retried and no file is left
- * behind unreferenced. Returns whether it was removed.
+ * behind unreferenced. A session whose analysis is waiting or running is
+ * kept too (for every caller: Start over, a new check, the hourly clean-up,
+ * deleting a company) and removed once it has finished. Returns whether it
+ * was removed (true too when it was already gone).
+ *
+ * All of it happens in one transaction holding a lock on the session row.
+ * Queueing a run for the session needs that row too (the run refers to it),
+ * so the two can't overlap: a run being queued right now is waited for and
+ * then seen (the session is kept and its files are untouched); a run queued
+ * from now on waits until this has finished and is then refused, because the
+ * session is gone (never queued for files that were just deleted).
+ *
+ * The lock can never be held or waited for indefinitely (the limits are set
+ * with SET LOCAL, so they end with this transaction and never carry over to
+ * another request on the same pooled connection): waiting for the lock gives
+ * up after LOCK_WAIT (the session is then kept, to retry later); a statement
+ * stops after STATEMENT_LIMIT; and if this process stalls with the transaction
+ * open, PostgreSQL ends it after IDLE_LIMIT. Storage calls stop after 20 s
+ * each (storage-api.ts). Any error rolls everything back; nothing in the
+ * database changes until the session row is deleted, the last step.
  */
 export async function removeSessionCompletely(
   db: Database,
   storage: QcStorage | null,
   sessionId: string
 ): Promise<boolean> {
-  const hasFiles = (await listFiles(db, sessionId, "any")).length > 0;
+  try {
+    return await db.transaction((tx) => removeLockedSession(tx, storage, sessionId));
+  } catch (error) {
+    // Another removal of the same session (e.g. the hourly clean-up) held the lock too long: kept for now.
+    if (isLockTimeout(error)) return false;
+    throw error;
+  }
+}
+
+/** Waiting for the session's lock (another removal is deleting its files). */
+const LOCK_WAIT = "10s";
+/** Any one statement inside the removal. */
+const STATEMENT_LIMIT = "30s";
+/** The transaction left open with nothing happening (longer than two 20 s Storage calls). */
+const IDLE_LIMIT = "2min";
+
+/** PostgreSQL's lock_not_available (lock_timeout reached). */
+const isLockTimeout = (error: unknown) => (error as { code?: unknown } | null)?.code === "55P03";
+
+async function removeLockedSession(tx: Database, storage: QcStorage | null, sessionId: string): Promise<boolean> {
+  await tx.query(`set local lock_timeout = '${LOCK_WAIT}'`);
+  await tx.query(`set local statement_timeout = '${STATEMENT_LIMIT}'`);
+  await tx.query(`set local idle_in_transaction_session_timeout = '${IDLE_LIMIT}'`);
+  const [locked] = await tx.query("select id from qc_sessions where id = $1 for update", [sessionId]);
+  if (!locked) return true;
+  if (await hasActiveRun(tx, sessionId)) return false;
+  const hasFiles = (await listFiles(tx, sessionId, "any")).length > 0;
   if (storage) {
     try {
       // The whole folder, so files whose upload never finished go too.
@@ -87,8 +145,8 @@ export async function removeSessionCompletely(
     console.error(`QC session ${sessionId} has files but Storage isn't configured; kept for a later clean-up.`);
     return false;
   }
-  await deleteSessionRow(db, sessionId);
-  return true;
+  // Still refuses a session with a waiting or running run (it can't have one here, under the lock).
+  return deleteSessionRow(tx, sessionId);
 }
 
 /** How many expired sessions one clean-up batch handles at most. */
@@ -147,7 +205,11 @@ export async function startSession(
   if (current) return current;
 
   const stale = await findAnySessionId(db, input.companyId, input.userId);
+  // An expired check whose analysis is still waiting or running is kept until it finishes: removing it
+  // would stop it counting towards the user's analyses running at once while the worker still runs it.
+  if (stale && (await hasActiveRun(db, stale))) throw new AnalysisRunningError();
   if (stale && !(await removeSessionCompletely(db, storage, stale))) {
+    if (await hasActiveRun(db, stale)) throw new AnalysisRunningError(); // queued at the same moment
     throw new Error("An expired QC session couldn't be cleared yet.");
   }
   const created = await insertSession(db, input, now);

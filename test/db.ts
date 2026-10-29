@@ -1,5 +1,5 @@
 import path from "node:path";
-import { PGlite } from "@electric-sql/pglite";
+import { PGlite, type Transaction } from "@electric-sql/pglite";
 import type { Database } from "@/lib/db/database";
 import { applyMigrations, loadMigrations } from "@/lib/db/migrate";
 import type { ScryptCost } from "@/lib/auth/password";
@@ -14,13 +14,17 @@ export const MIGRATIONS_DIR = path.resolve(import.meta.dirname, "..", "db", "mig
 /** Cheap hashing for tests only. The app always uses DEFAULT_COST. */
 export const TEST_COST: ScryptCost = { logN: 10, r: 8, p: 1 };
 
-export function wrapPglite(pg: PGlite): Database {
+export function wrapPglite(pg: PGlite | Transaction): Database {
   return {
     async query<Row>(text: string, params: readonly unknown[] = []) {
       return (await pg.query<Row>(text, [...params])).rows;
     },
     async exec(script: string) {
       await pg.exec(script);
+    },
+    async transaction<T>(fn: (tx: Database) => Promise<T>): Promise<T> {
+      if (!("transaction" in pg)) throw new Error("Nested database transactions aren't supported.");
+      return pg.transaction((tx) => fn(wrapPglite(tx)));
     },
   };
 }

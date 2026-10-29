@@ -165,6 +165,7 @@ describe("deleteCompany", () => {
       const failing: Database = {
         query: (text, params) => (/^\s*delete from companies/.test(text) ? Promise.reject(new Error("db down")) : db.query(text, params)),
         exec: (script) => db.exec(script),
+        transaction: (fn) => fn(failing),
       } as Database;
       await expect(deleteCompany(failing, admin, { companyId: acme, confirmName: "Acme Villas" }, fakeStorage())).rejects.toThrow("db down");
       expect(await exists(acme)).toBe(true);

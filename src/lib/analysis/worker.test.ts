@@ -198,7 +198,7 @@ describe("the worker runs the clean-up and waits for it on shutdown", () => {
 
   /** A worker with an empty queue: every query finds nothing. */
   function idleDeps(): RunDeps {
-    const db: Database = { exec: async () => {}, query: async () => [] as never[] };
+    const db: Database = { exec: async () => {}, query: async () => [] as never[], transaction: (fn) => fn(db) };
     return {
       db,
       storage: {} as RunDeps["storage"],

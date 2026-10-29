@@ -37,7 +37,8 @@ vi.mock("@/lib/storage/qc-storage", () => ({ getQcStorage: () => state.storage }
 
 const actions = await import("@/lib/qc/actions");
 const { insertCompany, addCompanyMember } = await import("@/lib/db/companies");
-const { findCurrentSession, listRequirements, listFiles } = await import("@/lib/db/qc-sessions");
+const { findCurrentSession, listRequirements, listFiles, deleteSessionRow } = await import("@/lib/db/qc-sessions");
+const { purgeExpiredBatch, removeSessionCompletely } = await import("@/lib/qc/session");
 
 const form = (values: Record<string, string>) => {
   const data = new FormData();
@@ -421,6 +422,236 @@ describe("Phase 4 actions and authorization", () => {
         error: "This company isn't available. Reload the page and try again.",
       });
       expect(await actions.startSessionAction({}, form({ companyId: "not-a-uuid", contentType: "design_poster" }))).toMatchObject({ error: expect.any(String) });
+    });
+  });
+
+  describe("a check can't be removed while its analysis is waiting or running", () => {
+    const RUNNING = /still waiting or running\. Wait until it finishes/;
+    const upload = async (sessionId: string) => {
+      const prepared = await actions.prepareUploadAction({ sessionId, kind: "content", name: "poster.png", size: PNG.length, type: "image/png" });
+      if (!prepared.ok) throw new Error(prepared.error);
+      const path = fake.browserPut(prepared.uploadUrl, PNG);
+      expect(await actions.confirmUploadAction({ sessionId, fileId: prepared.fileId })).toEqual({ ok: true });
+      return path;
+    };
+    const runIn = (sessionId: string, status: "queued" | "processing" | "done", kind: "content" | "information" = "content") =>
+      state.db.query(
+        `insert into qc_analysis_runs (session_id, requested_by, kind, provider, status, files_fingerprint, started_at, heartbeat_at)
+         values ($1, $2, $3, 'mock', $4, 'x', case when $4 = 'queued' then null else now() end, case when $4 = 'processing' then now() else null end)`,
+        [sessionId, dee.id, kind, status]
+      );
+    const activeRuns = () => state.db.query("select id from qc_analysis_runs where status in ('queued', 'processing')");
+    let check: string;
+    let file: string;
+    beforeEach(async () => {
+      await actions.startSessionAction({}, form({ companyId: acme, contentType: "design_poster" }));
+      check = (await sessionOf(dee, acme)).id;
+      file = await upload(check);
+    });
+    const stillThere = async () => {
+      expect((await sessionOf(dee, acme)).id).toBe(check);
+      expect(fake.files.has(file)).toBe(true);
+    };
+
+    for (const status of ["queued", "processing"] as const) {
+      it(`Start over is refused while a design check is ${status} — even called directly — and nothing is removed`, async () => {
+        await runIn(check, status);
+        expect(await actions.startOverAction({}, form({ sessionId: check }))).toEqual({
+          error: "This check's design check or brief reading is still waiting or running. Wait until it finishes, then try again.",
+        });
+        await stillThere();
+        expect(await activeRuns()).toHaveLength(1); // still counted towards the 2 at once
+      });
+
+      it(`Start a new check is refused while a brief reading is ${status}`, async () => {
+        await runIn(check, "done"); // a finished design check: the check is complete
+        await runIn(check, status, "information");
+        expect(await actions.startNewCheckAction({}, form({ companyId: acme, sessionId: check, contentType: "design_poster" }))).toMatchObject({ error: expect.stringMatching(RUNNING) });
+        await stillThere();
+      });
+
+      it(`an expired check isn't replaced while its analysis is ${status}`, async () => {
+        await runIn(check, status);
+        await state.db.query("update qc_sessions set expires_at = now() - interval '1 minute' where id = $1", [check]);
+        expect(await actions.startSessionAction({}, form({ companyId: acme, contentType: "design_poster" }))).toMatchObject({ error: expect.stringMatching(RUNNING) });
+        expect(await state.db.query("select id from qc_sessions where id = $1", [check])).toHaveLength(1);
+        expect(fake.files.has(file)).toBe(true);
+        expect(await activeRuns()).toHaveLength(1);
+      });
+    }
+
+    it("once the analysis has finished, Start over works again", async () => {
+      await runIn(check, "processing");
+      expect(await actions.startOverAction({}, form({ sessionId: check }))).toMatchObject({ error: expect.stringMatching(RUNNING) });
+      await state.db.query("update qc_analysis_runs set status = 'done', finished_at = now() where session_id = $1", [check]);
+      expect(await actions.startOverAction({}, form({ sessionId: check }))).toEqual({ ok: true });
+      expect(await findCurrentSession(state.db, acme, dee.id, new Date())).toBeNull();
+      expect(fake.files.has(file)).toBe(false);
+    });
+
+    for (const status of ["queued", "processing"] as const) {
+      it(`the hourly clean-up keeps an expired check while its analysis is ${status}, and removes it once finished`, async () => {
+        await runIn(check, status);
+        await state.db.query("update qc_sessions set expires_at = now() - interval '1 hour' where id = $1", [check]);
+        expect(await purgeExpiredBatch(state.db, fake.bucket, new Date(), null)).toMatchObject({ removed: 0, kept: 1 });
+        expect(await state.db.query("select id from qc_sessions where id = $1", [check])).toHaveLength(1);
+        expect(fake.files.has(file)).toBe(true);
+        expect(await activeRuns()).toHaveLength(1);
+        // Finished: the next sweep removes it, files first.
+        await state.db.query("update qc_analysis_runs set status = 'done', finished_at = now() where session_id = $1", [check]);
+        expect(await purgeExpiredBatch(state.db, fake.bucket, new Date(), null)).toMatchObject({ removed: 1, kept: 0 });
+        expect(await state.db.query("select id from qc_sessions where id = $1", [check])).toHaveLength(0);
+        expect(fake.files.has(file)).toBe(false);
+      });
+
+      it(`the session row itself is never deleted while a run is ${status} (whoever asks)`, async () => {
+        await runIn(check, status);
+        expect(await deleteSessionRow(state.db, check)).toBe(false);
+        expect(await state.db.query("select id from qc_sessions where id = $1", [check])).toHaveLength(1);
+        expect(await activeRuns()).toHaveLength(1);
+      });
+    }
+
+    /**
+     * "Analyse again" in another tab, sent while the check is being removed (its files being deleted). The
+     * removal holds a lock on the check, so the analysis waits — and is then refused, as the check is gone:
+     * it is never queued for files that were just deleted, so it can't fail later or be counted as running.
+     */
+    const analyseDuringRemoval = () => {
+      let queued: Promise<unknown> | null = null;
+      const remove = fake.bucket.remove;
+      fake.bucket.remove = async (paths) => {
+        queued ??= runIn(check, "queued"); // sent now; not awaited (it waits for the removal)
+        return remove(paths);
+      };
+      return {
+        settled: async () => {
+          fake.bucket.remove = remove;
+          return queued;
+        },
+      };
+    };
+
+    it("two tabs: an analysis sent while Start over is removing the check waits, then is refused — never queued for deleted files", async () => {
+      const other = analyseDuringRemoval();
+      expect(await actions.startOverAction({}, form({ sessionId: check }))).toEqual({ ok: true });
+      await expect(other.settled()).rejects.toThrow(/foreign key/);
+      expect(await findCurrentSession(state.db, acme, dee.id, new Date())).toBeNull();
+      expect(fake.files.has(file)).toBe(false);
+      expect(await state.db.query("select id from qc_analysis_runs")).toHaveLength(0); // nothing left to fail or to count
+    });
+
+    it("two tabs: the same while an expired check is being replaced", async () => {
+      await state.db.query("update qc_sessions set expires_at = now() - interval '1 minute' where id = $1", [check]);
+      const other = analyseDuringRemoval();
+      expect(await actions.startSessionAction({}, form({ companyId: acme, contentType: "design_poster" }))).toEqual({ ok: true });
+      await expect(other.settled()).rejects.toThrow(/foreign key/);
+      expect(await state.db.query("select id from qc_sessions where id = $1", [check])).toHaveLength(0);
+      expect(await state.db.query("select id from qc_analysis_runs")).toHaveLength(0);
+    });
+
+    it("the removal locks the check before looking for analyses, and holds the lock while deleting its files", async () => {
+      const events: string[] = [];
+      const record = (db: Database, inTx: boolean): Database => ({
+        exec: (script) => db.exec(script),
+        query: (text, params) => {
+          if (/for update|qc_analysis_runs|delete from qc_sessions/.test(text)) events.push(`${inTx ? "tx" : "db"}: ${text.replace(/\s+/g, " ").trim().slice(0, 40)}`);
+          return db.query(text, params);
+        },
+        transaction: (fn) => db.transaction((tx) => fn(record(tx, true))),
+      });
+      const remove = fake.bucket.remove;
+      fake.bucket.remove = async (paths) => {
+        events.push("storage: remove");
+        return remove(paths);
+      };
+      try {
+        expect(await removeSessionCompletely(record(state.db, false), fake.bucket, check)).toBe(true);
+      } finally {
+        fake.bucket.remove = remove;
+      }
+      expect(events).toEqual([
+        "tx: select id from qc_sessions where id = $1",
+        "tx: select 1 from qc_analysis_runs where ses",
+        "storage: remove",
+        "tx: delete from qc_sessions s where s.id = $",
+      ]);
+    });
+
+    /** Nothing is left behind once a removal has ended, however it ended. */
+    const nothingLeftBehind = async () => {
+      // No lock on any session row (PGlite would also wait here forever if the transaction were still open).
+      expect(await state.db.query("select 1 from pg_locks where relation = 'qc_sessions'::regclass")).toHaveLength(0);
+      await state.db.query("update qc_sessions set updated_at = updated_at where id = $1", [check]);
+      // The time limits were LOCAL to the transaction: the (pooled) connection is back to its defaults.
+      for (const setting of ["lock_timeout", "statement_timeout", "idle_in_transaction_session_timeout"]) {
+        expect([setting, (await state.db.query<Record<string, string>>(`show ${setting}`))[0][setting]]).toEqual([setting, "0"]);
+      }
+    };
+
+    it("Storage failing: everything is rolled back — the check, its records and files are kept — and no lock remains", async () => {
+      fake.failing.remove = true;
+      try {
+        expect(await removeSessionCompletely(state.db, fake.bucket, check)).toBe(false);
+        expect(await actions.startOverAction({}, form({ sessionId: check }))).toEqual({ error: "The session couldn't be cleared right now. Please try again in a moment." });
+      } finally {
+        fake.failing.remove = false;
+      }
+      await stillThere();
+      expect(await listFiles(state.db, check)).toHaveLength(1);
+      await nothingLeftBehind();
+      // The next try works.
+      expect(await removeSessionCompletely(state.db, fake.bucket, check)).toBe(true);
+      expect(await state.db.query("select id from qc_sessions where id = $1", [check])).toHaveLength(0);
+    });
+
+    it("a database error in the middle: rolled back (the check is kept, to retry), the error is reported, no lock remains", async () => {
+      const failingDelete = (db: Database): Database => ({
+        exec: (script) => db.exec(script),
+        query: (text, params) => (/delete from qc_sessions/.test(text) ? Promise.reject(new Error("db down")) : db.query(text, params)),
+        transaction: (fn) => db.transaction((tx) => fn(failingDelete(tx))),
+      });
+      await expect(removeSessionCompletely(failingDelete(state.db), fake.bucket, check)).rejects.toThrow("db down");
+      expect(await state.db.query("select id from qc_sessions where id = $1", [check])).toHaveLength(1);
+      expect(await listFiles(state.db, check)).toHaveLength(1); // its records too
+      await nothingLeftBehind();
+      // Its files were already deleted; the next clean-up finds none and removes the check.
+      expect(await removeSessionCompletely(state.db, fake.bucket, check)).toBe(true);
+    });
+
+    it("waiting too long for the lock (another removal holds it): kept for now, no error", async () => {
+      const lockTimeout = Object.assign(new Error("canceling statement due to lock timeout"), { code: "55P03" });
+      const busy = (db: Database): Database => ({
+        exec: (script) => db.exec(script),
+        query: (text, params) => (/for update/.test(text) ? Promise.reject(lockTimeout) : db.query(text, params)),
+        transaction: (fn) => db.transaction((tx) => fn(busy(tx))),
+      });
+      expect(await removeSessionCompletely(busy(state.db), fake.bucket, check)).toBe(false);
+      await stillThere();
+      await nothingLeftBehind();
+    });
+
+    it("a successful removal leaves no lock and no setting behind either", async () => {
+      expect(await removeSessionCompletely(state.db, fake.bucket, check)).toBe(true);
+      expect(await state.db.query("select 1 from pg_locks where relation = 'qc_sessions'::regclass")).toHaveLength(0);
+      for (const setting of ["lock_timeout", "statement_timeout", "idle_in_transaction_session_timeout"]) {
+        expect((await state.db.query<Record<string, string>>(`show ${setting}`))[0][setting]).toBe("0");
+      }
+    });
+
+    it("direct calls by anyone else, or signed out, change nothing (and don't reveal the analysis)", async () => {
+      await runIn(check, "processing");
+      for (const someone of [sam, ada]) {
+        state.user = someone;
+        expect(await actions.startOverAction({}, form({ sessionId: check }))).toEqual({ error: "This QC session isn't available any more. Reload the page." });
+        expect(await actions.startNewCheckAction({}, form({ companyId: acme, sessionId: check, contentType: "design_poster" }))).toEqual({ error: "This QC session isn't available any more. Reload the page." });
+      }
+      state.user = null;
+      await expect(actions.startOverAction({}, form({ sessionId: check }))).rejects.toThrow("NEXT_REDIRECT /login");
+      await expect(actions.startNewCheckAction({}, form({ companyId: acme, sessionId: check, contentType: "design_poster" }))).rejects.toThrow("NEXT_REDIRECT /login");
+      state.user = dee;
+      await stillThere();
+      expect(await activeRuns()).toHaveLength(1);
     });
   });
 

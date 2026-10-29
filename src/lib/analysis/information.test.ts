@@ -346,6 +346,7 @@ describe("reading information files (6.7)", () => {
       const inside = new Promise<void>((resolve) => (entered = resolve));
       const stallingDb: Database = {
         exec: (script) => db.exec(script),
+        transaction: (fn) => fn(stallingDb),
         async query(text, params) {
           if (/insert into qc_requirements/.test(text)) {
             entered();

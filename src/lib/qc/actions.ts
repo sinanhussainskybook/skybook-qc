@@ -22,6 +22,8 @@ import { isOfferedContentType } from "@/lib/qc/content-types";
 import { checkRequirement } from "@/lib/qc/requirements";
 import { parsePlatformChoice } from "@/lib/qc/platform-choice";
 import {
+  AnalysisRunningError,
+  ANALYSIS_RUNNING_MESSAGE,
   changeContentType,
   confirmUpload,
   markReady,
@@ -35,7 +37,7 @@ import {
 import type { FileKind } from "@/lib/qc/qc-file";
 import { getQcStorage } from "@/lib/storage/qc-storage";
 import { enqueueBriefReading, enqueueRun } from "@/lib/analysis/enqueue";
-import { hasFinishedDesignCheck, latestRun, type RunKind, type RunStatus } from "@/lib/db/analysis-runs";
+import { hasActiveRun, hasFinishedDesignCheck, latestRun, type RunKind, type RunStatus } from "@/lib/db/analysis-runs";
 
 /**
  * Server actions for the Start QC page (Phase 4). Every one:
@@ -100,6 +102,7 @@ export async function startSessionAction(_previous: QcFormState, formData: FormD
     }
     await startSession(getDatabase(), getQcStorage(), { companyId: company.id, userId: user.id, contentType }, new Date());
   } catch (error) {
+    if (error instanceof AnalysisRunningError) return { error: ANALYSIS_RUNNING_MESSAGE };
     console.error("Starting a QC session failed:", error);
     return { error: MESSAGES.failed };
   }
@@ -107,12 +110,21 @@ export async function startSessionAction(_previous: QcFormState, formData: FormD
   return { ok: true };
 }
 
-/** Deletes the current session — requirements, file records and files — so the designer can begin again. */
+/**
+ * Deletes the current session — requirements, file records and files — so the designer can begin again.
+ * Never while its analysis is waiting or running (checked here, whatever the page showed): removing it then
+ * would let the user start more analyses while the worker still runs this one.
+ */
 export async function startOverAction(_previous: QcFormState, formData: FormData): Promise<QcFormState> {
   const found = await sessionFromForm(formData);
   if (!found) return { error: MESSAGES.notAvailable };
+  if (await hasActiveRun(getDatabase(), found.session.id)) return { error: ANALYSIS_RUNNING_MESSAGE };
   const removed = await removeSessionCompletely(getDatabase(), getQcStorage(), found.session.id);
-  if (!removed) return { error: "The session couldn't be cleared right now. Please try again in a moment." };
+  if (!removed) {
+    // An analysis queued at the same moment (another tab) is kept, so say so; otherwise Storage failed.
+    if (await hasActiveRun(getDatabase(), found.session.id)) return { error: ANALYSIS_RUNNING_MESSAGE };
+    return { error: "The session couldn't be cleared right now. Please try again in a moment." };
+  }
   refresh(found.company.id);
   return { ok: true };
 }

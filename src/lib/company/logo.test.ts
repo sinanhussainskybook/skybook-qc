@@ -17,13 +17,15 @@ function checked(name: string, type: string, bytes: Uint8Array): CheckedLogo {
 
 /** A database whose logo writes fail, to test clean-up. */
 function failingLogoWrites(db: Database): Database {
-  return {
+  const failing: Database = {
     exec: db.exec,
+    transaction: (fn) => fn(failing),
     async query(text, params) {
       if (/company_logos/.test(text) && /insert|delete/i.test(text)) throw new Error("fake database failure");
       return db.query(text, params);
     },
   };
+  return failing;
 }
 
 describe("saving and removing a company logo (Storage faked)", () => {
@@ -159,7 +161,7 @@ describe("saving and removing a company logo (Storage faked)", () => {
   it("card logos: no Storage, Storage down or the database failing → no links (cards show the initial)", async () => {
     await saveCompanyLogo(db, fake.storage, acme, checked("acme.png", "image/png", PNG));
     expect(await companyLogoUrls(db, null, [acme])).toEqual({});
-    const failingReads: Database = { exec: db.exec, query: async () => { throw new Error("fake database failure"); } };
+    const failingReads: Database = { exec: db.exec, query: async () => { throw new Error("fake database failure"); }, transaction: (fn) => fn(failingReads) };
     expect(await companyLogoUrls(failingReads, fake.storage, [acme])).toEqual({});
     fake.failing.sign = true;
     expect(await companyLogoUrls(db, fake.storage, [acme])).toEqual({});
@@ -196,7 +198,7 @@ describe("saving and removing a company logo (Storage faked)", () => {
 
   it("card logos: a hanging database lookup also gives up at the deadline (all cards show initials)", async () => {
     await saveCompanyLogo(db, fake.storage, acme, checked("acme.png", "image/png", PNG));
-    const hanging: Database = { exec: db.exec, query: () => new Promise(() => {}) };
+    const hanging: Database = { exec: db.exec, query: () => new Promise(() => {}), transaction: (fn) => fn(hanging) };
     const started = Date.now();
     expect(await companyLogoUrls(hanging, fake.storage, [acme], 100)).toEqual({});
     expect(Date.now() - started).toBeLessThan(1_000);

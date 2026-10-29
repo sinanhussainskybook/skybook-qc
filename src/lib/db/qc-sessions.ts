@@ -199,8 +199,20 @@ export async function setSessionPlatform(db: Database, sessionId: string, choice
   );
 }
 
-export async function deleteSessionRow(db: Database, sessionId: string): Promise<void> {
-  await db.query("delete from qc_sessions where id = $1", [sessionId]);
+/**
+ * Deletes the session row (its requirements, file records and runs go with it) — but never while one of its
+ * analysis runs is waiting or running: the check is part of the same statement, so a run queued or started
+ * before it can't be deleted with the session. Returns whether it was deleted.
+ */
+export async function deleteSessionRow(db: Database, sessionId: string): Promise<boolean> {
+  const rows = await db.query(
+    `delete from qc_sessions s
+      where s.id = $1
+        and not exists (select 1 from qc_analysis_runs r where r.session_id = s.id and r.status in ('queued', 'processing'))
+      returning s.id`,
+    [sessionId]
+  );
+  return rows.length > 0;
 }
 
 /** Where a clean-up batch stopped: the last expired session it tried (see listExpiredSessions). */

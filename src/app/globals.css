@@ -357,6 +357,158 @@ a.hero-glass:hover {
     radial-gradient(1650px 1650px at 50% 140%, transparent 49.6%, rgb(191 219 254 / 0.12) 49.8%, transparent 50.1%);
 }
 
+/*
+ * Light mode — the sun/moon switch in the navigation (ThemeToggle) sets data-theme="light" on <html>;
+ * before anyone chooses, the device's own light/dark setting decides (the script in layout.tsx). Dark,
+ * the blue abstract theme above, stays the default, so everything here only re-colours the dark parts:
+ * the page, header, hero, glass panel and sign-in page. Cards, forms and results are light in both.
+ *
+ * The theme-… classes mark the few elements whose dark colours are set in the markup (text-white …):
+ * they do nothing in dark mode. These rules sit outside Tailwind's layers, so they beat its utilities.
+ */
+[data-theme="light"] body {
+  background:
+    radial-gradient(120% 80% at 85% 0%, rgb(147 197 253 / 0.45) 0%, transparent 55%),
+    radial-gradient(90% 70% at 0% 100%, rgb(153 246 228 / 0.35) 0%, transparent 60%),
+    #f5f8ff;
+  background-attachment: fixed;
+}
+[data-theme="light"] .app-header {
+  color: var(--foreground);
+  background: #ffffff;
+  border-bottom-color: var(--border);
+}
+[data-theme="light"] .app-hero {
+  color: var(--foreground);
+  background: linear-gradient(180deg, #ffffff 0%, #eaf1ff 40%, #c9dcff 75%, rgb(201 220 255 / 0) 100%);
+}
+[data-theme="light"] .app-hero::before {
+  background:
+    radial-gradient(1400px 900px at 50% 125%, transparent 49.4%, rgb(37 99 235 / 0.18) 49.7%, transparent 50%),
+    radial-gradient(1800px 1100px at 50% 125%, transparent 49.5%, rgb(37 99 235 / 0.1) 49.7%, transparent 50%),
+    radial-gradient(900px 340px at 50% 104%, rgb(96 165 250 / 0.25), transparent 70%);
+}
+[data-theme="light"] .skyqc-orbit-dot {
+  background: radial-gradient(circle, #ffffff 0%, #93c5fd 45%, rgb(59 130 246 / 0) 75%);
+  box-shadow: 0 0 6px 2px rgb(59 130 246 / 0.6), 0 0 14px 3px rgb(37 99 235 / 0.3);
+}
+[data-theme="light"] .app-hero .text-muted-foreground,
+[data-theme="light"] .app-hero .eyebrow {
+  color: var(--muted-foreground);
+}
+[data-theme="light"] .app-hero [role="alert"] {
+  color: var(--fail);
+}
+[data-theme="light"] .hero-glass {
+  color: var(--foreground);
+  background: rgb(255 255 255 / 0.75);
+  box-shadow: none;
+  outline-color: #cdd8e8;
+}
+[data-theme="light"] a.hero-glass:hover {
+  color: #1d4ed8;
+  background: #ffffff;
+}
+/* Home's panel: the soft blue-grey of every other page, instead of see-through glass. */
+[data-theme="light"] .content-panel--glass {
+  --muted-foreground: #556074;
+  --border: #cdd8e8;
+  color: var(--foreground);
+  background: rgb(230 237 246 / 0.94);
+  outline-color: rgb(255 255 255 / 0.7);
+  box-shadow: 0 40px 90px -30px rgb(10 30 90 / 0.35), 0 1px 0 rgb(255 255 255 / 0.9) inset;
+}
+[data-theme="light"] .login-hero {
+  color: var(--foreground);
+  background:
+    radial-gradient(900px 520px at 72% 112%, rgb(96 165 250 / 0.35), transparent 70%),
+    radial-gradient(760px 420px at 0% 0%, rgb(191 219 254 / 0.6), transparent 70%),
+    linear-gradient(180deg, #ffffff 0%, #eef4ff 40%, #c9dcff 100%);
+}
+[data-theme="light"] .login-hero::before {
+  background:
+    radial-gradient(1300px 1300px at 50% 140%, transparent 49.5%, rgb(37 99 235 / 0.16) 49.8%, transparent 50.2%),
+    radial-gradient(1650px 1650px at 50% 140%, transparent 49.6%, rgb(37 99 235 / 0.09) 49.8%, transparent 50.1%);
+}
+
+/* Marked elements (dark colours set in the markup). */
+[data-theme="light"] .theme-text,
+[data-theme="light"] .theme-logo {
+  color: var(--foreground);
+}
+[data-theme="light"] .theme-muted,
+[data-theme="light"] .theme-logo .text-muted-foreground {
+  color: var(--muted-foreground);
+}
+[data-theme="light"] .theme-link {
+  color: #1d4ed8;
+}
+[data-theme="light"] .theme-link:hover {
+  color: #1e3a8a;
+}
+/* The navigation pill and its items. */
+[data-theme="light"] .theme-nav {
+  background: #eef2fb;
+  box-shadow: none;
+  --tw-ring-color: var(--border);
+}
+[data-theme="light"] .theme-nav-item {
+  color: var(--muted-foreground);
+}
+[data-theme="light"] .theme-nav-item:hover {
+  color: var(--foreground);
+  background: #dde5f3;
+}
+[data-theme="light"] .theme-nav-item[aria-current="page"] {
+  color: #ffffff;
+  background: #0a1328;
+  box-shadow: none;
+}
+[data-theme="light"] .theme-nav-divider {
+  background: #cdd8e8;
+}
+/* Glass controls on dark (search, filter, page buttons, Sign out): white with a grey edge. */
+[data-theme="light"] .theme-control {
+  color: var(--foreground);
+  background-color: #ffffff;
+  border-color: #cdd8e8;
+  box-shadow: none;
+}
+[data-theme="light"] .theme-control:hover:not(:disabled) {
+  color: var(--foreground);
+  background-color: #f3f7ff;
+}
+[data-theme="light"] .theme-control input,
+[data-theme="light"] .theme-control select {
+  color: var(--foreground);
+}
+[data-theme="light"] .theme-control input::placeholder {
+  color: #8a94a8;
+}
+[data-theme="light"] .theme-control svg {
+  color: var(--muted-foreground);
+}
+[data-theme="light"] .theme-control kbd {
+  color: var(--muted-foreground);
+  border-color: #cdd8e8;
+  background: #eef2fb;
+}
+/* Home's "What does QC check?" box on the hero. */
+[data-theme="light"] .theme-soft-box {
+  color: var(--foreground);
+  background: rgb(255 255 255 / 0.75);
+  --tw-ring-color: #cdd8e8;
+}
+
+/* The switch shows the sun in dark mode (go light) and the moon in light mode (go dark). */
+.theme-icon-moon,
+[data-theme="light"] .theme-icon-sun {
+  display: none;
+}
+[data-theme="light"] .theme-icon-moon {
+  display: block;
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;

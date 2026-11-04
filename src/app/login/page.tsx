@@ -19,14 +19,14 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
 
   return (
     <main className="login-hero flex min-h-dvh flex-1 flex-col px-4 py-8 sm:px-8">
-      <SkybookLogo sub="AI QC" className="text-white [&_.text-muted-foreground]:text-white/60" />
+      <SkybookLogo sub="AI QC" className="theme-logo text-white [&_.text-muted-foreground]:text-white/60" />
 
       <div className="mx-auto grid w-full max-w-5xl flex-1 items-center gap-12 py-12 lg:grid-cols-[1.15fr_1fr] lg:gap-20">
         <div className="animate-in fade-in slide-in-from-bottom-2 duration-500">
           <h1 className="display text-5xl sm:text-6xl lg:text-7xl">
-            Check it before <span className="text-[#9cc2ff]">the client does.</span>
+            Check it before <span className="theme-link text-[#9cc2ff]">the client does.</span>
           </h1>
-          <p className="mt-6 max-w-md text-lg text-white/75">
+          <p className="mt-6 max-w-md text-lg text-white/75 theme-muted">
             Upload the brief and the design. Get a clear result and what to fix — in seconds.
           </p>
         </div>
@@ -40,7 +40,7 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
         </section>
       </div>
 
-      <p className="text-center text-xs text-white/70">Internal tool · Skybook staff only</p>
+      <p className="text-center text-xs text-white/70 theme-muted">Internal tool · Skybook staff only</p>
     </main>
   );
 }

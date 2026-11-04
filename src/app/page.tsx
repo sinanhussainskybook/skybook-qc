@@ -53,7 +53,7 @@ function QcSteps() {
         {STEPS.map((step, i) => (
           <li key={step} className="flex items-center gap-1.5">
             {i > 0 && (
-              <span aria-hidden className="text-white/45">
+              <span aria-hidden className="theme-muted text-white/45">
                 →
               </span>
             )}
@@ -67,20 +67,20 @@ function QcSteps() {
         ))}
       </ol>
       <details className="group mt-3 w-full max-w-xl">
-        <summary className="mx-auto w-fit cursor-pointer list-none text-sm text-[#9cc2ff] underline underline-offset-4 hover:text-white">
+        <summary className="theme-link mx-auto w-fit cursor-pointer list-none text-sm text-[#9cc2ff] underline underline-offset-4 hover:text-white">
           What does QC check?
         </summary>
-        <div className="mt-3 grid gap-2 rounded-2xl bg-white/[0.07] p-4 text-left text-sm text-white/85 ring-1 ring-white/15 backdrop-blur-sm">
+        <div className="theme-soft-box mt-3 grid gap-2 rounded-2xl bg-white/[0.07] p-4 text-left text-sm text-white/85 ring-1 ring-white/15 backdrop-blur-sm">
           <p>
-            <strong className="text-white">The brief:</strong> prices, dates, offers, contact details and required text are read from the client&apos;s brief.
+            <strong className="theme-text text-white">The brief:</strong> prices, dates, offers, contact details and required text are read from the client&apos;s brief.
           </p>
           <p>
-            <strong className="text-white">The design:</strong> checked against the brief, the company&apos;s brand colours, fonts and Golden Rules, and the platform size.
+            <strong className="theme-text text-white">The design:</strong> checked against the brief, the company&apos;s brand colours, fonts and Golden Rules, and the platform size.
           </p>
           <p>
-            <strong className="text-white">The result:</strong> PASS, NEEDS REVISION or FAIL, each issue circled on the design, and a PDF report to download.
+            <strong className="theme-text text-white">The result:</strong> PASS, NEEDS REVISION or FAIL, each issue circled on the design, and a PDF report to download.
           </p>
-          <p className="text-white/65">
+          <p className="theme-muted text-white/65">
             Anything the AI isn&apos;t sure about says &ldquo;Please verify&rdquo;. Use sample designs only while Gemini is on the free tier. Checks are deleted after 24 hours.
           </p>
         </div>

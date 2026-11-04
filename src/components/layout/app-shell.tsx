@@ -40,7 +40,7 @@ export function AppShell({
       <header className="app-header sticky top-0 z-30">
         <div className="mx-auto flex h-16 w-full max-w-5xl items-center gap-4 px-4 sm:px-6">
           <Link href="/" aria-label="Skybook AI QC, home" className="shrink-0 rounded-md transition-opacity hover:opacity-75">
-            <SkybookLogo sub="AI QC" className="text-white [&_.text-muted-foreground]:text-white/60" />
+            <SkybookLogo sub="AI QC" className="theme-logo text-white [&_.text-muted-foreground]:text-white/60" />
           </Link>
           <div className="ml-auto">
             <MainNav role={user.role}>

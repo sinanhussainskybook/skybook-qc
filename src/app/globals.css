@@ -271,14 +271,11 @@ a.hero-glass:hover {
 }
 
 /*
- * The panel holding a page's content, overlapping the hero: a soft
- * blue-grey (--surface), so white is kept for the cards, inputs and menus
- * inside it. Every text colour stays at least 4.5:1 on it (muted text 5.4:1,
- * QC colours 4.6:1 or more). Inside it, the primary blue is a touch deeper
- * (5.0:1; white on it 5.9:1), and chips, progress tracks and hairlines are a
- * shade deeper so they still stand out from the surface. It is frosted —
- * 94% opaque with the page blurred behind it — so text placed straight on
- * it keeps that contrast (muted text about 4.8:1).
+ * The panel holding a page's content, overlapping the hero: plain white
+ * (changed from blue-grey on 4 Nov 2026). Cards, inputs and menus inside it
+ * are white too and keep their hairline borders and shadows. Chips, progress
+ * tracks and hairlines stay a shade of blue-grey so they still stand out, and
+ * the primary blue is a touch deeper (white on it 5.9:1).
  */
 .content-panel {
   --primary: #2158e0;
@@ -286,8 +283,7 @@ a.hero-glass:hover {
   --border: #cdd8e8;
   position: relative;
   border-radius: 1.75rem;
-  background: rgb(230 237 246 / 0.94);
-  backdrop-filter: blur(14px);
+  background: #ffffff;
   outline: 1px solid rgb(255 255 255 / 0.7);
   box-shadow: 0 40px 90px -30px rgb(10 30 90 / 0.45), 0 1px 0 rgb(255 255 255 / 0.9) inset;
 }
@@ -409,12 +405,12 @@ a.hero-glass:hover {
   color: #1d4ed8;
   background: #ffffff;
 }
-/* Home's panel: the soft blue-grey of every other page, instead of see-through glass. */
+/* Home's panel: white like every other page, instead of see-through glass. */
 [data-theme="light"] .content-panel--glass {
   --muted-foreground: #556074;
   --border: #cdd8e8;
   color: var(--foreground);
-  background: rgb(230 237 246 / 0.94);
+  background: #ffffff;
   outline-color: rgb(255 255 255 / 0.7);
   box-shadow: 0 40px 90px -30px rgb(10 30 90 / 0.35), 0 1px 0 rgb(255 255 255 / 0.9) inset;
 }

@@ -75,14 +75,16 @@ describe("dashboard", () => {
     const html = renderToStaticMarkup(await DashboardPage());
     expect(html).toContain('href="/companies/c1"');
     expect(html).toContain('href="/companies/c2"');
-    // The full type (never cut to one line) and the place as its own chip.
-    expect(html).toMatch(/line-clamp-2[^"]*">Real estate<\/span>/);
+    // The type, and the place as its own chip.
+    expect(html).toContain(">Real estate</span>");
     expect(html).toMatch(/rounded-full[^"]*">Dubai, UAE<\/span>/);
     expect(html).toContain("Inactive");
-    // One company per row, the whole row one white (bg-card) link, so it stands out from the panel.
-    const rows = (html.match(/<a class="[^"]*" href="\/companies\/c\d"/g) ?? []).map((tag) => tag.match(/class="([^"]*)"/)![1].split(" "));
+    // One company per row, each row one link, all inside one white (bg-card) table card on the glass panel.
+    const rows = html.match(/<a class="[^"]*" href="\/companies\/c\d"/g) ?? [];
     expect(rows).toHaveLength(2);
-    for (const classes of rows) expect(classes).toContain("bg-card");
+    const card = html.slice(html.indexOf("bg-card"));
+    expect(card).toContain('href="/companies/c1"');
+    expect(card).toContain('href="/companies/c2"');
   });
 
   it("has a search box above the companies (none when there are no companies yet)", async () => {
@@ -93,7 +95,7 @@ describe("dashboard", () => {
     expect(html.indexOf('aria-label="Search companies"')).toBeLessThan(html.indexOf('href="/companies/c1"'));
   });
 
-  it("Home's panel is see-through frosted glass (every company sits on its own white row)", async () => {
+  it("Home's panel is see-through frosted glass (the companies sit in a white table card)", async () => {
     const html = renderToStaticMarkup(await DashboardPage());
     expect(html).toMatch(/class="content-panel [^"]*content-panel--glass"/);
   });

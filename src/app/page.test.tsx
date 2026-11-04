@@ -44,7 +44,7 @@ describe("dashboard", () => {
   it("greets the user, with one heading, inside the app shell", async () => {
     const html = renderToStaticMarkup(await DashboardPage());
     expect(html).toContain("Hi Dee");
-    expect(html).toContain("Which company is the design for?");
+    expect(html).toContain("Which company&#x27;s design are we checking?");
     expect(html.match(/<h1/g)).toHaveLength(1);
     expect(html).toContain("Sign out");
   });
@@ -128,7 +128,7 @@ describe("dashboard", () => {
   it("keeps the page to one question and one list — no role explanations", async () => {
     getCompaniesForCurrentUser.mockResolvedValue({ user: { ...dee, role: "admin" }, companies: [] });
     const html = renderToStaticMarkup(await DashboardPage());
-    expect(html).toContain("Choose a company to check a design against its brief and brand rules.");
+    expect(html).toContain("Choose a company, then upload the brief and the design. QC checks it against the brief and the brand rules.");
     expect(html).not.toContain("As an admin");
   });
 });

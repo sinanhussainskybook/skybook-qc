@@ -23,8 +23,8 @@ export default async function DashboardPage() {
       hero={
         <>
           <p className="eyebrow hero-glass">Hi {user.name.split(" ")[0]}</p>
-          <h1 className="display mt-5 max-w-3xl text-4xl sm:text-6xl">Which company is the design for?</h1>
-          <p className="mt-4 max-w-xl text-muted-foreground sm:text-lg">Choose a company to check a design against its brief and brand rules.</p>
+          <h1 className="display mt-5 max-w-3xl text-4xl sm:text-6xl">Which company&apos;s design are we checking?</h1>
+          <p className="mt-4 max-w-xl text-muted-foreground sm:text-lg">Choose a company, then upload the brief and the design. QC checks it against the brief and the brand rules.</p>
           <QcSteps />
           {companies.length > 0 && (
             <Link href="/companies/new" className={cn(addCompanyButtonClass, "btn-glossy mt-8 h-11 px-5")}>

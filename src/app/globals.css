@@ -48,30 +48,29 @@
 }
 
 :root {
-  /* Surfaces: a night-navy page (see body below); the content panel is a soft blue-grey
-     (--surface) and the cards, inputs and menus on it stay white with hairline borders */
-  --background: #f5f8ff;
-  --surface: #e6edf6;
+  /* Surfaces: a teal page (see body below); the content panel and the cards, inputs and
+     menus on it are white with hairline borders */
+  --background: #eef2f3;
   --foreground: #0a1328;
   --card: #ffffff;
   --card-foreground: #0a1328;
   --popover: #ffffff;
   --popover-foreground: #0a1328;
 
-  /* Electric blue (the blue abstract theme). White text on it is 5.2:1. */
-  --primary: #2563eb;
+  /* Teal (the teal theme). White text on it is 6.8:1. */
+  --primary: #0e6377;
   --primary-foreground: #ffffff;
 
-  --secondary: #e8efff;
-  --secondary-foreground: #1e3a8a;
-  --muted: #eef2fb;
+  --secondary: #e4f1f3;
+  --secondary-foreground: #0b4f67;
+  --muted: #eef3f4;
   --muted-foreground: #556074;
-  --accent: #e8efff;
-  --accent-foreground: #1e3a8a;
+  --accent: #e4f1f3;
+  --accent-foreground: #0b4f67;
   --destructive: #c4262e;
-  --border: #dde5f3;
-  --input: #c8d4ea;
-  --ring: #3b82f6;
+  --border: #dbe6e8;
+  --input: #c5d6da;
+  --ring: #1a8ea3;
 
   /* QC results. Each strong colour passes 4.5:1 on white and on its soft tint. */
   --pass: #147a3f;
@@ -112,131 +111,43 @@
 }
 
 /*
- * The blue abstract theme — visual only.
+ * The teal theme, visual only (chosen 5 Nov 2026).
  *
- * Signed-in pages: deep navy lit by soft electric-blue light from the top
- * right and teal light from the bottom left, behind frosted-glass panels.
- * Fixed, so content scrolls over it. The arcs of light are only in the hero,
- * so lines never cross.
+ * Dark mode (the default): a very dark teal page, a little more teal towards
+ * the bottom; fixed, so content scrolls over it. The header and each page's
+ * hero are deep teal with a soft glow behind the title. Light mode (further
+ * down) keeps the teal header and hero and makes the page light grey.
  */
 body {
   isolation: isolate;
-  background:
-    radial-gradient(120% 80% at 85% 0%, rgb(29 78 216 / 0.85) 0%, transparent 55%),
-    radial-gradient(90% 70% at 0% 100%, rgb(14 116 144 / 0.75) 0%, transparent 60%),
-    #050b1e;
+  background: linear-gradient(180deg, #06161b 0%, #071d24 50%, #082a33 100%);
   background-attachment: fixed;
 }
 
-/* The header: night navy, running straight on into the page hero below it. */
+/* The header: deep teal, running straight on into the page hero below it. */
 .app-header {
   color: #ffffff;
-  background: linear-gradient(180deg, #010208 0%, #040a1c 100%);
-  border-bottom: 1px solid rgb(147 180 255 / 0.08);
+  background: #061c23;
+  border-bottom: 1px solid rgb(255 255 255 / 0.06);
 }
 
 /*
- * The page hero (signed-in pages): navy → electric blue, fading back into the
- * navy page, with arcs of light; the page title, intro and main action sit
- * centred on it in white. The page's content follows in a panel that
- * overlaps its lower edge. The glow, the arcs and their lights fade out
- * before the hero's bottom edge, so nothing ends in a hard line there.
+ * The page hero (signed-in pages): deep teal with a soft glow behind the
+ * title, fading into the page at its bottom edge; the page title, intro and
+ * main action sit centred on it in white. The page's content follows in a
+ * panel that overlaps its lower edge.
  */
 .app-hero {
   position: relative;
   isolation: isolate;
   overflow: hidden;
   color: #ffffff;
-  background: linear-gradient(180deg, #040a1c 0%, #071a4d 34%, #1450e0 66%, rgb(20 80 224 / 0.35) 84%, rgb(20 80 224 / 0) 100%);
-}
-.app-hero::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  pointer-events: none;
   background:
-    radial-gradient(1400px 900px at 50% 125%, transparent 49.4%, rgb(191 219 254 / 0.24) 49.7%, transparent 50%),
-    radial-gradient(1800px 1100px at 50% 125%, transparent 49.5%, rgb(191 219 254 / 0.13) 49.7%, transparent 50%),
-    radial-gradient(900px 340px at 50% 104%, rgb(96 165 250 / 0.4), transparent 70%);
-  mask-image: linear-gradient(180deg, #000 55%, transparent 100%);
-}
-/*
- * Travelling lights on the curved lines — one small glowing dot per line.
- * Each dot follows a motion path with exactly the geometry of its line (the
- * rings drawn above in .app-hero::before: same centre, same radii), so it
- * stays on the curve. Paths are the upper half of each ring,
- * measured from the ring's centre (.skyqc-orbit-center, a 0×0 box placed at
- * that centre); the dot fades in and out where the ring leaves the view, so
- * the loop restarts unseen. Decorative only: aria-hidden, no pointer events,
- * and switched off for people who ask for reduced motion.
- */
-.skyqc-orbit-layer {
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  overflow: hidden;
-  pointer-events: none;
-  /* Fades out with the arcs (.app-hero::before), so a light never stops at the hero's edge. */
-  mask-image: linear-gradient(180deg, #000 55%, transparent 100%);
-}
-.skyqc-orbit-center {
-  position: absolute;
-  left: 50%;
-  top: 125%;
-  width: 0;
-  height: 0;
-}
-.skyqc-orbit-dot {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 6px;
-  height: 6px;
-  border-radius: 9999px;
-  background: radial-gradient(circle, #ffffff 0%, #dbeafe 45%, rgb(147 197 253 / 0) 75%);
-  box-shadow: 0 0 6px 2px rgb(191 219 254 / 0.85), 0 0 16px 4px rgb(59 130 246 / 0.45);
-  offset-anchor: center;
-  offset-rotate: 0deg;
-  opacity: 0;
-  will-change: offset-distance, opacity;
-  animation: skyqc-orbit-travel 20s linear infinite;
-}
-/* Hero rings: radii 1400×900 and 1800×1100 at 49.7% → 696×447 and 895×547. */
-.skyqc-orbit-dot--hero-inner {
-  offset-path: path("M -696 0 A 696 447 0 0 1 696 0");
-  animation-duration: 17s;
-  animation-delay: -5s;
-}
-.skyqc-orbit-dot--hero-outer {
-  offset-path: path("M 895 0 A 895 547 0 0 0 -895 0");
-  animation-duration: 23s;
-  animation-delay: -14s;
-}
-@keyframes skyqc-orbit-travel {
-  0% {
-    offset-distance: 0%;
-    opacity: 0;
-  }
-  12% {
-    opacity: 0.95;
-  }
-  88% {
-    opacity: 0.95;
-  }
-  100% {
-    offset-distance: 100%;
-    opacity: 0;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .skyqc-orbit-dot {
-    animation: none;
-    display: none;
-  }
+    radial-gradient(700px 360px at 50% 18%, rgb(56 150 166 / 0.32), transparent 70%),
+    linear-gradient(180deg, #061c23 0%, #0a3644 35%, #0e4d5d 60%, #0a3340 80%, rgb(7 29 36 / 0) 100%);
 }
 
-/* Text on the hero: readable on navy and blue. */
+/* Text on the hero: readable on the teal. */
 .app-hero .text-muted-foreground,
 .app-hero .eyebrow {
   color: rgb(255 255 255 / 0.75);
@@ -274,18 +185,17 @@ a.hero-glass:hover {
  * The panel holding a page's content, overlapping the hero: plain white
  * (changed from blue-grey on 4 Nov 2026). Cards, inputs and menus inside it
  * are white too and keep their hairline borders and shadows. Chips, progress
- * tracks and hairlines stay a shade of blue-grey so they still stand out, and
- * the primary blue is a touch deeper (white on it 5.9:1).
+ * tracks and hairlines are a shade of teal-grey so they still stand out.
  */
 .content-panel {
-  --primary: #2158e0;
-  --muted: #dae3ef;
-  --border: #cdd8e8;
+  --primary: #0e6377;
+  --muted: #dde9eb;
+  --border: #cfdfe2;
   position: relative;
   border-radius: 1.75rem;
   background: #ffffff;
   outline: 1px solid rgb(255 255 255 / 0.7);
-  box-shadow: 0 40px 90px -30px rgb(10 30 90 / 0.45), 0 1px 0 rgb(255 255 255 / 0.9) inset;
+  box-shadow: 0 40px 90px -30px rgb(6 28 35 / 0.45), 0 1px 0 rgb(255 255 255 / 0.9) inset;
 }
 
 /*
@@ -297,26 +207,38 @@ a.hero-glass:hover {
   --muted-foreground: rgb(255 255 255 / 0.75);
   --border: rgb(255 255 255 / 0.25);
   color: #ffffff;
-  background: rgb(255 255 255 / 0.1);
-  outline: 1px solid rgb(255 255 255 / 0.2);
-  box-shadow: 0 40px 90px -30px rgb(0 0 0 / 0.55), 0 1px 0 rgb(255 255 255 / 0.15) inset;
+  background: rgb(255 255 255 / 0.06);
+  outline: 1px solid rgb(255 255 255 / 0.12);
+  box-shadow: 0 30px 70px -35px rgb(0 0 0 / 0.7), 0 1px 0 rgb(255 255 255 / 0.1) inset;
 }
 .content-panel--glass .bg-card {
   --muted-foreground: #556074;
-  --border: #cdd8e8;
+  --border: #cfdfe2;
   color: var(--card-foreground);
 }
 
-/* Glossy electric-blue pill — the primary action on signed-in pages. */
+/*
+ * The primary action: a white pill with teal text on the teal header and hero,
+ * and a solid teal pill inside a page's white panel.
+ */
 .btn-glossy {
-  color: #ffffff;
+  color: #0b4f67;
   border-color: transparent;
-  background: linear-gradient(180deg, #4b8cff 0%, #1d5fe8 100%);
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.3), 0 10px 24px -10px rgb(37 99 235 / 0.9);
+  background: #ffffff;
+  box-shadow: 0 10px 24px -12px rgb(0 0 0 / 0.5);
 }
 .btn-glossy:hover {
+  color: #0b4f67;
+  background: #e4f1f3;
+}
+.content-panel .btn-glossy {
   color: #ffffff;
-  background: linear-gradient(180deg, #5b97ff 0%, #2667f0 100%);
+  background: #0e6377;
+  box-shadow: 0 8px 18px -10px rgb(11 79 103 / 0.9);
+}
+.content-panel .btn-glossy:hover {
+  color: #ffffff;
+  background: #0b5566;
 }
 
 /* White pill — secondary actions. */
@@ -324,176 +246,83 @@ a.hero-glass:hover {
   color: #0a1328;
   background: #ffffff;
   border-color: rgb(10 19 40 / 0.1);
-  box-shadow: 0 6px 16px -10px rgb(10 30 90 / 0.5);
+  box-shadow: 0 6px 16px -10px rgb(6 28 35 / 0.5);
 }
 .btn-white:hover {
   color: #0a1328;
-  background: #f3f7ff;
+  background: #f1f6f7;
 }
 
-/* The sign-in page: the full night-to-sky hero, with arcs of light. */
+/* The sign-in page: the same deep teal as the header and hero, with the soft glow. */
 .login-hero {
   position: relative;
   isolation: isolate;
   overflow: hidden;
   color: #ffffff;
   background:
-    radial-gradient(900px 520px at 72% 112%, rgb(96 165 250 / 0.6), transparent 70%),
-    radial-gradient(760px 420px at 0% 0%, rgb(30 64 175 / 0.45), transparent 70%),
-    linear-gradient(180deg, #02040b 0%, #06122e 34%, #0d3aa8 74%, #4f8dff 100%);
-}
-.login-hero::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  pointer-events: none;
-  background:
-    radial-gradient(1300px 1300px at 50% 140%, transparent 49.5%, rgb(191 219 254 / 0.22) 49.8%, transparent 50.2%),
-    radial-gradient(1650px 1650px at 50% 140%, transparent 49.6%, rgb(191 219 254 / 0.12) 49.8%, transparent 50.1%);
+    radial-gradient(800px 480px at 50% 20%, rgb(56 150 166 / 0.3), transparent 70%),
+    linear-gradient(180deg, #061c23 0%, #0a3644 45%, #0e4d5d 100%);
 }
 
 /*
- * Light mode — the sun/moon switch in the navigation (ThemeToggle) sets data-theme="light" on <html>;
- * before anyone chooses, the device's own light/dark setting decides (the script in layout.tsx). Dark,
- * the blue abstract theme above, stays the default, so everything here only re-colours the dark parts:
- * the page, header, hero, glass panel and sign-in page. Cards, forms and results are light in both.
- *
- * The theme-… classes mark the few elements whose dark colours are set in the markup (text-white …):
- * they do nothing in dark mode. These rules sit outside Tailwind's layers, so they beat its utilities.
+ * Light mode: the sun/moon switch in the navigation (ThemeToggle) sets data-theme="light" on <html>;
+ * before anyone chooses, the device's own light/dark setting decides (the script in layout.tsx). Dark
+ * stays the default. Light mode keeps the teal header, hero and sign-in page (with their white text),
+ * a little lighter, and makes the page below them light grey; Home's companies panel turns white.
+ * Cards, forms and results are light in both. These rules sit outside Tailwind's layers, so they beat
+ * its utilities.
  */
 [data-theme="light"] body {
-  background:
-    radial-gradient(120% 80% at 85% 0%, rgb(147 197 253 / 0.45) 0%, transparent 55%),
-    radial-gradient(90% 70% at 0% 100%, rgb(153 246 228 / 0.35) 0%, transparent 60%),
-    #f5f8ff;
-  background-attachment: fixed;
+  background: #eef2f3;
 }
 [data-theme="light"] .app-header {
-  color: var(--foreground);
-  background: #ffffff;
-  border-bottom-color: var(--border);
+  background: #0a3340;
 }
 [data-theme="light"] .app-hero {
-  color: var(--foreground);
-  background: linear-gradient(180deg, #ffffff 0%, #eaf1ff 40%, #c9dcff 75%, rgb(201 220 255 / 0) 100%);
-}
-[data-theme="light"] .app-hero::before {
   background:
-    radial-gradient(1400px 900px at 50% 125%, transparent 49.4%, rgb(37 99 235 / 0.18) 49.7%, transparent 50%),
-    radial-gradient(1800px 1100px at 50% 125%, transparent 49.5%, rgb(37 99 235 / 0.1) 49.7%, transparent 50%),
-    radial-gradient(900px 340px at 50% 104%, rgb(96 165 250 / 0.25), transparent 70%);
-}
-[data-theme="light"] .skyqc-orbit-dot {
-  background: radial-gradient(circle, #ffffff 0%, #93c5fd 45%, rgb(59 130 246 / 0) 75%);
-  box-shadow: 0 0 6px 2px rgb(59 130 246 / 0.6), 0 0 14px 3px rgb(37 99 235 / 0.3);
-}
-[data-theme="light"] .app-hero .text-muted-foreground,
-[data-theme="light"] .app-hero .eyebrow {
-  color: var(--muted-foreground);
-}
-[data-theme="light"] .app-hero [role="alert"] {
-  color: var(--fail);
-}
-[data-theme="light"] .hero-glass {
-  color: var(--foreground);
-  background: rgb(255 255 255 / 0.75);
-  box-shadow: none;
-  outline-color: #cdd8e8;
-}
-[data-theme="light"] a.hero-glass:hover {
-  color: #1d4ed8;
-  background: #ffffff;
-}
-/* Home's panel: white like every other page, instead of see-through glass. */
-[data-theme="light"] .content-panel--glass {
-  --muted-foreground: #556074;
-  --border: #cdd8e8;
-  color: var(--foreground);
-  background: #ffffff;
-  outline-color: rgb(255 255 255 / 0.7);
-  box-shadow: 0 40px 90px -30px rgb(10 30 90 / 0.35), 0 1px 0 rgb(255 255 255 / 0.9) inset;
+    radial-gradient(700px 360px at 50% 18%, rgb(94 170 184 / 0.35), transparent 70%),
+    linear-gradient(180deg, #0a3340 0%, #0c4453 30%, #14606f 55%, #5d93a0 75%, #b9d0d6 90%, #eef2f3 100%);
 }
 [data-theme="light"] .login-hero {
-  color: var(--foreground);
   background:
-    radial-gradient(900px 520px at 72% 112%, rgb(96 165 250 / 0.35), transparent 70%),
-    radial-gradient(760px 420px at 0% 0%, rgb(191 219 254 / 0.6), transparent 70%),
-    linear-gradient(180deg, #ffffff 0%, #eef4ff 40%, #c9dcff 100%);
+    radial-gradient(800px 480px at 50% 20%, rgb(94 170 184 / 0.35), transparent 70%),
+    linear-gradient(180deg, #0a3340 0%, #0e4d5d 50%, #1b6f7f 100%);
 }
-[data-theme="light"] .login-hero::before {
-  background:
-    radial-gradient(1300px 1300px at 50% 140%, transparent 49.5%, rgb(37 99 235 / 0.16) 49.8%, transparent 50.2%),
-    radial-gradient(1650px 1650px at 50% 140%, transparent 49.6%, rgb(37 99 235 / 0.09) 49.8%, transparent 50.1%);
-}
-
-/* Marked elements (dark colours set in the markup). */
-[data-theme="light"] .theme-text,
-[data-theme="light"] .theme-logo {
+/* Home's panel: frosted white on the light page, instead of dark glass. */
+[data-theme="light"] .content-panel--glass {
+  --muted-foreground: #556074;
+  --border: #cfdfe2;
   color: var(--foreground);
+  background: rgb(255 255 255 / 0.72);
+  backdrop-filter: blur(16px);
+  outline-color: rgb(255 255 255 / 0.9);
+  box-shadow: 0 30px 70px -35px rgb(10 51 64 / 0.45);
 }
-[data-theme="light"] .theme-muted,
-[data-theme="light"] .theme-logo .text-muted-foreground {
-  color: var(--muted-foreground);
-}
-[data-theme="light"] .theme-link {
-  color: #1d4ed8;
-}
-[data-theme="light"] .theme-link:hover {
-  color: #1e3a8a;
-}
-/* The navigation pill and its items. */
-[data-theme="light"] .theme-nav {
-  background: #eef2fb;
-  box-shadow: none;
-  --tw-ring-color: var(--border);
-}
-[data-theme="light"] .theme-nav-item {
-  color: var(--muted-foreground);
-}
-[data-theme="light"] .theme-nav-item:hover {
-  color: var(--foreground);
-  background: #dde5f3;
-}
-[data-theme="light"] .theme-nav-item[aria-current="page"] {
-  color: #ffffff;
-  background: #0a1328;
-  box-shadow: none;
-}
-[data-theme="light"] .theme-nav-divider {
-  background: #cdd8e8;
-}
-/* Glass controls on dark (search, filter, page buttons, Sign out): white with a grey edge. */
+/* Home's glass controls (search, filter, page buttons): white with a grey edge. */
 [data-theme="light"] .theme-control {
   color: var(--foreground);
   background-color: #ffffff;
-  border-color: #cdd8e8;
+  border-color: #cfdfe2;
   box-shadow: none;
 }
 [data-theme="light"] .theme-control:hover:not(:disabled) {
   color: var(--foreground);
-  background-color: #f3f7ff;
+  background-color: #f1f6f7;
 }
 [data-theme="light"] .theme-control input,
 [data-theme="light"] .theme-control select {
   color: var(--foreground);
 }
 [data-theme="light"] .theme-control input::placeholder {
-  color: #8a94a8;
+  color: #7d8a90;
 }
 [data-theme="light"] .theme-control svg {
   color: var(--muted-foreground);
 }
 [data-theme="light"] .theme-control kbd {
   color: var(--muted-foreground);
-  border-color: #cdd8e8;
-  background: #eef2fb;
-}
-/* Home's "What does QC check?" box on the hero. */
-[data-theme="light"] .theme-soft-box {
-  color: var(--foreground);
-  background: rgb(255 255 255 / 0.75);
-  --tw-ring-color: #cdd8e8;
+  border-color: #cfdfe2;
+  background: #eef3f4;
 }
 
 /* The switch shows the sun in dark mode (go light) and the moon in light mode (go dark). */

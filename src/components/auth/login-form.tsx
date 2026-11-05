@@ -85,7 +85,7 @@ export function LoginForm({ next }: { next: string }) {
       <Button
         type="submit"
         disabled={pending}
-        className="h-11 w-full rounded-full bg-foreground text-sm font-semibold text-background hover:bg-foreground/85"
+        className="h-11 w-full rounded-full bg-primary text-sm font-semibold text-primary-foreground hover:bg-[#0b5566]"
       >
         {pending && <LoaderCircle className="animate-spin" aria-hidden />}
         {pending ? "Signing in…" : "Sign in"}

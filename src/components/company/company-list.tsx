@@ -5,8 +5,6 @@ import { SearchableCompanyList } from "@/components/company/company-search";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
-export const addCompanyButtonClass = cn(buttonVariants({ variant: "outline" }), "h-10 rounded-full px-4");
-
 /** The home page's list of companies the user may open, each with its logo when it has one. */
 export function CompanyList({
   companies,

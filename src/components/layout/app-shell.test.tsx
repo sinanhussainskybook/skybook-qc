@@ -68,19 +68,13 @@ describe("AppShell", () => {
     expect(current(render("admin", "/account/password"))).toBeUndefined();
   });
 
-  it("draws the travelling lights only on the hero's two curved lines, as a decorative layer hidden from screen readers", () => {
+  it("has no decorative light layer (the teal theme has no curved lines)", () => {
     const withHero = renderToStaticMarkup(
       <AppShell user={{ name: "Ada Admin", role: "admin" }} hero={<h1>Title</h1>}>
         <p>Body</p>
       </AppShell>
     );
-    const layers = withHero.match(/<div class="skyqc-orbit-layer[^"]*" aria-hidden="true">/g) ?? [];
-    expect(layers).toHaveLength(1); // the hero only: the page background has no curves (they crossed the hero's)
-    for (const ring of ["hero-inner", "hero-outer"]) {
-      expect(withHero.match(new RegExp(`skyqc-orbit-dot--${ring}`, "g"))).toHaveLength(1);
-    }
-    expect(withHero).not.toContain("skyqc-orbit-dot--sky");
-    // Without a hero, no lights at all.
+    expect(withHero).not.toContain("skyqc-orbit");
     expect(html).not.toContain("skyqc-orbit");
   });
 

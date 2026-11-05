@@ -78,13 +78,10 @@ describe("dashboard", () => {
     // The type, and the place as its own chip.
     expect(html).toContain(">Real estate</span>");
     expect(html).toMatch(/rounded-full[^"]*">Dubai, UAE<\/span>/);
-    expect(html).toContain("Inactive");
-    // One company per row, each row one link, all inside one white (bg-card) table card on the glass panel.
-    const rows = html.match(/<a class="[^"]*" href="\/companies\/c\d"/g) ?? [];
-    expect(rows).toHaveLength(2);
-    const card = html.slice(html.indexOf("bg-card"));
-    expect(card).toContain('href="/companies/c1"');
-    expect(card).toContain('href="/companies/c2"');
+    expect(html).not.toContain("Inactive"); // no Active / Inactive label on Home
+    // One white (bg-card) card per company, each card one link.
+    const cards = html.match(/<a class="[^"]*bg-card[^"]*" href="\/companies\/c\d"/g) ?? [];
+    expect(cards).toHaveLength(2);
   });
 
   it("has a search box above the companies (none when there are no companies yet)", async () => {
@@ -95,12 +92,22 @@ describe("dashboard", () => {
     expect(html.indexOf('aria-label="Search companies"')).toBeLessThan(html.indexOf('href="/companies/c1"'));
   });
 
-  it("Home's panel is see-through frosted glass (the companies sit in a white table card)", async () => {
+  it("Home's panel is see-through frosted glass and wide (the companies sit on white cards)", async () => {
     const html = renderToStaticMarkup(await DashboardPage());
     expect(html).toMatch(/class="content-panel [^"]*content-panel--glass"/);
+    expect(html).toMatch(/max-w-7xl[^"]*"><div class="content-panel/);
   });
 
-  it("each row ends in a simple arrow — no separate Start QC button", async () => {
+  it("puts Add company in the list's top row, not under the heading", async () => {
+    getCompaniesForCurrentUser.mockResolvedValue({ user: dee, companies: [company("c1", "Acme")] });
+    const html = renderToStaticMarkup(await DashboardPage());
+    expect(html.match(/href="\/companies\/new"/g)).toHaveLength(1);
+    const hero = html.slice(html.indexOf('<section class="app-hero"'), html.indexOf("</section>"));
+    expect(hero).not.toContain("/companies/new");
+    expect(html.indexOf('href="/companies/new"')).toBeGreaterThan(html.indexOf("content-panel"));
+  });
+
+  it("each card ends in a simple arrow — no separate Start QC button", async () => {
     getCompaniesForCurrentUser.mockResolvedValue({ user: dee, companies: [company("c1", "Acme"), company("c2", "Globex")] });
     const html = renderToStaticMarkup(await DashboardPage());
     expect(html).not.toContain("/qc/new");

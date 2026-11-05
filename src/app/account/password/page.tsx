@@ -37,7 +37,7 @@ export default async function ChangePasswordPage() {
         </>
       }
     >
-      <section className="mx-auto max-w-md">
+      <section className="mx-auto max-w-2xl">
         <ChangePasswordForm />
       </section>
     </AppShell>

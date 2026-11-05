@@ -95,7 +95,7 @@ describe("dashboard", () => {
   it("Home's panel is see-through frosted glass and wide (the companies sit on white cards)", async () => {
     const html = renderToStaticMarkup(await DashboardPage());
     expect(html).toMatch(/class="content-panel [^"]*content-panel--glass"/);
-    expect(html).toMatch(/max-w-7xl[^"]*"><div class="content-panel/);
+    expect(html).toMatch(/max-w-7xl[^"]*"><div class="content-panel/); // every page is this wide
   });
 
   it("puts Add company in the list's top row, not under the heading", async () => {

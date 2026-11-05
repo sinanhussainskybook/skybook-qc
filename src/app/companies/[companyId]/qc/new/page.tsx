@@ -240,7 +240,6 @@ export default async function StartQcPage({ params }: PageProps<"/companies/[com
   return (
     <AppShell
       user={user}
-      wide={showResult}
       hero={
         <>
           {back}

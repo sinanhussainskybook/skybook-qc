@@ -14,8 +14,8 @@ import type { User } from "@/lib/db/users";
  * teal hero; the page's content (`children`) then sits in a white
  * panel overlapping the hero's lower edge. Visual only.
  *
- * `wide`: a wider content panel, for a page with a side pane (the QC result)
- * or many cards side by side (Home's companies).
+ * Every page uses the same width (1280 px at most), the header included, so
+ * the logo and menu line up with the content's edges.
  * `glass`: a see-through frosted-glass panel, for content that sits on its own
  * white cards (Home's company rows).
  *
@@ -26,19 +26,17 @@ export function AppShell({
   children,
   hero,
   user,
-  wide = false,
   glass = false,
 }: {
   children?: ReactNode;
   hero?: ReactNode;
   user: Pick<User, "name" | "role">;
-  wide?: boolean;
   glass?: boolean;
 }) {
   return (
     <div className="flex min-h-full flex-1 flex-col">
       <header className="app-header sticky top-0 z-30">
-        <div className="mx-auto flex h-16 w-full max-w-5xl items-center gap-4 px-4 sm:px-6">
+        <div className="mx-auto flex h-16 w-full max-w-7xl items-center gap-4 px-4 sm:px-6">
           <Link href="/" aria-label="Skybook AI QC, home" className="shrink-0 rounded-md transition-opacity hover:opacity-75">
             <SkybookLogo sub="AI QC" className="text-white [&_.text-muted-foreground]:text-white/60" />
           </Link>
@@ -53,18 +51,18 @@ export function AppShell({
       {hero ? (
         <main className="flex-1">
           <section className="app-hero">
-            <div className={`mx-auto flex w-full max-w-5xl flex-col items-center px-4 pt-10 text-center sm:px-6 sm:pt-14 ${children ? "pb-36 sm:pb-40" : "pb-24"}`}>
+            <div className={`mx-auto flex w-full max-w-7xl flex-col items-center px-4 pt-10 text-center sm:px-6 sm:pt-14 ${children ? "pb-36 sm:pb-40" : "pb-24"}`}>
               {hero}
             </div>
           </section>
           {children && (
-            <div className={`relative mx-auto -mt-28 w-full px-4 pb-20 sm:-mt-32 sm:px-6 ${wide ? "max-w-7xl" : "max-w-5xl"}`}>
+            <div className="relative mx-auto -mt-28 w-full max-w-7xl px-4 pb-20 sm:-mt-32 sm:px-6">
               <div className={`content-panel p-5 sm:p-8${glass ? " content-panel--glass" : ""}`}>{children}</div>
             </div>
           )}
         </main>
       ) : (
-        <main className="mx-auto w-full max-w-5xl flex-1 px-4 pt-8 pb-20 sm:px-6 sm:pt-12">{children}</main>
+        <main className="mx-auto w-full max-w-7xl flex-1 px-4 pt-8 pb-20 sm:px-6 sm:pt-12">{children}</main>
       )}
     </div>
   );

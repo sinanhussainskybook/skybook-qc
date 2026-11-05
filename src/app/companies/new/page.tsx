@@ -27,7 +27,7 @@ export default async function NewCompanyPage() {
         </>
       }
     >
-      <section className="mx-auto max-w-md">
+      <section className="mx-auto max-w-2xl">
         <AddCompanyForm />
       </section>
     </AppShell>

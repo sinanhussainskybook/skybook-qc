@@ -351,7 +351,8 @@ export default async function StartQcPage({ params }: PageProps<"/companies/[com
           </div>
         </div>
       ) : (
-        <div>
+        // Before a result: the notice and the steps in one centred column.
+        <div className="mx-auto max-w-3xl">
           {steps}
           {missingNote}
         </div>

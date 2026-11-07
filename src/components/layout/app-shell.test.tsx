@@ -89,6 +89,16 @@ describe("AppShell", () => {
     expect(panel(true)).toContain("content-panel--glass");
   });
 
+  it("plain: no panel at all — the content sits straight on the page (the QC result)", () => {
+    const out = renderToStaticMarkup(
+      <AppShell user={{ name: "Ada Admin", role: "admin" }} hero={<h1>Title</h1>} plain>
+        <p>Body</p>
+      </AppShell>
+    );
+    expect(out).not.toContain("content-panel");
+    expect(out).toContain('<div class="content-plain"><p>Body</p></div>');
+  });
+
   it("no password link in the header (it's on the Users page)", () => {
     expect(html).not.toContain('href="/account/password"');
     expect(render("designer", "/")).not.toContain('href="/account/password"');

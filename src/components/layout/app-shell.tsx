@@ -18,6 +18,8 @@ import type { User } from "@/lib/db/users";
  * the logo and menu line up with the content's edges.
  * `glass`: a see-through frosted-glass panel, for content that sits on its own
  * white cards (Home's company rows).
+ * `plain`: no panel at all — the content sits straight on the page, on its own
+ * white cards (the QC result).
  *
  * The page passes in the user it got from requireUser(); the shell does no
  * checking of its own.
@@ -27,11 +29,13 @@ export function AppShell({
   hero,
   user,
   glass = false,
+  plain = false,
 }: {
   children?: ReactNode;
   hero?: ReactNode;
   user: Pick<User, "name" | "role">;
   glass?: boolean;
+  plain?: boolean;
 }) {
   return (
     <div className="flex min-h-full flex-1 flex-col">
@@ -57,7 +61,11 @@ export function AppShell({
           </section>
           {children && (
             <div className="relative mx-auto -mt-28 w-full max-w-7xl px-4 pb-20 sm:-mt-32 sm:px-6">
-              <div className={`content-panel p-5 sm:p-8${glass ? " content-panel--glass" : ""}`}>{children}</div>
+              {plain ? (
+                <div className="content-plain">{children}</div>
+              ) : (
+                <div className={`content-panel p-5 sm:p-8${glass ? " content-panel--glass" : ""}`}>{children}</div>
+              )}
             </div>
           )}
         </main>

@@ -487,18 +487,22 @@ describe("Start QC page", () => {
       expect(text).toContain("to verify — the AI wasn't sure enough for it to count. Please check it by eye before sending the content.");
       // Phase 7: the result — labelled as sample data; uncounted checks said plainly.
       // No counted issues but a human check → the banner says so (the result itself is still PASS).
-      expect(text).toContain("Result PASS — PLEASE VERIFY No issues found — but please verify the items marked below before sending it to the client. Score 100 / 100");
+      expect(text).toContain("Result · Score 100 / 100 PASS — PLEASE VERIFY No issues found — but please verify the items marked below before sending it to the client.");
       expect(text).toContain("Sample data — not real AI. This is not a real QC result.");
       // The simplified summary: three counts, short sections, passed checks collapsed into one line.
       expect(text).toContain("0 Issues to fix 1 To verify 11 Checks passed"); // 10 + the confirmed requirement found
-      expect(text).toContain("Issues to fix No issues to fix.");
+      expect(text).toContain("Issues to fix 0 No issues to fix.");
       expect(text).toContain("1 optional suggestion Recommended resolution — Export at 1440 × 1800 if the original artwork allows it.");
-      expect(text).toContain("Items to verify Please check these by eye before sending. They don't count for or against the result. Major Please verify Brand fonts Brand Expected Montserrat Found Sample Sans Check Check the design for \"Montserrat\" — the AI wasn't sure.");
+      expect(text).toContain("Items to verify 1 Please check these by eye before sending. They don't count for or against the result. Check Brief / rule says Design shows Status Brand fonts Major Brand Brief / rule says Montserrat Design shows Sample Sans Check Check the design for \"Montserrat\" — the AI wasn't sure. ? Verify");
       expect(text).not.toMatch(/HUMAN CHECK REQUIRED|Human checks?\b|Should be|AI read/);
-      expect(text).toContain("Passed ✓ 11 checks passed");
+      expect(text).toContain("Passed 11 ✓ 11 checks passed");
       // Technical wording stays out of the summary: it is only in "All checks in detail", after the download.
-      const summary = text.slice(text.indexOf("Result PASS"), text.indexOf("All checks in detail"));
-      expect(summary).not.toMatch(/not verified|Needs a human check:|Score by category|Detected:|couldn't be verified/);
+      const summary = text.slice(text.indexOf("Result · Score"), text.indexOf("All checks in detail"));
+      expect(summary).not.toMatch(/not verified|Needs a human check:|Detected:|couldn't be verified/);
+      // The small "Score by category" card sits under the design, after the summary strip (scores only).
+      const strip = text.slice(text.indexOf("Result · Score"), text.indexOf("Download QC report"));
+      expect(strip).not.toContain("Score by category");
+      expect(text.indexOf("Score by category")).toBeGreaterThan(text.indexOf("Download QC report"));
       expect(text).toContain("All checks in detail Every check with its full explanation, score by category, and anything that couldn't be checked. Score by category");
       // Phase 8: the report download, made from this session and not stored.
       expect(text).toContain("Download QC report (PDF)");

@@ -5,7 +5,7 @@ import { AppShell } from "@/components/layout/app-shell";
 import { SectionCard } from "@/components/company/section-card";
 import { AnalysisPanel } from "@/components/qc/analysis-panel";
 import { CategoryChecks } from "@/components/qc/category-checks";
-import { CategoryScores, resultWaitingText, Scoreboard } from "@/components/qc/scoreboard";
+import { CategoryScoreCard, CategoryScores, ResultChecks, ResultSummary, resultWaitingText } from "@/components/qc/scoreboard";
 import { DesignPreviews } from "@/components/qc/design-preview";
 import { FILES_BOX_ID, FixedDesignStep } from "@/components/qc/fixed-design-step";
 import { FileUploader } from "@/components/qc/file-uploader";
@@ -240,6 +240,8 @@ export default async function StartQcPage({ params }: PageProps<"/companies/[com
   return (
     <AppShell
       user={user}
+      // With a result, no big white panel: the summary strip, the design and the checks sit on the page.
+      plain={showResult}
       hero={
         <>
           {back}
@@ -260,12 +262,23 @@ export default async function StartQcPage({ params }: PageProps<"/companies/[com
         </p>
       )}
 
+      {showResult && board && !noRequirements && (
+        // The result at a glance, across the top: score, result, counts, the PDF and any warning.
+        <div className="mb-6">
+          <ResultSummary
+            board={board}
+            findings={findings!}
+            mock={analysisView.detections?.source === "mock"}
+            reportHref={`/companies/${company.id}/qc/report`}
+          />
+        </div>
+      )}
       {showResult ? (
         <div className="grid gap-6 lg:grid-cols-[22rem_minmax(0,1fr)] lg:gap-8">
           {/* The result first on phones; on wide screens the design sits on the left, beside the result. */}
           <aside
             aria-label="Checked design and files"
-            className="order-last space-y-4 lg:order-none lg:sticky lg:top-24 lg:max-h-[calc(100dvh-7rem)] lg:self-start lg:overflow-y-auto"
+            className="order-last space-y-4 lg:order-none lg:sticky lg:top-24 lg:self-start"
           >
             <DesignPreviews previews={previews} markers={markers} />
             {/* Open while the check is running or out of date, so its progress and Check again stay in view. */}
@@ -279,19 +292,15 @@ export default async function StartQcPage({ params }: PageProps<"/companies/[com
               </summary>
               <div className="border-t border-border p-4">{steps}</div>
             </details>
+            {/* Which areas lost points, at a glance, under the design. */}
+            {board && !noRequirements && <CategoryScoreCard board={board} />}
           </aside>
           <div className="min-w-0 rounded-2xl bg-card p-5 shadow-sm ring-1 ring-border sm:p-6">
             <section id="qc-result" aria-label="QC result" className="scroll-mt-24 pb-8">
               {noRequirements ? (
                 <p className="rounded-xl bg-revision-soft px-4 py-3 text-sm font-medium text-revision">{READINESS_MESSAGES.requirements}</p>
               ) : board ? (
-                <Scoreboard
-                  board={board}
-                  findings={findings!}
-                  mock={analysisView.detections?.source === "mock"}
-                  reportHref={`/companies/${company.id}/qc/report`}
-                  nextStep={<FixedDesignStep />}
-                />
+                <ResultChecks board={board} findings={findings!} nextStep={<FixedDesignStep />} />
               ) : (
                 <p className="rounded-xl bg-muted/60 px-4 py-3 text-sm text-muted-foreground">{resultWaitingText(analysisView.analysis.state)}</p>
               )}

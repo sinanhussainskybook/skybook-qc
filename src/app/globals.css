@@ -218,6 +218,24 @@ a.hero-glass:hover {
 }
 
 /*
+ * No panel (the QC result): the content sits straight on the page, on its own white cards. Text placed
+ * straight on the page is white in dark mode (dark in light mode); inside a white card (.bg-card) the
+ * normal dark text and muted colours come back.
+ */
+.content-plain {
+  --muted-foreground: rgb(255 255 255 / 0.75);
+  color: #ffffff;
+}
+.content-plain .bg-card {
+  --muted-foreground: #556074;
+  color: var(--card-foreground);
+}
+[data-theme="light"] .content-plain {
+  --muted-foreground: #556074;
+  color: var(--foreground);
+}
+
+/*
  * The primary action: a white pill with teal text on the teal header and hero,
  * and a solid teal pill inside a page's white panel.
  */

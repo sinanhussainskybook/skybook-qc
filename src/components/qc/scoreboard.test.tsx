@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { Scoreboard } from "@/components/qc/scoreboard";
+import { CategoryScoreCard, Scoreboard } from "@/components/qc/scoreboard";
 import type { Category, Finding, FindingStatus, Severity } from "@/lib/qc/findings";
 import { mergeDuplicateFindings } from "@/lib/qc/golden-rules-view";
 import { scoreFindings } from "@/lib/qc/scoring";
@@ -52,12 +52,21 @@ describe("Results page — issues to fix", () => {
     expect(visible(renderToStaticMarkup(<Scoreboard board={scoreFindings(clean)} findings={clean} nextStep={next} />))).not.toContain("NEXT STEP");
   });
 
-  it("something missing reads 'Missing: not on the design', never 'Found: Not found'", () => {
+  it("each issue is a row: what the brief asks, what the design shows (something missing reads 'Not on the design', never 'Not found'), the fix and its number", () => {
     const text = render(issues());
-    expect(text).toContain("Missing not on the design");
+    expect(text).toContain('Price Critical Brief Brief / rule says AED 4,999 Design shows AED 4,500 Fix Change it to "AED 4,999". 1 Fix');
+    expect(text).toContain('Required text Minor Brief Brief / rule says Free transfers Design shows Not on the design Fix Add "Free transfers". 2 Fix');
     expect(text).not.toContain("Not found");
-    // A value that was found still reads "Found".
-    expect(text).toContain("Found AED 4,500");
+  });
+
+  it("the summary is a strip: score, result, what it means, the three counts and the PDF", () => {
+    const html = renderToStaticMarkup(<Scoreboard board={scoreFindings(issues())} findings={issues()} reportHref="/r.pdf" />);
+    const text = visible(html);
+    expect(text).toMatch(/Result · Score \d+ \/ 100 FAIL There is at least one critical issue/);
+    expect(text).toContain("2 Issues to fix 0 To verify 0 Checks passed Download QC report (PDF)");
+    expect(html).toContain('href="/r.pdf"');
+    // The checks table comes after the summary.
+    expect(text.indexOf("Download QC report")).toBeLessThan(text.indexOf("Brief / rule says"));
   });
 });
 
@@ -77,10 +86,10 @@ describe("Results page — Golden Rules and items to verify", () => {
   it("no Golden Rules section: a broken rule is one of the issues to fix, under its severity, marked Golden Rule and Mandatory / Optional", () => {
     const text = render(findings());
     expect(text).not.toMatch(/active rules?|Other issues to fix|Followed:/);
-    const issues = text.slice(text.indexOf("Issues to fix"), text.indexOf("Items to verify"));
-    expect(issues).toContain('Critical Always use Book now Golden Rule Optional Found Book today Fix Use "Book now". Also required by the brief — counted once.');
-    expect(issues).toContain("Critical Headlines in Montserrat Golden Rule Mandatory Found Poppins Fix Use Montserrat only.");
-    expect(issues).toContain("Major Text contrast Accessibility");
+    const issues = text.slice(text.indexOf("Issues to fix 3 Check"), text.indexOf("Items to verify"));
+    expect(issues).toContain('Always use Book now Critical Golden Rule Optional Brief / rule says Book now Design shows Book today Fix Use "Book now". Also required by the brief — counted once. 1 Fix');
+    expect(issues).toContain("Headlines in Montserrat Critical Golden Rule Mandatory Brief / rule says Montserrat Design shows Poppins Fix Use Montserrat only. 2 Fix");
+    expect(issues).toContain("Text contrast Major Accessibility Brief / rule says — Design shows 3.1 : 1 Fix Darken the text. 3 Fix");
     expect(text).not.toContain("Golden Rule:");
   });
 
@@ -93,9 +102,9 @@ describe("Results page — Golden Rules and items to verify", () => {
   it("items to verify: uncertain findings and rules written in words, each with a short reason — never counted", () => {
     const text = render(findings());
     expect(text).toContain("2 To verify");
-    expect(text).toContain("Items to verify Please check these by eye before sending. They don't count for or against the result.");
-    expect(text).toContain("Critical Please verify Logo top-left Golden Rule Mandatory Check Check the design follows this rule — it can't be checked automatically.");
-    expect(text).toContain(`Major Please verify Logo Brand Expected The company's logo Found No logo Check Check the design for "The company's logo" — the AI wasn't sure.`);
+    expect(text).toContain("Items to verify 2 Please check these by eye before sending. They don't count for or against the result.");
+    expect(text).toContain("Logo top-left Critical Golden Rule Mandatory Brief / rule says — Design shows — Check Check the design follows this rule — it can't be checked automatically. ? Verify");
+    expect(text).toContain(`Logo Major Brand Brief / rule says The company's logo Design shows No logo Check Check the design for "The company's logo" — the AI wasn't sure. ? Verify`);
     expect(text).not.toMatch(/Human checks?\b|Possible critical|Should be|AI read/);
   });
 
@@ -232,5 +241,28 @@ describe("Results page — a mandatory Golden Rule the analysis couldn't check",
     expect(text).not.toContain("the AI wasn't sure");
     expect(text).toContain("0 Issues to fix 1 To verify");
     expect(text).not.toMatch(/\bPASS\b/);
+  });
+});
+
+describe("Results page — score by category under the design", () => {
+  it("one line per scored category with its score; unscored categories are left out", () => {
+    const list = [
+      f("brief", "passed", "critical", { title: "Price" }),
+      f("accessibility", "failed", "major", { title: "Text contrast" }),
+      f("accessibility", "passed", "major", { title: "Text size" }),
+    ];
+    const board = scoreFindings(list);
+    const text = visible(renderToStaticMarkup(<CategoryScoreCard board={board} />));
+    const accessibility = board.categories.find((c) => c.category === "accessibility")!.score;
+    expect(text).toContain("Score by category");
+    expect(text).toContain("Brief 100");
+    expect(text).toContain(`Accessibility ${accessibility}`);
+    expect(accessibility).toBeLessThan(100);
+    expect(text).not.toContain("Golden Rules"); // not scored here
+  });
+
+  it("shows nothing when no category has a score", () => {
+    const board = scoreFindings([f("brand", "unverified", "major", { title: "Logo", explanation: "No logo is saved." })]);
+    expect(renderToStaticMarkup(<CategoryScoreCard board={board} />)).toBe("");
   });
 });

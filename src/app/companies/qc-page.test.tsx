@@ -295,7 +295,14 @@ describe("Start QC page", () => {
     ]);
     // Before Check Design: no result and no detail.
     expect(main(renderToStaticMarkup(await StartQcPage(props)))).not.toContain("Platform check");
+    // While the design is being checked: the progress card in the result's place, no result and no detail yet.
     latestRun.mockImplementation(async (_db: unknown, _id: string, kind: string) => (kind === "content" ? checking : null));
+    const during = visible(main(renderToStaticMarkup(await StartQcPage(props))));
+    expect(during).toContain("Checking your design");
+    expect(during).not.toContain("Platform check");
+    // A check that didn't finish: the platform detail (measured from the file) is there, but no result.
+    const failed = { ...checking, status: "failed", stage: "Failed", failure_reason: "Timed out." };
+    latestRun.mockImplementation(async (_db: unknown, _id: string, kind: string) => (kind === "content" ? failed : null));
     const html = main(renderToStaticMarkup(await StartQcPage(props)));
     const text = html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
     expect(text).toContain("Platform check");
@@ -304,7 +311,7 @@ describe("Start QC page", () => {
     expect(text).toContain("4:5 (1080 × 1350)");
     expect(text).toContain("Safe zone — not verified.");
     expect(text).toContain("Source: Meta Ads Guide");
-    expect(text).toContain("The result appears when the analysis finishes.");
+    expect(text).toContain("No result: the check didn&#x27;t finish.");
     expect(text).not.toMatch(NO_RESULT_BANNER);
   });
 
@@ -444,17 +451,18 @@ describe("Start QC page", () => {
       expect(text).not.toMatch(NO_RESULT_BANNER);
     });
 
-    it("in progress: progress and the mock label; checks say they are waiting; no result yet", async () => {
+    it("in progress: a progress card in the result's place — the step it's on, how long to expect, the mock label; no result yet", async () => {
       latestRun.mockResolvedValue(runRow());
       const text = await page();
-      expect(text).toContain("The result appears when the analysis finishes.");
+      const card = text.slice(text.indexOf("Checking your design"));
+      expect(card).toMatch(/^Checking your design Sample data: a few seconds\. You can stay on this page — the result appears here by itself\./);
+      // Steps 1–2 done, 3 under way (by name), 4 to come; then the line under the bar.
+      expect(card).toContain("Step 1 Step 2 Step 3: Reading text Step 4");
+      expect(card).toContain("Step 3 of 4: Reading text Sample data — not real AI");
       expect(text).not.toMatch(NO_RESULT_BANNER);
       expect(text).not.toContain("Download QC report");
-      expect(text).toContain("Checking the design…");
-      // The step it's on, by name, and how long to expect (the sample provider is quick).
-      expect(text).toContain("Step 3 of 4: Reading text · Sample data: a few seconds. You can leave this page; it carries on.");
-      expect(text).toContain("Sample data — not real AI");
-      expect(text).toContain("The content is being analysed");
+      expect(text).not.toContain("All checks in detail");
+      expect(text).not.toContain("The result appears when the analysis finishes.");
     });
 
     it("failed: the plain reason and Try again", async () => {

@@ -15,6 +15,7 @@ import { PlatformForm } from "@/components/qc/platform-form";
 import { SessionFooter } from "@/components/qc/session-footer";
 import { StartQcButton } from "@/components/qc/start-qc-button";
 import { Step } from "@/components/qc/step";
+import { CheckProgress } from "@/components/qc/check-progress";
 import { requireCompanyAccess } from "@/lib/company/access";
 import { getDatabase } from "@/lib/db/client";
 import { findCurrentSession } from "@/lib/db/qc-sessions";
@@ -100,8 +101,10 @@ export default async function StartQcPage({ params }: PageProps<"/companies/[com
   // The platform is asked for only when the brief, once read, gives no exact size.
   const askPlatform = Boolean(session.platform) || (!briefReading && checkable.length > 0 && !hasExactSize(checkable));
   const platformFindings = findings && session.platform ? findings.filter((f) => f.category === "platform_size") : null;
+  // While the design is being checked, a progress card takes the result's place (beside the design).
+  const checking = run?.status === "queued" || run?.status === "processing";
   // The result appears once the design has been checked (or is being checked).
-  const showResult = Boolean(findings && run);
+  const showResult = Boolean(findings && run) || checking;
   const missing = missingCompanyInformation(config);
   const hoursLeft = Math.max(1, Math.ceil((session.expires_at.getTime() - now.getTime()) / 3_600_000));
   const limit = getUploadLimitBytes();
@@ -111,7 +114,8 @@ export default async function StartQcPage({ params }: PageProps<"/companies/[com
   // and the result takes the main area.
   const compact = showResult;
   const previews = showResult ? await designPreviews(storage, content) : [];
-  const markers = board
+  // No circles while a new check runs: they'd belong to the previous result.
+  const markers = board && !checking
     ? issueMarkers(issuesToFix(board), analysisView.detections?.texts, content.map((f) => f.id))
     : [];
 
@@ -262,7 +266,7 @@ export default async function StartQcPage({ params }: PageProps<"/companies/[com
         </p>
       )}
 
-      {showResult && board && !noRequirements && (
+      {showResult && !checking && board && !noRequirements && (
         // The result at a glance, across the top: score, result, counts, the PDF and any warning.
         <div className="mb-6">
           <ResultSummary
@@ -281,8 +285,8 @@ export default async function StartQcPage({ params }: PageProps<"/companies/[com
             className="order-last space-y-4 lg:order-none lg:sticky lg:top-24 lg:self-start"
           >
             <DesignPreviews previews={previews} markers={markers} />
-            {/* Open while the check is running or out of date, so its progress and Check again stay in view. */}
-            <details id={FILES_BOX_ID} className="group scroll-mt-24 border-y border-border" open={!board || analysisView.stale}>
+            {/* Folded while the check runs (the progress card shows it); open when there's no result or it's out of date. */}
+            <details id={FILES_BOX_ID} className="group scroll-mt-24 border-y border-border" open={!checking && (!board || analysisView.stale)}>
               <summary className="flex cursor-pointer list-none items-center gap-3 py-3">
                 <span className="min-w-0 flex-1">
                   <span className="block text-sm font-semibold">Files and Check Design</span>
@@ -293,9 +297,13 @@ export default async function StartQcPage({ params }: PageProps<"/companies/[com
               <div className="border-t border-border py-4">{steps}</div>
             </details>
             {/* Which areas lost points, at a glance, under the design. */}
-            {board && !noRequirements && <CategoryScoreCard board={board} />}
+            {!checking && board && !noRequirements && <CategoryScoreCard board={board} />}
           </aside>
           <div className="min-w-0">
+            {checking && run ? (
+              <CheckProgress key={run.id} sessionId={session.id} initial={statusOf(run)!} />
+            ) : (
+              <>
             <section id="qc-result" aria-label="QC result" className="scroll-mt-24 pb-8">
               {noRequirements ? (
                 <p className="rounded-xl bg-revision-soft px-4 py-3 text-sm font-medium text-revision">{READINESS_MESSAGES.requirements}</p>
@@ -348,6 +356,8 @@ export default async function StartQcPage({ params }: PageProps<"/companies/[com
             </details>
 
             {missingNote}
+              </>
+            )}
           </div>
         </div>
       ) : (

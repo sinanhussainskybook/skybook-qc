@@ -234,6 +234,23 @@ a.hero-glass:hover {
   --muted-foreground: #556074;
   color: var(--foreground);
 }
+/*
+ * The QC result's page: one plain white page below the teal header and hero, in both modes, the hero
+ * fading into it; no boxes on it. Text straight on the page is dark.
+ */
+.page-light {
+  background: #ffffff;
+}
+.page-light .app-hero,
+[data-theme="light"] .page-light .app-hero {
+  background:
+    radial-gradient(700px 360px at 50% 18%, rgb(56 150 166 / 0.32), transparent 70%),
+    linear-gradient(180deg, #061c23 0%, #0a3644 30%, #0e4d5d 55%, #5d93a0 75%, #c9dde2 90%, #ffffff 100%);
+}
+.page-light .content-plain {
+  --muted-foreground: #556074;
+  color: var(--foreground);
+}
 
 /*
  * The primary action: a white pill with teal text on the teal header and hero,

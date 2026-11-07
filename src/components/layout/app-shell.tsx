@@ -18,8 +18,8 @@ import type { User } from "@/lib/db/users";
  * the logo and menu line up with the content's edges.
  * `glass`: a see-through frosted-glass panel, for content that sits on its own
  * white cards (Home's company rows).
- * `plain`: no panel at all — the content sits straight on the page, on its own
- * white cards (the QC result).
+ * `plain`: no panel at all — the content sits straight on a light grey page
+ * (in both modes), on its own white cards (the QC result).
  *
  * The page passes in the user it got from requireUser(); the shell does no
  * checking of its own.
@@ -38,7 +38,7 @@ export function AppShell({
   plain?: boolean;
 }) {
   return (
-    <div className="flex min-h-full flex-1 flex-col">
+    <div className={`flex min-h-full flex-1 flex-col${plain ? " page-light" : ""}`}>
       <header className="app-header sticky top-0 z-30">
         <div className="mx-auto flex h-16 w-full max-w-7xl items-center gap-4 px-4 sm:px-6">
           <Link href="/" aria-label="Skybook AI QC, home" className="shrink-0 rounded-md transition-opacity hover:opacity-75">

@@ -187,7 +187,6 @@ export function ResultChecks({
             {toFix.map((f, i) => (
               <Row
                 key={`${f.ruleId}-${f.fileId ?? ""}-${i}`}
-                tint="bg-[#fffaf1]"
                 check={<CheckName f={f} />}
                 expected={f.expected}
                 shows={f.detected === NOT_FOUND ? "Not on the design" : short(f.detected)}
@@ -237,7 +236,6 @@ export function ResultChecks({
             {toVerify.map((f, i) => (
               <Row
                 key={`${f.ruleId}-${i}`}
-                tint="bg-[#fffdf3]"
                 check={<CheckName f={f} />}
                 expected={f.expected && f.expected !== ruleName(f.title) ? short(f.expected) : undefined}
                 shows={f.detected && f.detected !== "Not checked" ? short(f.detected) : undefined}
@@ -307,14 +305,15 @@ export function ResultChecks({
   );
 }
 
-// The table's columns: Check · Brief / rule says · Design shows · Status. On a phone each row stacks.
+// The table's columns: Check · Brief / rule says · Design shows · Status — straight on the page, rows
+// separated by thin lines. On a phone each row stacks.
 const COLUMNS = "md:grid md:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)_minmax(0,1.35fr)_6.5rem] md:gap-4";
 
 /** The table frame, with its column headings (wide screens). */
 function Rows({ children }: { children: ReactNode }) {
   return (
-    <div className="mt-3 overflow-hidden rounded-2xl border border-border bg-card">
-      <div className={cn(COLUMNS, "hidden bg-[#f1f6f7] px-4 py-2.5 text-xs font-semibold text-muted-foreground")} aria-hidden>
+    <div className="mt-3 border-b border-border">
+      <div className={cn(COLUMNS, "hidden border-b-2 border-border px-1 pb-2 text-xs font-semibold text-muted-foreground")} aria-hidden>
         <span>Check</span>
         <span>Brief / rule says</span>
         <span>Design shows</span>
@@ -332,17 +331,15 @@ function Row({
   shows,
   extra,
   status,
-  tint,
 }: {
   check: ReactNode;
   expected?: string;
   shows?: string;
   extra?: ReactNode;
   status: ReactNode;
-  tint?: string;
 }) {
   return (
-    <li className={cn(COLUMNS, "grid gap-1.5 px-4 py-3.5 text-sm", tint)}>
+    <li className={cn(COLUMNS, "grid gap-1.5 px-1 py-3.5 text-sm")}>
       <div className="min-w-0">{check}</div>
       <div className="min-w-0 break-words">
         <span className="text-xs text-muted-foreground md:hidden">Brief / rule says </span>
@@ -408,7 +405,7 @@ export function CategoryScoreCard({ board }: { board: Board }) {
   const scored = board.categories.filter((c) => c.score !== null);
   if (scored.length === 0) return null;
   return (
-    <section aria-labelledby="score-by-category" className="rounded-2xl bg-card p-4 shadow-sm ring-1 ring-border">
+    <section aria-labelledby="score-by-category" className="pt-1">
       <h3 id="score-by-category" className="text-sm font-semibold">
         Score by category
       </h3>
@@ -481,7 +478,7 @@ function Heading({ id, count, children }: { id: string; count: number; children:
 
 function Collapsed({ summary, summaryClass, children }: { summary: string; summaryClass?: string; children: React.ReactNode }) {
   return (
-    <details className="group mt-3 rounded-xl bg-muted/60 px-4 py-3">
+    <details className="group mt-3 border-y border-border py-3">
       <summary className={cn("flex cursor-pointer list-none items-center gap-2 text-sm font-medium", summaryClass)}>
         <span className="flex-1">{summary}</span>
         <ChevronDown className="size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" aria-hidden />

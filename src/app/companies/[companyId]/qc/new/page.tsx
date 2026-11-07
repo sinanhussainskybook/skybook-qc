@@ -274,28 +274,28 @@ export default async function StartQcPage({ params }: PageProps<"/companies/[com
         </div>
       )}
       {showResult ? (
-        <div className="grid gap-6 lg:grid-cols-[22rem_minmax(0,1fr)] lg:gap-8">
-          {/* The result first on phones; on wide screens the design sits on the left, beside the result. */}
+        <div className="grid gap-8 lg:grid-cols-[22rem_minmax(0,1fr)] lg:gap-10">
+          {/* One page, no boxes. The result first on phones; on wide screens the design sits on the left, beside it. */}
           <aside
             aria-label="Checked design and files"
             className="order-last space-y-4 lg:order-none lg:sticky lg:top-24 lg:self-start"
           >
             <DesignPreviews previews={previews} markers={markers} />
             {/* Open while the check is running or out of date, so its progress and Check again stay in view. */}
-            <details id={FILES_BOX_ID} className="group scroll-mt-24 rounded-2xl bg-card shadow-sm ring-1 ring-border" open={!board || analysisView.stale}>
-              <summary className="flex cursor-pointer list-none items-center gap-3 px-4 py-3">
+            <details id={FILES_BOX_ID} className="group scroll-mt-24 border-y border-border" open={!board || analysisView.stale}>
+              <summary className="flex cursor-pointer list-none items-center gap-3 py-3">
                 <span className="min-w-0 flex-1">
                   <span className="block text-sm font-semibold">Files and Check Design</span>
                   <span className="block text-xs text-muted-foreground">Change the brief or the design, or check again.</span>
                 </span>
                 <ChevronDown className="size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" aria-hidden />
               </summary>
-              <div className="border-t border-border p-4">{steps}</div>
+              <div className="border-t border-border py-4">{steps}</div>
             </details>
             {/* Which areas lost points, at a glance, under the design. */}
             {board && !noRequirements && <CategoryScoreCard board={board} />}
           </aside>
-          <div className="min-w-0 rounded-2xl bg-card p-5 shadow-sm ring-1 ring-border sm:p-6">
+          <div className="min-w-0">
             <section id="qc-result" aria-label="QC result" className="scroll-mt-24 pb-8">
               {noRequirements ? (
                 <p className="rounded-xl bg-revision-soft px-4 py-3 text-sm font-medium text-revision">{READINESS_MESSAGES.requirements}</p>

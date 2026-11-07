@@ -97,6 +97,8 @@ describe("AppShell", () => {
     );
     expect(out).not.toContain("content-panel");
     expect(out).toContain('<div class="content-plain"><p>Body</p></div>');
+    expect(out).toMatch(/<div class="[^"]*page-light"/); // light grey page, in both modes
+    expect(html).not.toContain("page-light");
   });
 
   it("no password link in the header (it's on the Users page)", () => {

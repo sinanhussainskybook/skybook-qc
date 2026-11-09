@@ -1,4 +1,4 @@
-import type { GeminiConfig } from "@/lib/analysis/gemini/config";
+import { geminiGenerationSettings, type GeminiConfig } from "@/lib/analysis/gemini/config";
 import {
   DESIGN_ANALYSIS_SCHEMA,
   DESIGN_SYSTEM,
@@ -99,8 +99,8 @@ export function clampGeminiCoordinates(raw: string): string {
 
 const MAX_ERROR_CHARS = 200;
 
-/** "HTTP 400: <Google's short message>" — single line, capped, the key removed. */
-async function describeHttpError(response: Response, apiKey: string): Promise<string> {
+/** Google's error message in full — single line, the key removed ("" when there's no readable body). */
+async function errorMessage(response: Response, apiKey: string): Promise<string> {
   let message = "";
   try {
     const body = (await response.text()).slice(0, 20_000);
@@ -110,9 +110,21 @@ async function describeHttpError(response: Response, apiKey: string): Promise<st
     // no readable error body: the status alone
   }
   if (apiKey) message = message.split(apiKey).join("[key]");
-  message = message.replace(/\p{Cc}+/gu, " ").replace(/\s+/g, " ").trim();
-  if (message.length > MAX_ERROR_CHARS) message = `${message.slice(0, MAX_ERROR_CHARS - 1)}…`;
-  return message ? `HTTP ${response.status}: ${message}` : `HTTP ${response.status}`;
+  return message.replace(/\p{Cc}+/gu, " ").replace(/\s+/g, " ").trim();
+}
+
+/** "HTTP 400: <Google's short message>" — single line, capped, the key removed. */
+function describeHttpError(status: number, message: string): string {
+  const short = message.length > MAX_ERROR_CHARS ? `${message.slice(0, MAX_ERROR_CHARS - 1)}…` : message;
+  return short ? `HTTP ${status}: ${short}` : `HTTP ${status}`;
+}
+
+/**
+ * Whether a 429 is the DAILY quota (Google names the quota, e.g. "…_requests_per_day…" or
+ * "GenerateRequestsPerDayPerProjectPerModel-FreeTier"). Per-minute limits don't match and are retried.
+ */
+export function isDailyQuota(detail: string): boolean {
+  return /per[\s_-]?day|perday|daily/i.test(detail);
 }
 
 function retryAfterMs(response: Response): number | undefined {
@@ -142,7 +154,12 @@ export class GeminiProvider implements AnalysisProvider {
         body: JSON.stringify({
           systemInstruction: { parts: [{ text: system }] },
           contents: [{ role: "user", parts }],
-          generationConfig: { responseMimeType: "application/json", responseSchema: geminiSchema(schema), maxOutputTokens: MAX_OUTPUT_TOKENS },
+          generationConfig: {
+            responseMimeType: "application/json",
+            responseSchema: geminiSchema(schema),
+            maxOutputTokens: MAX_OUTPUT_TOKENS,
+            ...geminiGenerationSettings(this.config.model),
+          },
         }),
         signal,
       });
@@ -152,14 +169,23 @@ export class GeminiProvider implements AnalysisProvider {
     }
     if (response.status === 429) {
       const retryAfter = retryAfterMs(response);
-      throw new ProviderError(`The ${what} is busy or the free-tier limit was reached (${await describeHttpError(response, this.config.apiKey)}).`, "rate_limited", retryAfter);
+      const message = await errorMessage(response, this.config.apiKey);
+      const detail = describeHttpError(response.status, message);
+      // The day's quota used up (Google names the quota at the END of its message, so the full message is
+      // checked): retrying within seconds can't succeed, so the check stops straight away.
+      if (isDailyQuota(message)) throw new ProviderError(`The ${what} reached the free tier's daily limit (${detail}).`, "daily_limit");
+      throw new ProviderError(`The ${what} is busy or the free-tier limit was reached (${detail}).`, "rate_limited", retryAfter);
     }
     if (response.status >= 500) {
       const retryAfter = retryAfterMs(response);
-      throw new ProviderError(`The ${what} had a temporary problem (${await describeHttpError(response, this.config.apiKey)}).`, "server", retryAfter);
+      const detail = describeHttpError(response.status, await errorMessage(response, this.config.apiKey));
+      throw new ProviderError(`The ${what} had a temporary problem (${detail}).`, "server", retryAfter);
     }
     if (response.status === 401 || response.status === 403) throw new ProviderError(`The ${what} refused this server's API key.`, "auth");
-    if (!response.ok) throw new ProviderError(`The ${what} rejected the request (${await describeHttpError(response, this.config.apiKey)}).`, "rejected");
+    if (!response.ok) {
+      const detail = describeHttpError(response.status, await errorMessage(response, this.config.apiKey));
+      throw new ProviderError(`The ${what} rejected the request (${detail}).`, "rejected");
+    }
 
     const length = Number(response.headers.get("content-length") ?? 0);
     if (length > MAX_RESPONSE_BYTES) throw new ProviderError(`The ${what} response was too large.`, "invalid_response");

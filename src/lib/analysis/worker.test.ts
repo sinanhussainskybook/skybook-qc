@@ -6,7 +6,7 @@ import type { Database } from "@/lib/db/database";
 import type { ExpiredCursor } from "@/lib/db/qc-sessions";
 import type { CleanupBatch } from "@/lib/qc/session";
 import type { RunDeps } from "@/lib/analysis/pipeline";
-import { abortableSleep, CLEANUP_EVERY_MS, runCleanupLoop, runWorker } from "@/lib/analysis/worker";
+import { abortableSleep, CLEANUP_EVERY_MS, IDLE_POLL_MS, runCleanupLoop, runWorker } from "@/lib/analysis/worker";
 
 /**
  * The worker's hourly clean-up of expired QC sessions: when it runs, that a failure never stops it,
@@ -240,5 +240,11 @@ describe("the worker runs the clean-up and waits for it on shutdown", () => {
     expect(log).toHaveBeenCalledWith("Clean-up failed: Error; trying again in an hour.");
     controller.abort();
     await worker;
+  });
+});
+
+describe("picking up new checks", () => {
+  it("an idle worker slot asks the queue for work every second (was every 2 s)", () => {
+    expect(IDLE_POLL_MS).toBe(1_000);
   });
 });

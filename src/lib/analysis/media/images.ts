@@ -20,7 +20,13 @@ export async function orientedSize(bytes: Uint8Array): Promise<{ width: number; 
   return { width, height };
 }
 
-/** Upright, at most `longEdge` px, PNG when it fits the byte limit, else JPEG at falling quality. */
+/**
+ * Upright, at most `longEdge` px, PNG when it fits the byte limit, else JPEG at falling quality.
+ *
+ * The original is decoded, turned upright, resized and flattened ONCE; every encoding attempt (PNG, then
+ * JPEG 92 → 60) starts from those pixels — each attempt used to decode and resize the original again.
+ * The encoders and their settings are unchanged, so the result is byte for byte what it was.
+ */
 export async function prepareImage(
   bytes: Uint8Array,
   key: string,
@@ -28,19 +34,29 @@ export async function prepareImage(
   sourceName?: string,
   maxBytes: number = ANALYSIS_LIMITS.maxProviderImageBytes
 ): Promise<PreparedImage> {
-  const base = sharp(bytes, { limitInputPixels: MAX_INPUT_PIXELS, failOn: "error" })
+  const { data, info } = await sharp(bytes, { limitInputPixels: MAX_INPUT_PIXELS, failOn: "error" })
     .rotate()
     .resize({ width: longEdge, height: longEdge, fit: "inside", withoutEnlargement: true })
-    .flatten({ background: "#ffffff" });
-  const png = await base.clone().png({ compressionLevel: 9 }).toBuffer({ resolveWithObject: true });
-  if (png.data.length <= maxBytes) {
-    return { key, mime: "image/png", bytes: new Uint8Array(png.data), width: png.info.width, height: png.info.height, sourceName };
-  }
+    .flatten({ background: "#ffffff" })
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+  const pixels = () => sharp(data, { raw: { width: info.width, height: info.height, channels: info.channels } });
+  const result = (mime: PreparedImage["mime"], encoded: Buffer): PreparedImage => ({
+    key,
+    mime,
+    bytes: new Uint8Array(encoded),
+    width: info.width,
+    height: info.height,
+    sourceName,
+  });
+
+  const png = await pixels().png({ compressionLevel: 9 }).toBuffer();
+  if (png.length <= maxBytes) return result("image/png", png);
   for (const quality of [92, 85, 75, 60]) {
-    const jpeg = await base.clone().jpeg({ quality, mozjpeg: true }).toBuffer({ resolveWithObject: true });
-    if (jpeg.data.length <= maxBytes || quality === 60) {
-      if (jpeg.data.length > maxBytes) throw new Error("image too large to send even after compression");
-      return { key, mime: "image/jpeg", bytes: new Uint8Array(jpeg.data), width: jpeg.info.width, height: jpeg.info.height, sourceName };
+    const jpeg = await pixels().jpeg({ quality, mozjpeg: true }).toBuffer();
+    if (jpeg.length <= maxBytes || quality === 60) {
+      if (jpeg.length > maxBytes) throw new Error("image too large to send even after compression");
+      return result("image/jpeg", jpeg);
     }
   }
   throw new Error("unreachable");

@@ -14,6 +14,7 @@ import { cancelRun, claimNextRun, failRun, findRun, finishRun, heartbeat, insert
 import { MockProvider } from "@/lib/analysis/mock-provider";
 import { PassThroughPreparer } from "@/lib/analysis/media/types";
 import { LocalMediaPreparer } from "@/lib/analysis/media/local";
+import { GEMINI_LIMITS } from "@/lib/analysis/limits";
 import { runFfmpeg } from "@/lib/analysis/media/video";
 import { readFile } from "node:fs/promises";
 import type { AnalysisProvider } from "@/lib/analysis/provider";
@@ -98,6 +99,46 @@ describe("analysis runs (mock provider)", () => {
     ]);
     expect(stored.detections.textCoverage).toBe(0.95);
     expect(existsSync(path.join(tempRoot, run.id))).toBe(false); // temporary folder removed
+  });
+
+  it("one-call provider (Gemini limits): ONE image per judged design; a design past the judging cap is still read at full size", async () => {
+    const big = async (background: string) =>
+      new Uint8Array(await sharp({ create: { width: 5000, height: 2500, channels: 3, background } }).png().toBuffer());
+    await addContent("a.png", await big("#ffffff"));
+    await addContent("b.png", await big("#000000"));
+    await queue();
+    const judged: number[] = [];
+    const read: number[] = [];
+    const mock = new MockProvider();
+    const line = { text: "Book now", box_2d: [100, 100, 200, 400], role: "cta", fontFamily: null, bold: null, certainty: "clear" };
+    const oneCall: AnalysisProvider = {
+      ...mock,
+      name: mock.name,
+      label: mock.label,
+      readText: (img, sig) => (read.push(img.width), mock.readText(img, sig)),
+      judgeImage: (input, sig) => mock.judgeImage(input, sig),
+      transcribe: (input, sig) => mock.transcribe(input, sig),
+      extractRequirements: (input, sig) => mock.extractRequirements(input, sig),
+      analyzeDesign: async (input) => {
+        judged.push(input.image.width);
+        return JSON.stringify({
+          texts: [line],
+          fonts: [],
+          logo: { present: false, matchesCompanyLogo: null, box: null, certainty: "clear" },
+          focalPoint: null,
+          imageIssues: [],
+          colorOnlyMeaning: { present: false, certainty: "clear", note: "" },
+        });
+      },
+    };
+    const limits = { ...GEMINI_LIMITS, maxJudgedFramesPerRun: 1 };
+    const run = (await claimNextRun(db, clock.now, "mock"))!;
+    const result = await processRun({ ...deps(), provider: oneCall, preparer: new LocalMediaPreparer(limits), limits }, run);
+    expect(result).toBe("done");
+    expect(judged).toEqual([2048]); // the judged design: one 2048 px image
+    expect(read).toEqual([4096]); // the other one, past the cap: its text read at the full 4096 px, as before
+    const d = (await latestDetections(db, session.id))!.detections;
+    expect(d.texts?.some((t) => t.text === "Book now")).toBe(true);
   });
 
   it("with the real local preparer: image prepared locally, colours MEASURED from pixels into the detections", async () => {

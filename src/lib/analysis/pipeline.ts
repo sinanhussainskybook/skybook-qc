@@ -199,7 +199,15 @@ async function processContentRun(
   // so their AI checks stay not verified.
   let judgeSlots = limits.maxJudgedFramesPerRun;
   for (const f of prepared.flatMap((p) => p.frames)) {
-    if (f.judgeImage && judgeSlots-- <= 0) f.judgeImage = null;
+    if (f.judgeImage && judgeSlots-- <= 0) {
+      f.judgeImage = null;
+      // Its text goes to the text reader: at full size, as before, when it only had the shared image.
+      if (f.prepareOcrImage) {
+        if (signal.aborted) throw new RunAborted();
+        f.ocrImage = await f.prepareOcrImage();
+      }
+    }
+    f.prepareOcrImage = undefined; // done with the original's bytes
   }
   const frames = prepared.flatMap((p) => p.frames);
   const audio = prepared.find((p) => p.audio)?.audio ?? null;

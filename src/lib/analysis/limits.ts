@@ -23,6 +23,13 @@ export const ANALYSIS_LIMITS = {
 
   /** Prepared images sent to providers. Both Vision and Gemini accept about 7 MB inline. */
   ocrImageLongEdge: 4096,
+  /**
+   * Whether each design frame also gets its own larger image for a separate text reader. A one-call
+   * provider (Gemini: reads and judges in analyzeDesign, on the judge image) doesn't need it — then the
+   * judge image is used for colour sampling too, and the larger image is made only for a frame that
+   * isn't judged (past the per-run cap) and so goes to the text reader.
+   */
+  separateOcrImage: true,
   judgeImageLongEdge: 2048,
   maxProviderImageBytes: 6_500_000,
   /** Information-file text sent for requirement extraction (characters). */
@@ -116,6 +123,7 @@ export const LOCAL_LIMITS: Record<LocalProfile, AnalysisLimits> = {
 export const GEMINI_LIMITS: AnalysisLimits = {
   ...ANALYSIS_LIMITS,
   judgeImageLongEdge: 2048,
+  separateOcrImage: false,
   maxJudgedFramesPerRun: 10,
   judgeTimeoutMs: 120_000,
   ocrTimeoutMs: 120_000,

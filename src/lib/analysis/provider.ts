@@ -101,7 +101,8 @@ export interface AnalysisProvider {
 export class ProviderError extends Error {
   constructor(
     message: string,
-    readonly kind: "timeout" | "rate_limited" | "server" | "network" | "rejected" | "auth" | "invalid_response",
+    /** daily_limit: the provider's quota for the day is used up — trying again soon can't help. */
+    readonly kind: "timeout" | "rate_limited" | "daily_limit" | "server" | "network" | "rejected" | "auth" | "invalid_response",
     readonly retryAfterMs?: number
   ) {
     super(message);

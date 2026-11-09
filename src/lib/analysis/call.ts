@@ -6,7 +6,8 @@ import type { Validated } from "@/lib/analysis/validate";
  * One provider call with the locked rules (D10): a time limit per call;
  * retries (at most 2) only for timeouts, rate limits, server and network
  * errors, with backoff and Retry-After; ONE extra try when the response
- * fails validation; never a retry for other rejections. The run's own
+ * fails validation; never a retry for other rejections — nor when the day's
+ * quota is used up (waiting seconds can't help). The run's own
  * signal (whole-run deadline, cancellation) stops everything at once.
  */
 
@@ -36,6 +37,8 @@ export type CallOptions = {
 export const DESIGNER_MESSAGES = {
   busy: "Gemini is busy — try again in a few minutes.",
   busyOther: "The analysis service is busy — try again in a few minutes.",
+  dailyLimit: "Gemini's free daily limit has been reached — try again tomorrow.",
+  dailyLimitOther: "The analysis service's daily limit has been reached — try again tomorrow.",
   unreachable: "The analysis service couldn't be reached — try again in a few minutes.",
   unreadable: "The AI's answer couldn't be read — try again.",
   setup: "Analysis isn't set up correctly — tell your admin.",
@@ -47,6 +50,8 @@ export function designerMessage(kind: ProviderError["kind"], provider?: Provider
     case "rate_limited":
     case "server":
       return provider === "gemini" ? DESIGNER_MESSAGES.busy : DESIGNER_MESSAGES.busyOther;
+    case "daily_limit":
+      return provider === "gemini" ? DESIGNER_MESSAGES.dailyLimit : DESIGNER_MESSAGES.dailyLimitOther;
     case "network":
       return DESIGNER_MESSAGES.unreachable;
     case "timeout":

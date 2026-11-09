@@ -16,8 +16,13 @@ export type PreparedFrame = {
   intervalMs?: number;
   /** The ORIGINAL frame size (file, page or video) in pixels. */
   frame: { width: number; height: number };
-  /** The image read by OCR. */
+  /** The image read by OCR (for a one-call provider: the judge image itself, see limits.separateOcrImage). */
   ocrImage: PreparedImage;
+  /**
+   * Set when ocrImage is the shared judge image: makes the full-size OCR image. The pipeline calls it for
+   * a frame that loses its AI judgement to the per-run cap, so its text is still read at full size.
+   */
+  prepareOcrImage?: () => Promise<PreparedImage>;
   /** The image the AI judges; null for video frames that aren't key frames. */
   judgeImage: PreparedImage | null;
   /** Samples text / background / dominant colours from the pixels (measured). */

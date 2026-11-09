@@ -20,6 +20,12 @@ import { purgeExpiredBatch, type CleanupBatch } from "@/lib/qc/session";
 
 export const DEFAULT_TEMP_ROOT = path.join(os.tmpdir(), "skybook-qc-runs");
 
+/**
+ * How long an idle worker slot waits before asking the queue for work again — the most a new check waits
+ * to be picked up (one small database query per slot per wait). Was 2 s.
+ */
+export const IDLE_POLL_MS = 1_000;
+
 /** How often the worker deletes expired QC sessions. */
 export const CLEANUP_EVERY_MS = 60 * 60 * 1000;
 
@@ -99,7 +105,7 @@ export async function runWorker(
   }
 ): Promise<void> {
   const log = options.log ?? (() => {});
-  const idle = options.idleMs ?? 2_000;
+  const idle = options.idleMs ?? IDLE_POLL_MS;
   const swept = await sweepTempRoot(deps.tempRoot);
   if (swept) log(`Removed ${swept} leftover temporary folder(s).`);
 

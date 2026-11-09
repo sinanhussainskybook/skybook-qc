@@ -35,7 +35,14 @@ export class LocalMediaPreparer implements MediaPreparer {
   }
 
   private async frameFrom(fileId: string, key: string, bytes: Uint8Array, sourceName: string, extra: Partial<PreparedFrame> & { frame: PreparedFrame["frame"] }): Promise<PreparedFrame> {
-    const ocrImage = await prepareImage(bytes, key, this.limits.ocrImageLongEdge, sourceName);
+    const makeOcr = () => prepareImage(bytes, key, this.limits.ocrImageLongEdge, sourceName);
+    if (!this.limits.separateOcrImage && extra.judgeImage !== null) {
+      // One-call provider: a single image for reading, judging and colour sampling (sampled at 1024 px
+      // either way); the full-size OCR image only if this frame ends up not judged.
+      const judgeImage = await prepareImage(bytes, key, this.limits.judgeImageLongEdge, sourceName);
+      return { ...extra, fileId, ocrImage: judgeImage, judgeImage, prepareOcrImage: makeOcr, measureColours: colourSampler(judgeImage.bytes) };
+    }
+    const ocrImage = await makeOcr();
     const judgeImage = extra.judgeImage === null ? null : await prepareImage(bytes, key, this.limits.judgeImageLongEdge, sourceName);
     return { ...extra, fileId, ocrImage, judgeImage, measureColours: colourSampler(ocrImage.bytes) };
   }

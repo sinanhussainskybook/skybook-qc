@@ -6,6 +6,7 @@ import { CircleAlert, CircleCheck, Cpu, FlaskConical, LoaderCircle, Sparkles } f
 import { analysisStatusAction, startAnalysisAction, type AnalysisStatusView, type QcFormState } from "@/lib/qc/actions";
 import type { RunKind } from "@/lib/db/analysis-runs";
 import { BRIEF_UNCLEAR_MESSAGE } from "@/lib/qc/requirements";
+import { BRIEF_FILES_CHANGED_MESSAGE, isOversizedBriefReason } from "@/lib/qc/brief-length";
 import { expectedTime, progressLine } from "@/lib/qc/progress-text";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -41,7 +42,7 @@ const WORDING = {
     finishing: "Reading the brief",
     // The brief is read by itself on upload; this only shows if that couldn't start.
     notYet: "The brief hasn't been read yet.",
-    noFiles: "Upload the client brief.",
+    noFiles: "Upload or type the client brief.",
     start: "Read the brief",
     again: "Read again",
     done: "Brief read.",
@@ -189,10 +190,22 @@ export function AnalysisPanel({
           <p role="alert" className="flex items-center gap-2 text-sm font-medium text-fail">
             <CircleAlert className="size-4 shrink-0" aria-hidden />
             {kind === "information"
-              ? `${BRIEF_UNCLEAR_MESSAGE} (${run.reason ?? "it couldn't be read"})`
+              ? // A brief too long for Local AI: its own message (which files, the limit, what to do).
+                isOversizedBriefReason(run.reason)
+                ? stale
+                  ? words.stale
+                  : run.reason
+                : // The brief changed while it was read: its own message (read the updated brief again).
+                  run.reason === BRIEF_FILES_CHANGED_MESSAGE
+                  ? run.reason
+                  : `${BRIEF_UNCLEAR_MESSAGE} (${run.reason ?? "it couldn't be read"})`
               : `${run.status === "failed" ? "The check didn't finish" : "The check was stopped"}: ${run.reason ?? "unknown reason"}`}
           </p>
-          {runButton("Try again")}
+          {/* Reading the same long file again can't help: shorten or split it (a new upload is read by itself).
+              Once the brief files have changed (stale), it can be read again. */}
+          {kind === "information" && isOversizedBriefReason(run.reason)
+            ? stale && runButton(words.again)
+            : runButton("Try again")}
         </div>
       )}
 

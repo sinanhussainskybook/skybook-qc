@@ -4,6 +4,8 @@ import {
   countRuns,
   hasActiveRun,
   insertRun,
+  latestBriefOutcome,
+  latestDoneRun,
   latestRun,
   refreshQueuedFingerprint,
   type AnalysisRun,
@@ -14,6 +16,7 @@ import { listFiles, type QcFile, type QcSession } from "@/lib/db/qc-sessions";
 import { configuredProvider } from "@/lib/analysis/config";
 import { ANALYSIS_LIMITS } from "@/lib/analysis/limits";
 import { filesFingerprint } from "@/lib/analysis/pipeline";
+import { BRIEF_TOO_LONG_PREFIX, isOversizedBriefReason } from "@/lib/qc/brief-length";
 
 export const ENQUEUE_MESSAGES = {
   notConfigured: "Content analysis isn't set up on this server.",
@@ -107,6 +110,45 @@ export async function enqueueBriefReading(
     return { ok: true, run: waiting };
   }
   return queued;
+}
+
+/**
+ * The "too long for Local AI" hold: once a brief reading has stopped for it, the design can't be checked
+ * (Check Design, or the design check's Try again) until a brief reading has FINISHED successfully after
+ * it. Newer readings that time out, fail for another reason or are cancelled don't lift it — nor does
+ * removing or replacing the long file on its own — so the design is never checked against requirements
+ * from an earlier reading while the brief is known to be too long. Read again stays allowed.
+ * Returns the message while the hold applies, otherwise null.
+ */
+export async function briefTooLongHold(db: Database, sessionId: string): Promise<string | null> {
+  const outcome = await latestBriefOutcome(db, sessionId, BRIEF_TOO_LONG_PREFIX);
+  return outcome?.status === "failed" && isOversizedBriefReason(outcome.failure_reason) ? outcome.failure_reason : null;
+}
+
+/**
+ * The brief's state for Check Design and the design check's Try again (lib/qc/session.ts briefProblem):
+ *   briefReading — a reading is waiting or running;
+ *   briefTooLong — the Local AI hold (briefTooLongHold);
+ *   briefNotRead — there are brief files, but no successful reading of exactly these files (none yet,
+ *                  or they changed since, or every reading since failed / was cancelled).
+ * `files`: the session's files (ready). With no brief files there's nothing to read (manual requirements).
+ */
+export async function briefReadiness(
+  db: Database,
+  sessionId: string,
+  files: Pick<QcFile, "id" | "file_size" | "kind" | "status">[]
+): Promise<{ briefReading: boolean; briefTooLong: string | null; briefNotRead: boolean }> {
+  const [latest, briefTooLong, done] = await Promise.all([
+    latestRun(db, sessionId, "information"),
+    briefTooLongHold(db, sessionId),
+    latestDoneRun(db, sessionId, "information"),
+  ]);
+  const hasBrief = files.some((f) => f.kind === "information" && f.status === "ready");
+  return {
+    briefReading: latest?.status === "queued" || latest?.status === "processing",
+    briefTooLong,
+    briefNotRead: hasBrief && (!done || briefChangedSince(done, files)),
+  };
 }
 
 /** Has an information file been added or removed since this brief reading? */

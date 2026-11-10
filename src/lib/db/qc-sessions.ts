@@ -258,9 +258,18 @@ export async function findAnySessionId(db: Database, companyId: string, userId: 
 const REQUIREMENT_COLUMNS =
   "id, type, label, expected_value, notes, mandatory, confirmed, source, source_file_id, created_at, updated_at";
 
+/**
+ * The session's requirements — every caller (Check Design, Try again, the QC input, the AI's design
+ * context, the page and the report) reads them here. A requirement read from a brief whose file is gone
+ * (`source = 'extracted'` with no source file: left by earlier versions of the app, which kept them when
+ * a brief was removed) is STALE and never returned; it stays in the table until the next successful brief
+ * reading replaces it, or the session ends. Manually entered requirements are always returned.
+ */
 export async function listRequirements(db: Database, sessionId: string): Promise<QcRequirement[]> {
   return db.query<QcRequirement>(
-    `select ${REQUIREMENT_COLUMNS} from qc_requirements where session_id = $1 order by created_at, id`,
+    `select ${REQUIREMENT_COLUMNS} from qc_requirements
+      where session_id = $1 and not (source = 'extracted' and source_file_id is null)
+      order by created_at, id`,
     [sessionId]
   );
 }
@@ -457,6 +466,62 @@ export async function listStalePendingFiles(
 }
 
 /** Removes a file record. Returns its storage path (to delete the file), or null. */
+/**
+ * Inside the brief reading's save transaction, FIRST: whether the run still holds its claim, locking its
+ * row for the rest of the transaction (so a recovered or re-claimed attempt can't interleave).
+ */
+export async function holdRunClaim(db: Database, claim: { id: string; attempts: number }): Promise<boolean> {
+  const [held] = await db.query(
+    "select id from qc_analysis_runs where id = $1 and status = 'processing' and attempts = $2 for update",
+    [claim.id, claim.attempts]
+  );
+  return Boolean(held);
+}
+
+/**
+ * A brief reading that has finished replaces ALL requirements read from briefs (`source = 'extracted'`)
+ * in its session — those of the current brief files and any left from earlier files. Manually entered
+ * requirements are kept. Call it inside the save transaction only AFTER holdRunClaim and
+ * lockReadyBriefFiles: the same lock order as removeFile (brief files, then requirements), so the two
+ * can never deadlock.
+ */
+export async function clearExtractedRequirements(db: Database, sessionId: string): Promise<void> {
+  await db.query("delete from qc_requirements where session_id = $1 and source = 'extracted'", [sessionId]);
+}
+
+/**
+ * The session's ready brief files, in listFiles order, locked against removal until the transaction ends
+ * (FOR SHARE: removeFile's FOR UPDATE waits) — so a brief reading can check, and keep, the exact file set
+ * while it saves.
+ */
+export async function lockReadyBriefFiles(db: Database, sessionId: string): Promise<Pick<QcFile, "id" | "file_size">[]> {
+  return db.query<Pick<QcFile, "id" | "file_size">>(
+    `select id, file_size from qc_files
+      where session_id = $1 and kind = 'information' and status = 'ready'
+      order by created_at, id for share`,
+    [sessionId]
+  );
+}
+
+/**
+ * Locks one file of the session for removal (FOR UPDATE). Taken first by removeFile, so a brief reading
+ * that is saving requirements for this file finishes before the file and its requirements are removed
+ * (and a reading that starts saving afterwards no longer sees the file) — never an orphaned requirement.
+ */
+export async function lockFileForRemoval(db: Database, sessionId: string, fileId: string): Promise<boolean> {
+  const rows = await db.query("select id from qc_files where id = $1 and session_id = $2 for update", [fileId, sessionId]);
+  return rows.length > 0;
+}
+
+/** The requirements read from one brief file (removed with the file). Manually entered ones are never touched. */
+export async function deleteExtractedRequirementsOfFile(db: Database, sessionId: string, fileId: string): Promise<number> {
+  const rows = await db.query(
+    "delete from qc_requirements where session_id = $1 and source = 'extracted' and source_file_id = $2 returning id",
+    [sessionId, fileId]
+  );
+  return rows.length;
+}
+
 export async function deleteFileRow(db: Database, sessionId: string, fileId: string): Promise<string | null> {
   const [row] = await db.query<{ storage_path: string }>(
     "delete from qc_files where id = $1 and session_id = $2 returning storage_path",

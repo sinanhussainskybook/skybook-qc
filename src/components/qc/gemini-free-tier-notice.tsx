@@ -2,7 +2,7 @@ import { ShieldAlert } from "lucide-react";
 
 export const GEMINI_FREE_TIER_TITLE = "Gemini free tier — check what you upload.";
 export const GEMINI_FREE_TIER_TEXT =
-  "Designs and information files you analyse here are sent to Google's Gemini API, together with your confirmed requirements and this company's brand rules. On the free tier, Google may use what is sent to improve its products, and human reviewers may read it. Don't upload confidential client material. Gemini has no EU data region.";
+  "Designs, uploaded brief files and typed or pasted brief text you analyse here are sent to Google's Gemini API, together with your confirmed requirements and this company's brand rules. On the free tier, Google may use what is sent to improve its products, and human reviewers may read it. Don't upload, type or paste confidential client material. Gemini has no EU data region.";
 
 /**
  * Shown on Start QC above the first upload step, only when the configured

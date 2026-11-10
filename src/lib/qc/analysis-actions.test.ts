@@ -109,7 +109,7 @@ describe("analysis actions", () => {
     await upload("content", "post.png", pngOf(1440, 1800));
     await actions.setPlatformAction({}, form({ sessionId, platform: "instagram", placement: "feed_image" }));
     const blocked = { error: "Add or confirm the client's requirements before running QC." };
-    expect(await actions.markReadyAction({}, form({ sessionId }))).toEqual({ error: "Upload the client brief." });
+    expect(await actions.markReadyAction({}, form({ sessionId }))).toEqual({ error: "Upload or type the client brief." });
     expect(await actions.startAnalysisAction({}, form({ sessionId }))).toEqual(blocked);
     // A brief that gave nothing checkable (only descriptive items): the clearer-brief message.
     await upload("information", "brief.txt", new TextEncoder().encode("Summer campaign"));

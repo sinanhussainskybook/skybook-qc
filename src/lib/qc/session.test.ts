@@ -208,7 +208,7 @@ describe("QC session rules (Storage faked)", () => {
     it("Check Design needs the brief's requirements and the design (and a platform when the brief gives no exact size); it confirms them all", async () => {
       // Nothing yet: upload the brief and the design.
       expect(readinessProblems([], [])).toEqual([READINESS_MESSAGES.brief, READINESS_MESSAGES.content]);
-      expect(READINESS_MESSAGES.brief).toBe("Upload the client brief.");
+      expect(READINESS_MESSAGES.brief).toBe("Upload or type the client brief.");
       expect(READINESS_MESSAGES.content).toBe("Upload the design.");
 
       await insertRequirement(db, session.id, { type: "offer", label: null, expected_value: "20% off", notes: null, mandatory: true, confirmed: false }, T0);

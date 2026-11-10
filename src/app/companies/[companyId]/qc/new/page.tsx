@@ -16,6 +16,7 @@ import { SessionFooter } from "@/components/qc/session-footer";
 import { StartQcButton } from "@/components/qc/start-qc-button";
 import { Step } from "@/components/qc/step";
 import { CheckProgress } from "@/components/qc/check-progress";
+import { BriefTextForm } from "@/components/qc/brief-text-form";
 import { requireCompanyAccess } from "@/lib/company/access";
 import { getDatabase } from "@/lib/db/client";
 import { findCurrentSession } from "@/lib/db/qc-sessions";
@@ -32,13 +33,16 @@ import { issueMarkers, issuesToFix } from "@/lib/qc/issue-markers";
 import type { AnalysisRun } from "@/lib/db/analysis-runs";
 import type { AnalysisStatusView } from "@/lib/qc/actions";
 import { configuredProvider } from "@/lib/analysis/config";
-import { briefChangedSince } from "@/lib/analysis/enqueue";
+import { briefChangedSince, briefReadiness } from "@/lib/analysis/enqueue";
+import { briefReadingLimit } from "@/lib/analysis/brief-reading-limit";
+import { briefTextLimit, localReadingNote } from "@/lib/qc/brief-text";
+import { isOversizedBriefReason } from "@/lib/qc/brief-length";
 
 export const metadata: Metadata = { title: "Start QC · Skybook AI QC" };
 
 /**
  * Start QC — the designer's whole flow on one page:
- *   Start QC → 1. Upload client brief (read automatically) → 2. Upload design
+ *   Start QC → 1. Add client brief (uploaded and/or typed; read automatically) → 2. Upload design
  *   → 3. Check Design → QC result → Download PDF.
  * The requirements read from the brief aren't shown or edited here: Check
  * Design confirms the ones that can be checked (descriptive items never are).
@@ -95,9 +99,11 @@ export default async function StartQcPage({ params }: PageProps<"/companies/[com
   const run = analysisView.run;
   const infoRun = analysisView.informationRun;
   const briefReading = infoRun?.status === "queued" || infoRun?.status === "processing";
-  const problems = readinessProblems(requirements, files, session, { briefReading });
+  const problems = readinessProblems(requirements, files, session, await briefReadiness(db, session.id, files));
   // What the brief gave that can be checked (descriptive items never are). The list itself isn't shown.
   const checkable = requirements.filter(isCheckable);
+  // What the brief reading found (it replaces earlier findings; manually entered requirements aren't counted).
+  const foundInBrief = checkable.filter((r) => r.source === "extracted").length;
   // The platform is asked for only when the brief, once read, gives no exact size.
   const askPlatform = Boolean(session.platform) || (!briefReading && checkable.length > 0 && !hasExactSize(checkable));
   const platformFindings = findings && session.platform ? findings.filter((f) => f.category === "platform_size") : null;
@@ -108,6 +114,8 @@ export default async function StartQcPage({ params }: PageProps<"/companies/[com
   const missing = missingCompanyInformation(config);
   const hoursLeft = Math.max(1, Math.ceil((session.expires_at.getTime() - now.getTime()) / 3_600_000));
   const limit = getUploadLimitBytes();
+  // How much of each brief the AI reads: Local AI reads only the start of a long brief, so designers are told.
+  const reading = briefReadingLimit();
   const view = (list: typeof files) =>
     list.map((f) => ({ id: f.id, file_name: f.file_name, mime_type: f.mime_type, file_size: f.file_size }));
   // Once there's a result, the checked design sits on the left with the files and steps folded under it,
@@ -129,9 +137,15 @@ export default async function StartQcPage({ params }: PageProps<"/companies/[com
         n={1}
         compact={compact}
         className={compact ? "border-t-0 pt-0" : "border-t-0 pt-2 sm:pt-2"}
-        title="Upload client brief"
-        description="The client's brief — a document, an email or a spreadsheet. It's read automatically as soon as it's uploaded."
+        title="Add client brief"
+        description="Upload the client's brief — a document, an email or a spreadsheet — or type or paste it. Use either, or both. It's read automatically as soon as it's added."
       >
+        {reading.provider === "local" && (
+          <p role="note" className="mb-4 flex items-start gap-2 rounded-xl bg-revision-soft px-4 py-3 text-left text-sm text-revision">
+            <TriangleAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
+            {localReadingNote(reading.chars)}
+          </p>
+        )}
         <FileUploader
           sessionId={session.id}
           kind="information"
@@ -142,6 +156,14 @@ export default async function StartQcPage({ params }: PageProps<"/companies/[com
           storageReady={storage !== null}
           buttonLabel="Upload brief"
         />
+        <div className="mt-4">
+          <BriefTextForm
+            sessionId={session.id}
+            maxChars={briefTextLimit(reading.chars)}
+            disabled={storage === null}
+            full={information.length >= maxFiles("information", session.content_type)}
+          />
+        </div>
         {information.length > 0 && (
           <div className="mt-4 border-t pt-4">
             <AnalysisPanel
@@ -150,8 +172,8 @@ export default async function StartQcPage({ params }: PageProps<"/companies/[com
               sessionId={session.id}
               configured={analysisView.configured}
               hasContent
-              stale={infoRun?.status === "done" && briefChangedSince(infoRun, files)}
-              found={checkable.length}
+              stale={infoRun ? (infoRun.status === "done" || isOversizedBriefReason(infoRun.failure_reason)) && briefChangedSince(infoRun, files) : false}
+              found={foundInBrief}
               initial={statusOf(infoRun)}
             />
           </div>

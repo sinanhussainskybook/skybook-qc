@@ -24,6 +24,7 @@ import { parsePlatformChoice } from "@/lib/qc/platform-choice";
 import {
   AnalysisRunningError,
   ANALYSIS_RUNNING_MESSAGE,
+  briefProblem,
   changeContentType,
   confirmUpload,
   markReady,
@@ -31,12 +32,16 @@ import {
   READINESS_MESSAGES,
   removeFile,
   removeSessionCompletely,
+  saveBriefText,
   startSession,
   type PrepareResult,
 } from "@/lib/qc/session";
 import type { FileKind } from "@/lib/qc/qc-file";
 import { getQcStorage } from "@/lib/storage/qc-storage";
 import { enqueueBriefReading, enqueueRun } from "@/lib/analysis/enqueue";
+import { briefReadingLimit } from "@/lib/analysis/brief-reading-limit";
+import { briefReadiness } from "@/lib/analysis/enqueue";
+import { briefTextLimit } from "@/lib/qc/brief-text";
 import { hasActiveRun, hasFinishedDesignCheck, latestRun, type RunKind, type RunStatus } from "@/lib/db/analysis-runs";
 
 /**
@@ -311,6 +316,41 @@ export async function confirmUploadAction(input: {
   return result.ok ? { ok: true } : { ok: false, error: result.error };
 }
 
+/**
+ * Enter brief text: the typed or pasted brief is saved as a plain-text brief file in this session (the
+ * same checks, storage and 24-hour clean-up as an uploaded one) and read straight away, exactly like an
+ * uploaded brief. Works alongside uploaded briefs: all of them are read together.
+ */
+export async function saveBriefTextAction(_previous: QcFormState, formData: FormData): Promise<QcFormState> {
+  const found = await sessionFromForm(formData);
+  if (!found) return { error: MESSAGES.notAvailable };
+  const storage = getQcStorage();
+  if (!storage) return { error: MESSAGES.storageNotConfigured };
+
+  const db = getDatabase();
+  const now = new Date();
+  let result;
+  try {
+    const maxChars = briefTextLimit(briefReadingLimit().chars);
+    result = await saveBriefText(db, storage, found.session, formData.get("briefText"), getUploadLimitBytes(), now, maxChars);
+  } catch (error) {
+    console.error("Saving a typed brief failed:", error instanceof Error ? error.message : "unknown error");
+    return { error: MESSAGES.failed };
+  }
+  if (!result.ok) return { error: result.error };
+  const queued = await enqueueBriefReading(db, found.session, found.user.id, now).catch((error) => {
+    console.error("Queueing the brief reading failed:", error);
+    return null;
+  });
+  refresh(found.company.id);
+  return {
+    ok: true,
+    message: queued?.ok
+      ? `Saved as ${result.file.file_name} — the brief is being read now.`
+      : `Saved as ${result.file.file_name}.`,
+  };
+}
+
 export async function removeFileAction(_previous: QcFormState, formData: FormData): Promise<QcFormState> {
   const found = await sessionFromForm(formData);
   const fileId = field(formData, "fileId");
@@ -336,23 +376,14 @@ export async function cancelUploadAction(input: { sessionId: string; fileId: str
 // Check Design
 // ---------------------------------------------------------------------------
 
-const briefBeingRead = async (db: ReturnType<typeof getDatabase>, sessionId: string) => {
-  const run = await latestRun(db, sessionId, "information");
-  return run?.status === "queued" || run?.status === "processing";
-};
-
 /** Check Design: confirms the brief's checkable requirements, marks the session Ready and checks the design. */
 export async function markReadyAction(_previous: QcFormState, formData: FormData): Promise<QcFormState> {
   const found = await sessionFromForm(formData);
   if (!found) return { error: MESSAGES.notAvailable };
   const db = getDatabase();
-  const [requirements, files, briefReading] = await Promise.all([
-    listRequirements(db, found.session.id),
-    listFiles(db, found.session.id, "ready"),
-    briefBeingRead(db, found.session.id),
-  ]);
+  const [requirements, files] = await Promise.all([listRequirements(db, found.session.id), listFiles(db, found.session.id, "ready")]);
   const now = new Date();
-  const result = await markReady(db, found.session, requirements, files, now, { briefReading });
+  const result = await markReady(db, found.session, requirements, files, now, await briefReadiness(db, found.session.id, files));
   if (!result.ok) return { error: result.problems.join(" ") };
   // Phase 6: analyse the content in the background (the worker picks it up).
   const queued = await enqueueRun(db, found.session, found.user.id, "content", now).catch((error) => {
@@ -380,6 +411,13 @@ export async function startAnalysisAction(_previous: QcFormState, formData: Form
   const kind: RunKind = field(formData, "kind") === "information" ? "information" : "content";
   const db = getDatabase();
   try {
+    // Like Check Design: never while the brief is being read, too long for Local AI, or not read
+    // successfully since it last changed (Read again — kind "information" — stays allowed).
+    if (kind === "content") {
+      const files = await listFiles(db, found.session.id, "ready");
+      const problem = briefProblem(await briefReadiness(db, found.session.id, files));
+      if (problem) return { error: problem };
+    }
     if (kind === "content" && !(await listRequirements(db, found.session.id)).some((r) => r.confirmed)) {
       return { error: READINESS_MESSAGES.requirements };
     }

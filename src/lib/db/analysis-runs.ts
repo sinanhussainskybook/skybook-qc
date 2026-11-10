@@ -86,6 +86,36 @@ export async function findRun(db: Database, runId: string): Promise<AnalysisRun 
 }
 
 /** The session's newest run (of a kind, or any). */
+/**
+ * The session's newest brief reading that either FINISHED (done) or stopped with a reason starting with
+ * `reasonPrefix` — readings that were cancelled, timed out or failed for any other reason are skipped.
+ */
+export async function latestBriefOutcome(
+  db: Database,
+  sessionId: string,
+  reasonPrefix: string
+): Promise<Pick<AnalysisRun, "status" | "failure_reason"> | null> {
+  const [row] = await db.query<Pick<AnalysisRun, "status" | "failure_reason">>(
+    `select status, failure_reason from qc_analysis_runs
+      where session_id = $1 and kind = 'information'
+        and (status = 'done' or (status = 'failed' and left(failure_reason, length($2)) = $2))
+      order by created_at desc, id desc limit 1`,
+    [sessionId, reasonPrefix]
+  );
+  return row ?? null;
+}
+
+/** The session's newest run of `kind` that finished successfully (done), or null. */
+export async function latestDoneRun(db: Database, sessionId: string, kind: RunKind): Promise<AnalysisRun | null> {
+  const [row] = await db.query<AnalysisRun>(
+    `select ${COLUMNS} from qc_analysis_runs
+      where session_id = $1 and kind = $2 and status = 'done'
+      order by created_at desc, id desc limit 1`,
+    [sessionId, kind]
+  );
+  return row ?? null;
+}
+
 export async function latestRun(db: Database, sessionId: string, kind?: RunKind): Promise<AnalysisRun | null> {
   const [row] = await db.query<AnalysisRun>(
     `select ${COLUMNS} from qc_analysis_runs

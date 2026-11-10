@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 
 /** The Start QC page (Phase 4 — Requirements + Upload). */
@@ -13,13 +13,15 @@ const getQcStorage = vi.fn();
 const latestRun = vi.fn();
 const latestDetections = vi.fn();
 const countRuns = vi.fn();
+const latestBriefOutcome = vi.fn();
+const latestDoneRun = vi.fn();
 
 vi.mock("@/lib/company/access", () => ({ requireCompanyAccess }));
 vi.mock("@/lib/db/client", () => ({ getDatabase: () => ({}) }));
 vi.mock("@/lib/db/company-config", () => ({ loadCompanyConfiguration }));
 vi.mock("@/lib/db/qc-sessions", () => ({ findCurrentSession, listRequirements, listFiles }));
 vi.mock("@/lib/storage/qc-storage", () => ({ getQcStorage }));
-vi.mock("@/lib/db/analysis-runs", () => ({ latestRun, latestDetections, countRuns }));
+vi.mock("@/lib/db/analysis-runs", () => ({ latestRun, latestDetections, countRuns, latestBriefOutcome, latestDoneRun }));
 vi.mock("@/lib/qc/session", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/qc/session")>()),
   purgeExpiredSessions,
@@ -96,6 +98,12 @@ describe("Start QC page", () => {
     latestRun.mockReset().mockResolvedValue(null);
     latestDetections.mockReset().mockResolvedValue(null);
     countRuns.mockReset().mockResolvedValue(0);
+    latestBriefOutcome.mockReset().mockResolvedValue(null);
+    // The newest successful run of a kind: the test's own newest run, when it finished.
+    latestDoneRun.mockReset().mockImplementation(async (...args: unknown[]) => {
+      const run = await latestRun(...args);
+      return run?.status === "done" ? run : null;
+    });
     requireCompanyAccess.mockReset().mockResolvedValue({ user, company });
     findCurrentSession.mockReset().mockResolvedValue(null);
     listRequirements.mockReset().mockResolvedValue([]);
@@ -131,20 +139,20 @@ describe("Start QC page", () => {
   describe("Gemini free tier privacy notice", () => {
     const NOTICE_TITLE = "Gemini free tier — check what you upload.";
     const NOTICE_TEXT =
-      "Designs and information files you analyse here are sent to Google&#x27;s Gemini API, together with your confirmed requirements and this company&#x27;s brand rules. On the free tier, Google may use what is sent to improve its products, and human reviewers may read it. Don&#x27;t upload confidential client material. Gemini has no EU data region.";
+      "Designs, uploaded brief files and typed or pasted brief text you analyse here are sent to Google&#x27;s Gemini API, together with your confirmed requirements and this company&#x27;s brand rules. On the free tier, Google may use what is sent to improve its products, and human reviewers may read it. Don&#x27;t upload, type or paste confidential client material. Gemini has no EU data region.";
     const page = async (provider: string) => {
       process.env.QC_ANALYSIS_PROVIDER = provider;
       findCurrentSession.mockResolvedValue(session());
       return main(renderToStaticMarkup(await StartQcPage(props)));
     };
 
-    it("Gemini → the notice is shown, with the exact text, directly above 1. Upload client brief", async () => {
+    it("Gemini → the notice is shown, with the exact text, directly above 1. Add client brief", async () => {
       const html = await page("gemini");
       expect(html).toContain(NOTICE_TITLE);
       expect(html).toContain(NOTICE_TEXT);
       expect(html.match(/aria-label="Gemini free tier privacy notice"/g)).toHaveLength(1);
-      // Placement: before anything is uploaded, immediately before 1. Upload client brief.
-      expect(visible(html).indexOf(NOTICE_TITLE)).toBeLessThan(visible(html).indexOf("1. Upload client brief"));
+      // Placement: before anything is uploaded, immediately before 1. Add client brief.
+      expect(visible(html).indexOf(NOTICE_TITLE)).toBeLessThan(visible(html).indexOf("1. Add client brief"));
       // The notice is the element right before the brief upload section.
       expect(html).toMatch(/Gemini has no EU data region\.<\/p><\/div><\/aside><section id="information"/);
     });
@@ -154,7 +162,7 @@ describe("Start QC page", () => {
         const html = await page(provider);
         expect(html).not.toContain(NOTICE_TITLE);
         expect(html).not.toContain("Gemini free tier privacy notice");
-        expect(visible(html)).toContain("1. Upload client brief"); // the page itself is unchanged
+        expect(visible(html)).toContain("1. Add client brief"); // the page itself is unchanged
       });
     }
 
@@ -165,14 +173,57 @@ describe("Start QC page", () => {
     });
   });
 
+  describe("Local AI's reading limit (Stage 2 follow-up)", () => {
+    const page = async (provider: string, profile?: string) => {
+      process.env.QC_ANALYSIS_PROVIDER = provider;
+      if (profile) process.env.QC_LOCAL_PROFILE = profile;
+      else delete process.env.QC_LOCAL_PROFILE;
+      findCurrentSession.mockResolvedValue(session());
+      return visible(main(renderToStaticMarkup(await StartQcPage(props))));
+    };
+    afterEach(() => {
+      delete process.env.QC_LOCAL_PROFILE;
+    });
+
+    it("Local AI → a warning in step 1, before the uploads, with the number of characters it reads", async () => {
+      const text = await page("local");
+      const note =
+        "Local AI reads only the first 12,000 characters of each brief file or typed brief. If a brief is longer, split it into separate files or typed parts so nothing is missed.";
+      expect(text).toContain(note);
+      expect(text.indexOf("1. Add client brief")).toBeLessThan(text.indexOf(note));
+      expect(text.indexOf(note)).toBeLessThan(text.indexOf("Upload brief"));
+      expect(await page("local", "gpu")).toContain("Local AI reads only the first 30,000 characters");
+    });
+
+    for (const provider of ["gemini", "mock", "google"]) {
+      it(`${provider} → no warning (the page is unchanged)`, async () => {
+        expect(await page(provider)).not.toContain("Local AI reads only");
+      });
+    }
+  });
+
+  it("brief too long for Local AI (Stage 2 hold): the message is shown under Check Design, which stays off", async () => {
+    const message =
+      "Too long for Local AI to read in full: brief.pdf (15,230 characters). Local AI reads up to 12,000 characters per brief file — shorten it, or split it into smaller files and upload them separately.";
+    latestBriefOutcome.mockResolvedValue({ status: "failed", failure_reason: message });
+    findCurrentSession.mockResolvedValue(session());
+    const html = main(renderToStaticMarkup(await StartQcPage(props)));
+    expect(visible(html)).toContain(message);
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*>.*Check Design<\/button>/);
+    expect(latestBriefOutcome).toHaveBeenCalledWith(expect.anything(), expect.any(String), "Too long for Local AI to read in full");
+  });
+
   it("with a session: upload the brief, upload the design, Check Design — nothing else to fill in", async () => {
     findCurrentSession.mockResolvedValue(session());
     const html = main(renderToStaticMarkup(await StartQcPage(props)));
     const text = visible(html);
-    expect(text.indexOf("1. Upload client brief")).toBeGreaterThan(-1);
-    expect(text.indexOf("1. Upload client brief")).toBeLessThan(text.indexOf("2. Upload design"));
+    expect(text.indexOf("1. Add client brief")).toBeGreaterThan(-1);
+    expect(text.indexOf("1. Add client brief")).toBeLessThan(text.indexOf("2. Upload design"));
     expect(text.indexOf("2. Upload design")).toBeLessThan(text.indexOf("3. Check design"));
     expect(text).toContain("Upload brief");
+    // Stage 2: the brief can also be typed or pasted, in the same step, before the design.
+    expect(text.indexOf("Enter brief text")).toBeGreaterThan(text.indexOf("Upload brief"));
+    expect(text.indexOf("Enter brief text")).toBeLessThan(text.indexOf("2. Upload design"));
     expect(text).toContain("Upload design");
     expect(html).toMatch(/<button[^>]*disabled=""[^>]*>.*Check Design<\/button>/); // nothing uploaded yet
     for (const gone of ["What are you checking?", "Requirements", "Confirm & Run QC", "Save and continue", "Find requirements", "Analyse now", "Draft"]) {
@@ -267,6 +318,26 @@ describe("Start QC page", () => {
       expect(text).toContain("Reading the brief…");
       expect(text).toContain("The brief is still being read");
     });
+
+    it("the count is what the brief reading found: manually entered requirements don't make it 'Brief read.'", async () => {
+      listRequirements.mockResolvedValue([{ ...req("price"), source: "manual", confirmed: true }]);
+      const text = await page();
+      expect(text).toContain("We couldn't find clear requirements in this brief. Please upload a clearer brief.");
+      expect(text).not.toContain("Brief read.");
+    });
+
+    it("the brief changed since its last successful reading (a newer one failed): Check Design waits until it's read again", async () => {
+      const { filesFingerprint } = await import("@/lib/analysis/pipeline");
+      const newFile = { ...briefFile, id: "f9", file_name: "new brief.pdf" };
+      listFiles.mockResolvedValue([briefFile, newFile]);
+      listRequirements.mockResolvedValue([req("price")]);
+      const failed = infoRun({ id: "i2", status: "failed", failure_reason: "new brief.pdf: the AI couldn't read it", files_fingerprint: filesFingerprint([briefFile, newFile]) });
+      latestRun.mockImplementation(async (_db: unknown, _id: string, kind: string) => (kind === "information" ? failed : null));
+      latestDoneRun.mockResolvedValue(infoRun({ files_fingerprint: filesFingerprint([briefFile]) }));
+      const html = main(renderToStaticMarkup(await StartQcPage(props)));
+      expect(visible(html)).toContain("The current brief hasn't been read successfully yet — read it again in step 1 before checking the design.");
+      expect(html).toMatch(/<button[^>]*disabled=""[^>]*>.*Check Design<\/button>/);
+    });
   });
 
   it("lists uploaded files by name, type and size", async () => {
@@ -350,7 +421,7 @@ describe("Start QC page", () => {
     const text = visible(main(renderToStaticMarkup(await StartQcPage(props))));
     expect(text).not.toContain("Platform check");
     expect(text).not.toContain("Content checks");
-    expect(text).toContain("· Upload the client brief. · Upload the design.");
+    expect(text).toContain("· Upload or type the client brief. · Upload the design.");
   });
 
   it("warns which company information is missing (checks will be 'not verified')", async () => {

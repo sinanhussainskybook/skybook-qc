@@ -97,6 +97,17 @@ export function textMatches(expected: string, detected: string): boolean {
   return a.length > 0 && oneSpellingWords(a) === oneSpellingWords(normalizeWords(detected));
 }
 
+/**
+ * Text with words broken across lines put back together (Stage 3, A4): a hyphen at the end of a line followed
+ * by a lower-case letter on the next ("condi-" / "tions" → "conditions"), and soft hyphens (U+00AD). A capital
+ * after the break ("Dubai-" / "Abu Dhabi") is a real hyphenated pair and is left as it is. Only used as an
+ * extra reading of the text — the text as written is always checked too, so "state-of-the-" / "art" still
+ * reads "state of the art".
+ */
+export function joinHyphenatedLines(text: string): string {
+  return text.replace(/(\p{L})[-\u2010\u2011\u00AD][ \t]*\r?\n[ \t]*(?=\p{Ll})/gu, "$1").replace(/\u00AD/g, "");
+}
+
 /** Is `needle` present in `haystack` as whole words (case, punctuation, spacing and UK / US spelling ignored)? */
 export function containsText(haystack: string, needle: string): boolean {
   const n = normalizeWords(needle);
@@ -155,6 +166,47 @@ export function capitalizationDifference(haystack: string, needle: string): stri
     different ??= text.slice(span[0].start, span[span.length - 1].end);
   }
   return different;
+}
+
+/** One place a word sequence appears (wordSequenceMatches). */
+export type WordSequenceMatch = {
+  text: string;
+  start: number;
+  end: number;
+  /** The word just before it (normalised), or null at the start. */
+  previousWord: string | null;
+  /** Whether punctuation stands between that word and the match ("لا، تطبق…"): then it isn't part of the same phrase. */
+  separatedFromPrevious: boolean;
+  after: string;
+};
+
+/**
+ * Every place `needle`'s words appear in `haystack` as a complete, consecutive run of whole words — the same
+ * word rules as containsText (case, punctuation, spacing, Arabic vowel marks and alef forms, UK / US
+ * spelling, "&" = "and" ignored). Each with the text as written (of the NFKC form), the word just before it
+ * (normalised, or null at the start) and the text after it. Never a part of a word.
+ */
+export function wordSequenceMatches(haystack: string, needle: string): WordSequenceMatch[] {
+  const want = wordsOf(needle.normalize("NFKC")).map((w) => oneSpelling(w.key));
+  const text = haystack.normalize("NFKC");
+  const found = wordsOf(text);
+  if (!want.length) return [];
+  const out: WordSequenceMatch[] = [];
+  for (let i = 0; i + want.length <= found.length; i++) {
+    if (!want.every((key, j) => oneSpelling(found[i + j].key) === key)) continue;
+    const start = found[i].start;
+    const end = found[i + want.length - 1].end;
+    const between = i > 0 ? text.slice(found[i - 1].end, start) : "";
+    out.push({
+      text: text.slice(start, end),
+      start,
+      end,
+      previousWord: i > 0 ? oneSpelling(found[i - 1].key) : null,
+      separatedFromPrevious: /[^\s]/u.test(between),
+      after: text.slice(end),
+    });
+  }
+  return out;
 }
 
 /**
@@ -275,8 +327,12 @@ export function findName(text: string, name: string): NameCheck {
 type Phone = { digits: string; international: boolean };
 
 function parsePhone(value: string): Phone | null {
-  const trimmed = value.trim();
-  const international = /^(\+|00)/.test(trimmed);
+  // Arabic-Indic / Eastern Arabic digits count as the same digits (asciiNumbers).
+  const trimmed = asciiNumbers(value).trim();
+  // "971+ 4 123 4567": "+971 4 123 4567" read from right-to-left text (findPhones only returns this form
+  // when the context confirms it — see rtlInternationalPhones).
+  const rtlCode = /^(\d{2,3})\+[\s\u200E\u200F\u061C]/.exec(trimmed)?.[1];
+  const international = /^(\+|00)/.test(trimmed) || (rtlCode !== undefined && (RTL_CODES_ALONE.has(rtlCode) || RTL_CODES_WITH_WORD.has(rtlCode)));
   let digits = trimmed.replace(/\D/g, "");
   if (trimmed.startsWith("00")) digits = digits.slice(2);
   if (digits.length < 7 || digits.length > 15) return null;
@@ -306,16 +362,70 @@ const DATE_LIKE = /^(\d{4}[-/.]\d{1,2}[-/.]\d{1,2}|\d{1,2}[-/.]\d{1,2}[-/.]\d{2,
 /** "2025 - 2026", "2025/2026": a span of years, not a phone number. */
 const YEAR_RANGE = /^(19|20)\d{2}\s*[-/]\s*(19|20)\d{2}$/;
 
-/** Phone-number-like runs of 7–15 digits (spaces, dashes, dots, brackets allowed). */
+/**
+ * Phone-number-like runs of 7–15 digits (spaces, dashes, dots, brackets allowed) — in Western, Arabic-Indic
+ * (٠–٩) or Eastern Arabic (۰–۹) digits, with the invisible direction marks Arabic text can carry inside a
+ * number (U+200E, U+200F, U+061C). Each is returned exactly as written in the text.
+ */
 export function findPhones(text: string): string[] {
-  const found: string[] = [];
-  for (const match of text.matchAll(/(?:\+|00)?\(?\d[\d\s().-]{5,}\d/g)) {
-    const raw = match[0].trim();
-    const digits = raw.replace(/\D/g, "").length;
-    if (digits < 7 || digits > 15 || DATE_LIKE.test(raw) || YEAR_RANGE.test(raw)) continue;
-    found.push(raw);
+  const found = rtlInternationalPhones(text);
+  const inRtl = (at: number) => found.some((p) => at >= p.start && at < p.end);
+  // asciiNumbers swaps one character for one, so a match's position is the same in the original text.
+  for (const match of asciiNumbers(text).matchAll(/(?:\+|00)?\(?\d[\d\s().\u200E\u200F\u061C-]{5,}\d/g)) {
+    if (inRtl(match.index)) continue; // already part of a right-to-left international number
+    const ascii = match[0].trim().replace(/[\u200E\u200F\u061C]/g, "");
+    const digits = ascii.replace(/\D/g, "").length;
+    if (digits < 7 || digits > 15 || DATE_LIKE.test(ascii) || YEAR_RANGE.test(ascii)) continue;
+    const start = match.index + (match[0].length - match[0].trimStart().length);
+    found.push({ start, end: start + match[0].trim().length, text: text.slice(match.index, match.index + match[0].length).trim() });
   }
-  return found;
+  return found.sort((a, b) => a.start - b.start).map((p) => p.text);
+}
+
+/**
+ * Country codes a right-to-left "+" may follow ("971+" for "+971"): Arabic- and Persian-speaking countries.
+ * The three-digit ones are enough on their own; the two-digit ones (Egypt 20, Iran 98) also need a phone word
+ * on the line, because "20+" and "98+" are just as often counts or prices.
+ */
+const RTL_CODES_ALONE = new Set(["212", "213", "216", "218", "249", "961", "962", "963", "964", "965", "966", "967", "968", "970", "971", "973", "974"]);
+const RTL_CODES_WITH_WORD = new Set(["20", "98"]);
+const PHONE_WORD = /(?:هاتف|تلفون|تليفون|اتصل|اتصال|للحجز|للاستفسار|للتواصل|جوال|موبايل|واتساب|واتس|تلفن|تماس|شماره|موبایل)|\b(?:tel|phone|call|whatsapp|mobile)\b/iu;
+/** Arabic-script letters or digits (Arabic, Persian, Urdu…): the line is written right to left. */
+const RTL_SCRIPT = /[\u0600-\u06FF\u0750-\u077F\uFB50-\uFDFF\uFE70-\uFEFF]/;
+
+/**
+ * "+971 4 123 4567" as right-to-left text often comes out: "٩٧١+ ٤ ١٢٣ ٤٥٦٧" — the "+" after the country
+ * code. Taken as the international number only when everything says it's a phone number:
+ *  - a known country code of 2–3 digits, not part of a longer number or sum ("5+971", "+971+", "5 + 971+");
+ *  - then the "+", a space, and a national number of 7–12 digits (not a date or a span of years);
+ *  - the number's own line is in Arabic script (letters or digits), and the number stays on that line;
+ *  - no percent, currency or "+" straight after it;
+ *  - for the two-digit codes, a phone word on that line too.
+ * Returned exactly as written; parsePhone reads it as international.
+ */
+function rtlInternationalPhones(text: string): { start: number; end: number; text: string }[] {
+  if (!RTL_SCRIPT.test(text)) return [];
+  const ascii = asciiNumbers(text);
+  const after = new RegExp(String.raw`^[ \t\u200E\u200F\u061C]*(?:[%+\u2030]|(?:${CURRENCY_PATTERN})(?![\p{L}]))`, "iu");
+  // The line the number starts on (a design's text is often several lines joined).
+  const lineOf = (at: number) => text.slice(text.lastIndexOf("\n", at) + 1, text.indexOf("\n", at) === -1 ? undefined : text.indexOf("\n", at));
+  const out: { start: number; end: number; text: string }[] = [];
+  // Not part of a longer number or a sum: no digit or sign straight before the code, and no arithmetic sign
+  // before it with only spaces between ("٥ + ٩٧١+ …"). "-" and "/" with spaces are left alone: they separate
+  // two phone numbers ("… / ٩٧١+ ٥٠ …").
+  for (const m of ascii.matchAll(/(?<![\d+\-*/\u00D7\u00F7=.,])(?<![+*\u00D7\u00F7=][ \t\u200E\u200F\u061C]+)(\d{2,3})\+[ \t\u200E\u200F\u061C]+(\d[\d \t().\u200E\u200F\u061C-]{5,}\d)/g)) {
+    const code = m[1];
+    const line = lineOf(m.index);
+    if (!RTL_SCRIPT.test(line)) continue;
+    if (!RTL_CODES_ALONE.has(code) && !(RTL_CODES_WITH_WORD.has(code) && PHONE_WORD.test(line))) continue;
+    const national = m[2].replace(/[\u200E\u200F\u061C]/g, "").trim();
+    const digits = national.replace(/\D/g, "").length;
+    if (digits < 7 || digits > 12 || DATE_LIKE.test(national) || YEAR_RANGE.test(national)) continue;
+    const end = m.index + m[0].length;
+    if (after.test(ascii.slice(end))) continue;
+    out.push({ start: m.index, end, text: text.slice(m.index, end) });
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -372,29 +482,63 @@ export function findWebsites(text: string): string[] {
 // Price and percentage
 // ---------------------------------------------------------------------------
 
-const CURRENCY_TOKENS: [RegExp, string][] = [
-  [/^(us\$|\$|usd)$/i, "USD"],
-  [/^(€|eur|euro|euros)$/i, "EUR"],
-  [/^(£|gbp)$/i, "GBP"],
-  [/^(aed|dhs?|dirhams?|د\.إ|درهم|دراهم)$/i, "AED"],
-  [/^(sar|﷼|ر\.س)$/i, "SAR"],
-  [/^(qar|ر\.ق)$/i, "QAR"],
-  [/^(kwd|د\.ك)$/i, "KWD"],
-  [/^(bhd|د\.ب)$/i, "BHD"],
-  [/^(omr|ر\.ع)$/i, "OMR"],
-  [/^(₹|inr|rs\.?)$/i, "INR"],
-  [/^(pkr)$/i, "PKR"],
-  [/^(egp|ج\.م)$/i, "EGP"],
+/**
+ * Currencies as written, most specific first. Each entry: the token (a whole word, matched ignoring case),
+ * the currency it stands for. Stage 3 (A3) added the full English and Arabic names ("Saudi riyals",
+ * "ريال سعودي", "دينار كويتي", "dollars", "يورو"…), "Dhs." / "Dh." with a dot, and the Gulf abbreviations
+ * SR, QR, KD, BD and RO (capitals only — see CAPITALS_ONLY).
+ *
+ * A bare "riyal" / "ريال" is Saudi, Qatari or Omani, and a bare "dinar" / "دينار" Kuwaiti or Bahraini: they
+ * stand for a currency FAMILY (RIYAL, DINAR) that matches any of its members (sameCurrency) — never AED,
+ * USD or another family.
+ */
+const CURRENCY_TOKENS: [string, string][] = [
+  // Full names (several words) first.
+  [String.raw`ريال(?:ات)?\s+سعودي(?:ة)?|saudi\s+riyals?`, "SAR"],
+  [String.raw`ريال(?:ات)?\s+قطري(?:ة)?|qatari\s+riyals?`, "QAR"],
+  [String.raw`ريال(?:ات)?\s+عماني(?:ة)?|omani\s+rials?`, "OMR"],
+  [String.raw`(?:دينار|دنانير)\s+كويتي(?:ة)?|kuwaiti\s+dinars?`, "KWD"],
+  [String.raw`(?:دينار|دنانير)\s+بحريني(?:ة)?|bahraini\s+dinars?`, "BHD"],
+  [String.raw`(?:درهم|دراهم)\s+[اإ]ماراتي(?:ة)?|uae\s+dirhams?`, "AED"],
+  [String.raw`جنيه(?:ات)?\s+مصري(?:ة)?|egyptian\s+pounds?`, "EGP"],
+  [String.raw`us\s+dollars?|دولار(?:ات)?\s+[اأ]مريكي(?:ة)?`, "USD"],
+  // Symbols, codes and single words.
+  [String.raw`us\$|\$|usd|dollars?|دولار(?:ات|اً|ا)?`, "USD"],
+  [String.raw`€|eur|euros?|يورو`, "EUR"],
+  [String.raw`£|gbp`, "GBP"],
+  [String.raw`aed|dhs?\.?|dirhams?|د\.إ|درهم|دراهم`, "AED"],
+  [String.raw`sar|﷼|ر\.س|SR`, "SAR"],
+  [String.raw`qar|ر\.ق|QR`, "QAR"],
+  [String.raw`kwd|د\.ك|KD`, "KWD"],
+  [String.raw`bhd|د\.ب|BD`, "BHD"],
+  [String.raw`omr|ر\.ع|RO`, "OMR"],
+  // Not "ريال مدريد" (Real Madrid).
+  [String.raw`ريال(?:ات|اً|ا)?(?!\s+مدريد)|riyals?|rials?`, "RIYAL"],
+  [String.raw`دينار(?:اً|ا)?|دنانير|dinars?`, "DINAR"],
+  [String.raw`₹|inr|rs\.?`, "INR"],
+  [String.raw`pkr`, "PKR"],
+  [String.raw`egp|ج\.م|جنيه(?:ات)?`, "EGP"],
 ];
-const CURRENCY_PATTERN = String.raw`(?:US\$|\$|€|£|₹|﷼|د\.إ|درهم|دراهم|ر\.س|ر\.ق|د\.ك|د\.ب|ر\.ع|ج\.م|USD|EUR|GBP|AED|DHS?|dirhams?|euros?|SAR|QAR|KWD|BHD|OMR|INR|Rs\.?|PKR|EGP)`;
+/** Two-letter Gulf abbreviations count only in capitals ("SR 99"): "Sr. 5", "ro 3" or "kd" are not currencies. */
+const CAPITALS_ONLY = new Set(["SR", "QR", "KD", "BD", "RO"]);
+const CURRENCY_PATTERN = `(?:${CURRENCY_TOKENS.map(([token]) => token).join("|")})`;
+/** A currency family ("ريال" alone) and the currencies it can be. */
+const CURRENCY_FAMILIES: Record<string, readonly string[]> = { RIYAL: ["SAR", "QAR", "OMR"], DINAR: ["KWD", "BHD"] };
+/** The same currency — or a family and one of its members ("ريال" and SAR). Two different families never are. */
+function sameCurrency(a: string, b: string): boolean {
+  return a === b || Boolean(CURRENCY_FAMILIES[a]?.includes(b)) || Boolean(CURRENCY_FAMILIES[b]?.includes(a));
+}
 /**
  * An amount as written: "1,299" / "1,299.50" (comma thousands), "1.299" / "1.299,50" (dot thousands, as in
  * much of Europe), or a plain "1299" / "12.50" / "12,50". Which one it is is decided by amountOf.
  */
 const AMOUNT_PATTERN = String.raw`\d{1,3}(?:,\d{3})+(?:\.\d{1,3})?|\d{1,3}(?:\.\d{3})+(?:,\d{1,2})?|\d+(?:[.,]\d{1,3})?`;
 
-/** Currencies with three decimals (1 dinar / rial = 1,000 fils / baisa): "KWD 1.299" is 1.299, not 1,299. */
-const THREE_DECIMALS = new Set(["KWD", "BHD", "OMR"]);
+/**
+ * Currencies with three decimals (1 dinar / rial = 1,000 fils / baisa): "KWD 1.299" is 1.299, not 1,299. A bare
+ * "dinar" is Kuwaiti or Bahraini — both three decimals; a bare "riyal" is usually Saudi or Qatari (two).
+ */
+const THREE_DECIMALS = new Set(["KWD", "BHD", "OMR", "DINAR"]);
 
 /** The number an amount stands for, given its currency (see AMOUNT_PATTERN). */
 function amountOf(raw: string, currency: string | undefined): number {
@@ -408,7 +552,8 @@ function amountOf(raw: string, currency: string | undefined): number {
 
 function currencyOf(token: string | undefined): string | undefined {
   if (!token) return undefined;
-  return CURRENCY_TOKENS.find(([pattern]) => pattern.test(token.trim()))?.[1];
+  const written = token.trim();
+  return CURRENCY_TOKENS.find(([pattern]) => new RegExp(`^(?:${pattern})$`, "iu").test(written))?.[1];
 }
 
 export type Price = { amount: number; currency?: string; text: string };
@@ -421,10 +566,15 @@ function priceMatches(text: string): (Price & { index: number })[] {
     "giu"
   );
   // Read with Western digits; the positions are the same in the original, so its own text is shown.
-  return [...asciiNumbers(text).matchAll(pattern)].map((m) => {
-    const currency = currencyOf(m[1] ?? m[4]);
-    return { amount: amountOf(m[2] ?? m[3], currency), currency, text: text.slice(m.index, m.index + m[0].length), index: m.index };
-  });
+  return [...asciiNumbers(text).matchAll(pattern)]
+    .filter((m) => {
+      const token = (m[1] ?? m[4]).trim();
+      return !CAPITALS_ONLY.has(token.toUpperCase()) || token === token.toUpperCase();
+    })
+    .map((m) => {
+      const currency = currencyOf(m[1] ?? m[4]);
+      return { amount: amountOf(m[2] ?? m[3], currency), currency, text: text.slice(m.index, m.index + m[0].length), index: m.index };
+    });
 }
 
 /** Amounts written next to a currency ("AED 1,299", "$49.99", "99 dirhams", "١٬٢٩٩ درهم"). */
@@ -456,7 +606,7 @@ export type PriceMatch = "match" | "currency_missing" | "mismatch";
 
 export function pricesMatch(expected: Price, detected: Price): PriceMatch {
   if (Math.abs(expected.amount - detected.amount) > 0.001) return "mismatch";
-  if (expected.currency && detected.currency && expected.currency !== detected.currency) return "mismatch";
+  if (expected.currency && detected.currency && !sameCurrency(expected.currency, detected.currency)) return "mismatch";
   if (expected.currency && !detected.currency) return "currency_missing";
   return "match";
 }
@@ -476,13 +626,48 @@ export function parsePercentage(value: string): number | null {
 // Date and time
 // ---------------------------------------------------------------------------
 
-export type DateValue = { day: number; month: number; year?: number };
+/** A date's reading. `text`: how it was written — set for Arabic month-name dates, so findings show them as written. */
+export type DateValue = { day: number; month: number; year?: number; text?: string };
 
 const MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
 const MONTH_WORD = String.raw`(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\.?`;
 const monthOf = (word: string) => MONTHS.indexOf(word.slice(0, 3).toLowerCase()) + 1;
 const fullYear = (y: string | undefined) => (y === undefined ? undefined : y.length === 2 ? 2000 + Number(y) : Number(y));
 const valid = (d: DateValue) => d.month >= 1 && d.month <= 12 && d.day >= 1 && d.day <= 31;
+
+/**
+ * Arabic month names (Stage 3, A2): the Gulf / Egyptian forms of the Gregorian months (يناير … ديسمبر) and
+ * the Levantine ones (كانون الثاني … كانون الأول), with the usual spelling variants — any alef form (أ إ آ ا),
+ * يونيو / يونيه, يوليو / يوليه, "تشرين الأول" or "تشرين أول".
+ */
+const AR_ALEF = "[اأإآ]";
+const AR_MONTHS: [string, number][] = [
+  [String.raw`يناير|كانون\s+(?:ال)?ثاني`, 1],
+  [String.raw`فبراير|شباط`, 2],
+  [String.raw`مارس|${AR_ALEF}ذار`, 3],
+  [String.raw`${AR_ALEF}بريل|نيسان`, 4],
+  [String.raw`مايو|${AR_ALEF}يار`, 5],
+  [String.raw`يوني[وه]|حزيران`, 6],
+  [String.raw`يولي[وه]|تموز`, 7],
+  [String.raw`${AR_ALEF}غسطس|[آا]ب`, 8],
+  [String.raw`سبتمبر|${AR_ALEF}يلول`, 9],
+  [String.raw`${AR_ALEF}كتوبر|تشرين\s+(?:ال)?${AR_ALEF}ول`, 10],
+  [String.raw`نوفمبر|تشرين\s+(?:ال)?ثاني`, 11],
+  [String.raw`ديسمبر|كانون\s+(?:ال)?${AR_ALEF}ول`, 12],
+];
+const AR_MONTH_NAME = AR_MONTHS.map(([pattern]) => `(?:${pattern})`).join("|");
+const arabicMonthOf = (name: string) => AR_MONTHS.find(([pattern]) => new RegExp(`^(?:${pattern})$`, "u").test(name.trim()))?.[1] ?? 0;
+/**
+ * "٣١ ديسمبر ٢٠٢٦", "31 ديسمبر 2026م", "١٥ من شهر أيار، عام ٢٠٢٦", "١ كانون الثاني (يناير) ٢٠٢٦" — a day (1–2
+ * digits, not part of a longer number, time or price), an optional "من" / "شهر", the month (optionally
+ * followed by its other name in brackets or after a slash), and an optional year (4 digits, optionally
+ * after "،", "عام" / "سنة", and with a trailing "م"). The month must be a whole word: "مايونيز" and "آبار"
+ * aren't months. Run on asciiNumbers text (Arabic-Indic digits become 0–9, one character for one).
+ */
+const ARABIC_DATE = new RegExp(
+  String.raw`(?<![\d.,:/-])(\d{1,2})\s*(?:من\s+)?(?:شهر\s+)?(${AR_MONTH_NAME})(?!\p{L})(?:\s*[(/]\s*(?:${AR_MONTH_NAME})(?!\p{L})\s*\)?)?(?:\s*[،,]?\s*(?:(?:عام|سنة|لعام|لسنة)\s+)?(\d{4})(?!\d)(?:\s*م(?!\p{L}))?)?`,
+  "gu"
+);
 
 /**
  * Dates in text. Each mention gives every reading it could have: "03/04/2026"
@@ -505,6 +690,11 @@ export function findDates(text: string, options: { withoutYear?: boolean } = {})
   for (const m of t.matchAll(dayFirst)) mentions.push([{ day: Number(m[1]), month: monthOf(m[2]), year: fullYear(m[3]) }].filter(valid));
   const monthFirst = new RegExp(String.raw`\b${MONTH_WORD}\s+(\d{1,2})(?:st|nd|rd|th)?(?:,?\s+(\d{4}))?\b`, "g");
   for (const m of t.matchAll(monthFirst)) mentions.push([{ day: Number(m[2]), month: monthOf(m[1]), year: fullYear(m[3]) }].filter(valid));
+  // Arabic month names, kept as written (asciiNumbers is one character for one, so the index is the same).
+  for (const m of asciiNumbers(text).matchAll(ARABIC_DATE)) {
+    const written = text.slice(m.index, m.index + m[0].length).trim();
+    mentions.push([{ day: Number(m[1]), month: arabicMonthOf(m[2]), year: fullYear(m[3]), text: written }].filter(valid));
+  }
   // "18/10" with no year, only when asked: it can be read as a date to MATCH a brief's date, but "24/7"
   // or "3/4" must never be taken for an unexpected date. Not with "." — "12.50" is a price.
   if (options.withoutYear) {
@@ -538,7 +728,8 @@ export function datesWrittenOneWay(text: string): string {
     )
     .replace(new RegExp(String.raw`\b${MONTH_WORD}\s+(\d{1,2})(?:st|nd|rd|th)?(?:,?\s+(\d{4}))?\b`, "gi"), (all, m, d, y) =>
       valid({ day: +d, month: monthOf(m) }) ? write(+d, monthOf(m), fullYear(y)) : all
-    );
+    )
+    .replace(ARABIC_DATE, (all, d, m, y) => (valid({ day: +d, month: arabicMonthOf(m) }) ? write(+d, arabicMonthOf(m), fullYear(y)) : all));
 }
 
 /** Same date? A missing year on either side matches any year. */

@@ -24,7 +24,9 @@ import {
   type Price,
   websitesMatch,
 } from "@/lib/qc/compare";
-import { allText, roleBasedConfidence, type ContentDetections } from "@/lib/qc/detections";
+import { allText, roleBasedConfidence, textReadings, type ContentDetections } from "@/lib/qc/detections";
+import { HUMAN_CHECK, HUMAN_CHECK_CRITICAL } from "@/lib/analysis/policy";
+import { approvedWordingsOf, equivalentDecision, equivalentNote, humanCheckReason, languageName, matchEquivalent, textLanguage } from "@/lib/qc/phrase-equivalents";
 import type { Finding, Rule, Severity } from "@/lib/qc/findings";
 import type { QcInputRequirement } from "@/lib/qc/qc-input";
 import { requirementTypeLabel } from "@/lib/qc/requirements";
@@ -59,30 +61,74 @@ const CATEGORY = "brief" as const;
 const RULE_ID = "brief.requirement";
 
 type Outcome =
-  | { kind: "present"; detected: string; confidence?: number }
+  /** `note`: how it was found, when not word for word in the brief's language (an approved Arabic / English equivalent). */
+  | { kind: "present"; detected: string; confidence?: number; note?: string }
+  /** An approved equivalent of MANDATORY legal wording, shown in the other language: a person confirms it (A5). */
+  | { kind: "human_check"; detected: string; why: string }
   /** `typo`: the same words, misspelt — MINOR for an optional item (no worse than leaving it out), else MAJOR. */
   | { kind: "mismatched"; detected: string; why: string; fix: string; confidence?: number; typo?: boolean }
-  | { kind: "wrong"; detected: string; confidence?: number }
+  /** `note`: information only (an approved equivalent shown correctly in the other language) — the failure stands. */
+  | { kind: "wrong"; detected: string; confidence?: number; note?: string }
   | { kind: "missing" };
 
-/** A date as the checks show it ("30/10/2026"), noting when it could also be read the other way round. */
-const showDate = (mention: { day: number; month: number; year?: number }[]) =>
-  `${mention[0].day}/${mention[0].month}${mention[0].year ? `/${mention[0].year}` : ""}${mention.length > 1 ? " (or the other way round)" : ""}`;
+/**
+ * A date as the checks show it ("30/10/2026"), noting when it could also be read the other way round. A date
+ * written with an Arabic month name ("٣٠ أكتوبر ٢٠٢٦") is shown exactly as written.
+ */
+const showDate = (mention: { day: number; month: number; year?: number; text?: string }[]) =>
+  mention[0].text ?? `${mention[0].day}/${mention[0].month}${mention[0].year ? `/${mention[0].year}` : ""}${mention.length > 1 ? " (or the other way round)" : ""}`;
+
+type EquivalentCheck = { mandatory: boolean; approvedWordings: readonly string[] };
+
+/**
+ * A5: the whole wording is an approved phrase shown in the other language (lib/qc/phrase-equivalents.ts) —
+ * present (with how it was found), wrong (its date / price differs), or for MANDATORY legal wording a person
+ * confirms the translation. Null when the list has nothing to say.
+ */
+function equivalentOutcome(expected: string, readings: readonly string[], check: EquivalentCheck): Outcome | null {
+  const match = matchEquivalent(expected, readings);
+  if (!match) return null;
+  const shownIn = languageName(match.shownLanguage);
+  if (match.kind === "value_differs") return { kind: "wrong", detected: match.shown };
+  const decision = equivalentDecision(match, check.mandatory, check.approvedWordings);
+  if (decision === "human_check") return { kind: "human_check", detected: match.shown, why: humanCheckReason(match, check.mandatory) };
+  return {
+    kind: "present",
+    detected: match.shown,
+    note:
+      decision === "pass_reference"
+        ? `Present in ${shownIn} ("${match.shown}"). The approved ${shownIn} version is checked as its own requirement.`
+        : `Present in ${shownIn} ("${match.shown}") — an approved equivalent of the brief's wording.`,
+  };
+}
 
 /**
  * Free-text requirement: whole words present, else a close misspelling, else — the same words with other
  * numbers ("iPhone 15" for "iPhone 16") — a wrong value, else missing.
  */
-function textOutcome(expected: string, raw: string): Outcome {
+function textOutcome(expected: string, raw: string, readings: readonly string[] = [raw], equivalent?: EquivalentCheck): Outcome {
   // Dates in the brief's wording and on the design are compared as dates, however they're written
   // ("31 Dec 2026" = "31 December 2026" = "31/12/2026"); another date is then the same words with
   // another number — a wrong value — never "missing" plus an unexpected date.
   const text = datesWrittenOneWay(raw);
-  if (containsText(text, datesWrittenOneWay(expected))) return { kind: "present", detected: expected };
+  // Present when the whole wording appears in any reading of the text (A4: words broken by a hyphen at a line
+  // break, or split over text blocks listed out of reading order); otherwise judged on the text as listed.
+  if (readings.some((reading) => containsText(datesWrittenOneWay(reading), datesWrittenOneWay(expected)))) return { kind: "present", detected: expected };
+  // A same-language near-match (a typo, or a wrong date / number) is reported as before — an approved
+  // equivalent in the other language never hides it; it is only mentioned (review fix).
   const name = findName(text, datesWrittenOneWay(expected));
-  if (name.status === "misspelt") return misspelt(name.found, expected);
-  if (name.status === "different") return { kind: "wrong", detected: name.found };
+  const note = equivalent && name.status !== "absent" && name.status !== "exact" ? equivalentNote(expected, readings) : "";
+  if (name.status === "misspelt") return withNote(misspelt(name.found, expected), note);
+  if (name.status === "different") return { kind: "wrong", detected: name.found, note };
+  // Nothing in the brief's language: A5, an approved English ↔ Arabic equivalent of the whole wording.
+  const cross = equivalent ? equivalentOutcome(expected, readings, equivalent) : null;
+  if (cross) return cross;
   return { kind: "missing" };
+}
+
+/** A failure with an information note added to its explanation. */
+function withNote(outcome: Outcome, note: string): Outcome {
+  return note && outcome.kind === "mismatched" ? { ...outcome, why: `${outcome.why}${note}` } : outcome;
 }
 
 function misspelt(found: string, expected: string): Outcome {
@@ -96,8 +142,11 @@ function valueOutcome<T>(found: T[], same: (value: T) => boolean, show: (value: 
   return found.length ? { kind: "wrong", detected: found.map(show).join(", ") } : { kind: "missing" };
 }
 
-function check(r: QcInputRequirement, d: ContentDetections): Outcome | "unchecked" {
+function check(r: QcInputRequirement, d: ContentDetections, approvedWordings: readonly string[] = []): Outcome | "unchecked" {
   const text = allText(d) ?? "";
+  const readings = textReadings(d);
+  const equivalent: EquivalentCheck = { mandatory: r.mandatory, approvedWordings };
+  const worded = (expected: string) => textOutcome(expected, text, readings, equivalent);
   const value = r.expectedValue;
   switch (r.type) {
     case "phone":
@@ -116,7 +165,7 @@ function check(r: QcInputRequirement, d: ContentDetections): Outcome | "unchecke
       return valueOutcome(findWebsites(text), (w) => websitesMatch(value, w), (w) => w);
     case "price": {
       const expected = parsePrice(value);
-      if (!expected) return textOutcome(value, text);
+      if (!expected) return worded(value);
       const found = findPrices(text);
       const exact = found.find((p) => pricesMatch(expected, p) === "match");
       if (exact) return { kind: "present", detected: exact.text };
@@ -127,13 +176,13 @@ function check(r: QcInputRequirement, d: ContentDetections): Outcome | "unchecke
     }
     case "percentage": {
       const expected = parsePercentage(value);
-      if (expected === null) return textOutcome(value, text);
+      if (expected === null) return worded(value);
       return valueOutcome(findPercentages(text), (p) => p === expected, (p) => `${p}%`);
     }
     case "date": {
       // Day and month without a year ("18/10") can match the brief's date; only full dates can be "wrong".
       const [expected] = findDates(value, { withoutYear: true });
-      if (!expected) return textOutcome(value, text);
+      if (!expected) return worded(value);
       const hit = findDates(text, { withoutYear: true }).find((m) => datesMatch(expected, m));
       if (hit) return { kind: "present", detected: value };
       // The dates actually shown, so the designer sees which one is wrong.
@@ -142,7 +191,7 @@ function check(r: QcInputRequirement, d: ContentDetections): Outcome | "unchecke
     }
     case "time": {
       const [expected] = findTimes(value);
-      if (expected === undefined) return textOutcome(value, text);
+      if (expected === undefined) return worded(value);
       const clock = (m: number) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
       return valueOutcome(findTimes(text), (t) => t === expected, clock);
     }
@@ -150,10 +199,19 @@ function check(r: QcInputRequirement, d: ContentDetections): Outcome | "unchecke
       const ctas = (d.texts ?? []).filter((t) => t.role === "cta");
       const hit = ctas.find((t) => ctaMatches(value, t.text));
       if (hit) return { kind: "present", detected: hit.text, confidence: hit.confidence };
-      if (containsText(text, value)) return { kind: "present", detected: value };
-      // The same words, misspelt ("Book Nwo"): a typo to correct, never a different or missing CTA.
+      if (readings.some((reading) => containsText(reading, value))) return { kind: "present", detected: value };
+      // The same words, misspelt ("Book Nwo"): a typo to correct, never a different or missing CTA — even when an
+      // approved equivalent is right in the other language (then only mentioned; review fix).
       const near = findName(text, value);
-      if (near.status === "misspelt") return misspelt(near.found, value);
+      if (near.status === "misspelt") return withNote(misspelt(near.found, value), equivalentNote(value, readings));
+      // Another CTA in the brief's language: a different CTA, as before (review fix: never hidden by A5).
+      const ownLanguage = ctas.filter((t) => textLanguage(t.text) === textLanguage(value));
+      if (ownLanguage.length) {
+        return { kind: "wrong", detected: ownLanguage.map((t) => t.text).join(", "), confidence: roleBasedConfidence(ownLanguage), note: equivalentNote(value, readings) };
+      }
+      // Nothing in the brief's language: A5, an approved English ↔ Arabic equivalent ("احجز الآن" for "Book now").
+      const cross = equivalentOutcome(value, readings, equivalent);
+      if (cross) return cross;
       // Another text labelled the CTA: only as sure as that text and its role (never "certain" by default).
       return ctas.length ? { kind: "wrong", detected: ctas.map((t) => t.text).join(", "), confidence: roleBasedConfidence(ctas) } : { kind: "missing" };
     }
@@ -161,7 +219,7 @@ function check(r: QcInputRequirement, d: ContentDetections): Outcome | "unchecke
       const headlines = (d.texts ?? []).filter((t) => t.role === "headline");
       const hit = headlines.find((t) => textMatches(value, t.text));
       if (hit) return { kind: "present", detected: hit.text, confidence: hit.confidence };
-      const outcome = textOutcome(value, text);
+      const outcome = worded(value);
       if (outcome.kind === "missing" && headlines.length) {
         return { kind: "wrong", detected: headlines.map((t) => t.text).join(" / "), confidence: roleBasedConfidence(headlines) };
       }
@@ -173,7 +231,7 @@ function check(r: QcInputRequirement, d: ContentDetections): Outcome | "unchecke
     case "service_name":
     case "location":
     case "campaign_name":
-      return textOutcome(value, text);
+      return worded(value);
     default:
       return "unchecked"; // target audience, special instruction, other, or a new type
   }
@@ -216,7 +274,7 @@ function linked(found: Finding | Finding[], r: QcInputRequirement): Finding[] {
   return (Array.isArray(found) ? found : [found]).map((f) => (r.id ? { ...f, requirementId: r.id } : f));
 }
 
-function judge(r: QcInputRequirement, d: ContentDetections | null, files: ContentFileFacts[] = []): Finding | Finding[] {
+function judge(r: QcInputRequirement, d: ContentDetections | null, files: ContentFileFacts[] = [], approvedWordings: readonly string[] = []): Finding | Finding[] {
   const label = requirementTypeLabel(r.type);
   const title = r.label ? `${label}: ${r.label}` : label;
   const id = `${RULE_ID}.${r.type}`;
@@ -228,14 +286,14 @@ function judge(r: QcInputRequirement, d: ContentDetections | null, files: Conten
     return notApplicable(id, CATEGORY, title, "Checked by the Platform / Size check against the platform chosen for this session.");
   }
   if (!d?.texts) return notVerified(id, CATEGORY, title, severityFor(r.mandatory), NEEDS_ANALYSIS, r.expectedValue);
-  const outcome = check(r, d);
+  const outcome = check(r, d, approvedWordings);
   if (outcome === "unchecked") {
     return notVerified(id, CATEGORY, title, severityFor(r.mandatory, "minor"), `This kind of requirement can't be compared automatically — check it by eye.${notes}`, r.expectedValue);
   }
   const mandatoryNote = r.mandatory ? " The brief marks it as mandatory." : "";
   switch (outcome.kind) {
     case "present": {
-      const capitals = r.mandatory && EXACT_WORDING.has(r.type) ? capitalizationDifference(allText(d) ?? "", r.expectedValue) : null;
+      const capitals = r.mandatory && EXACT_WORDING.has(r.type) && !outcome.note ? capitalizationDifference(allText(d) ?? "", r.expectedValue) : null;
       if (capitals) {
         return make({
           severity: "minor",
@@ -247,8 +305,16 @@ function judge(r: QcInputRequirement, d: ContentDetections | null, files: Conten
           confidence: outcome.confidence,
         });
       }
-      return make({ severity: severityFor(r.mandatory), status: "passed", expected: r.expectedValue, detected: outcome.detected, explanation: "Present as the brief asks.", confidence: outcome.confidence });
+      return make({ severity: severityFor(r.mandatory), status: "passed", expected: r.expectedValue, detected: outcome.detected, explanation: outcome.note ?? "Present as the brief asks.", confidence: outcome.confidence });
     }
+    case "human_check":
+      return make({
+        severity: severityFor(r.mandatory),
+        status: "unverified",
+        expected: r.expectedValue,
+        detected: outcome.detected,
+        explanation: `${severityFor(r.mandatory) === "critical" ? HUMAN_CHECK_CRITICAL : HUMAN_CHECK}: ${outcome.why}`,
+      });
     case "mismatched":
       return make({
         // A misspelt optional item counts no more than a missing one; a mandatory item's typo stays MAJOR.
@@ -266,7 +332,7 @@ function judge(r: QcInputRequirement, d: ContentDetections | null, files: Conten
         status: "failed",
         expected: r.expectedValue,
         detected: outcome.detected,
-        explanation: `The content shows a different ${label.toLowerCase()} from the brief.${mandatoryNote}`,
+        explanation: `The content shows a different ${label.toLowerCase()} from the brief.${mandatoryNote}${outcome.note ?? ""}`,
         suggestedFix: `Change it to "${r.expectedValue}".`,
         confidence: outcome.confidence,
       });
@@ -295,7 +361,8 @@ const requirementsRule: Rule<QcContext> = {
   run(context) {
     const list = context.requirements.filter((r) => r.type !== "disclaimer");
     if (list.length === 0) return [notApplicable(RULE_ID, CATEGORY, "Brief", "No confirmed requirements to check (disclaimers are checked under Legal).")];
-    return list.flatMap((r) => linked(judge(r, context.detections, context.platform?.files), r));
+    const approvedWordings = approvedWordingsOf(context);
+    return list.flatMap((r) => linked(judge(r, context.detections, context.platform?.files, approvedWordings), r));
   },
 };
 
@@ -390,8 +457,7 @@ const unexpectedRule: Rule<QcContext> = {
           skippedAsWorded.add("date");
           continue;
         }
-        const m = mention[0];
-        flag("date", `${m.day}/${m.month}${m.year ? `/${m.year}` : ""}${mention.length > 1 ? " (or the other way round)" : ""}`, briefDates.length > 0);
+        flag("date", showDate(mention), briefDates.length > 0);
       }
     }
     if (findings.length) return findings;

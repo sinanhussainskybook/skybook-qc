@@ -1,3 +1,5 @@
+import { joinHyphenatedLines } from "@/lib/qc/compare";
+
 /**
  * What was detected IN the content — the second input of the QC engine
  * (plan Phase 5: "approved information + what was detected → findings").
@@ -94,6 +96,67 @@ export function allText(d: ContentDetections | null, withSpeech = true): string 
   const parts = d.texts.map((t) => t.text);
   if (withSpeech && d.speech) parts.push(...d.speech.map((s) => s.text));
   return parts.join("\n");
+}
+
+/** Arabic-script letters (Arabic, Persian, Urdu…) — a line mostly in them is read right to left. */
+const ARABIC_LETTER = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/gu;
+const LATIN_OR_OTHER_LETTER = /[^\P{L}\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/gu;
+const rightToLeft = (s: string) => (s.match(ARABIC_LETTER)?.length ?? 0) > (s.match(LATIN_OR_OTHER_LETTER)?.length ?? 0);
+
+/**
+ * The on-screen text of one frame (file + page) in reading order, from the text positions: rows top to
+ * bottom (lines whose heights overlap by at least half the smaller one share a row); within a row, right to
+ * left when the row is mostly Arabic script, otherwise left to right. Null when a line has no position —
+ * then the listed order is the only one there is.
+ */
+function spatialOrder(texts: DetectedText[]): string[] | null {
+  if (texts.some((t) => !t.box)) return null;
+  const sorted = [...texts].sort((a, b) => a.box!.y + a.box!.h / 2 - (b.box!.y + b.box!.h / 2));
+  const rows: DetectedText[][] = [];
+  for (const t of sorted) {
+    const row = rows[rows.length - 1];
+    const sameRow =
+      row &&
+      row.some((r) => {
+        const overlap = Math.min(r.box!.y + r.box!.h, t.box!.y + t.box!.h) - Math.max(r.box!.y, t.box!.y);
+        return overlap >= 0.5 * Math.min(r.box!.h, t.box!.h);
+      });
+    if (sameRow) row.push(t);
+    else rows.push([t]);
+  }
+  return rows.flatMap((row) => {
+    const rtl = rightToLeft(row.map((t) => t.text).join(" "));
+    return [...row].sort((a, b) => (rtl ? b.box!.x + b.box!.w - (a.box!.x + a.box!.w) : a.box!.x - b.box!.x)).map((t) => t.text);
+  });
+}
+
+/**
+ * The content's text read every reasonable way, for checking that REQUIRED WORDING is present (Stage 3, A4):
+ *   1. as listed (allText) — always first;
+ *   2. the same with words broken across lines by a hyphen put back together (joinHyphenatedLines);
+ *   3. in reading order from the text positions (spatialOrder) — rows top to bottom, Arabic rows right to
+ *      left — so wording split over several text blocks matches however they were listed; and 4. that with
+ *      hyphenated breaks joined.
+ * Wording counts as present only when it appears complete, word for word, in one of them; anything about
+ * missing or different words is still judged on the text as listed. Video (texts with times) and frames
+ * where a line has no position keep the listed order. Empty when there's no text.
+ */
+export function textReadings(d: ContentDetections | null, withSpeech = true): string[] {
+  const listed = allText(d, withSpeech);
+  if (listed === null || !d?.texts) return [];
+  const readings = [listed, joinHyphenatedLines(listed)];
+  if (!d.texts.some((t) => t.startMs !== undefined)) {
+    const frames = new Map<string, DetectedText[]>();
+    for (const t of d.texts) {
+      const key = `${t.fileId ?? ""}#${t.page ?? ""}`;
+      frames.set(key, [...(frames.get(key) ?? []), t]);
+    }
+    const ordered = [...frames.values()].map((texts) => spatialOrder(texts) ?? texts.map((t) => t.text)).flat();
+    if (withSpeech && d.speech) ordered.push(...d.speech.map((s) => s.text));
+    const spatial = ordered.join("\n");
+    readings.push(spatial, joinHyphenatedLines(spatial));
+  }
+  return [...new Set(readings)];
 }
 
 /**

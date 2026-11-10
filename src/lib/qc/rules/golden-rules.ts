@@ -1,6 +1,8 @@
 import type { GoldenRule } from "@/lib/company/types";
 import { colorDifference, containsText, ctaMatches, findName, sameFontFamily } from "@/lib/qc/compare";
-import { allText, roleBasedConfidence, type ContentDetections } from "@/lib/qc/detections";
+import { allText, roleBasedConfidence, textReadings, type ContentDetections } from "@/lib/qc/detections";
+import { HUMAN_CHECK, HUMAN_CHECK_CRITICAL } from "@/lib/analysis/policy";
+import { approvedWordingsOf, equivalentDecision, equivalentNote, humanCheckReason, languageName, matchEquivalent, textLanguage } from "@/lib/qc/phrase-equivalents";
 import type { Finding, Rule } from "@/lib/qc/findings";
 import { BRAND_COLOR_TOLERANCE } from "@/lib/qc/rules/brand";
 import { ALL_TYPES, findingFor, NEEDS_ANALYSIS, notApplicable, notVerified, severityFor, type QcContext } from "@/lib/qc/rules/context";
@@ -15,7 +17,7 @@ import { ALL_TYPES, findingFor, NEEDS_ANALYSIS, notApplicable, notVerified, seve
 const CATEGORY = "golden_rules" as const;
 const RULE_ID = "golden_rules.rule";
 
-function checkOne(rule: GoldenRule, d: ContentDetections | null): Finding {
+function checkOne(rule: GoldenRule, d: ContentDetections | null, approvedWordings: readonly string[] = []): Finding {
   const title = `Golden Rule: ${rule.rule}`;
   const severity = severityFor(rule.mandatory);
   const make = findingFor(`${RULE_ID}.${rule.category}`, CATEGORY, title);
@@ -35,13 +37,42 @@ function checkOne(rule: GoldenRule, d: ContentDetections | null): Finding {
     case "mandatory_disclaimer": {
       const text = allText(d, false);
       if (text === null) return unverified(NEEDS_ANALYSIS);
-      if (containsText(text, value)) return passed("Present", "The required disclaimer appears in full.");
-      // Report what was actually read (as the brief's disclaimer check does): a near-match is the words on the
-      // design, so it's judged on how clearly they were read; only a true absence is "Not found".
+      // In any reading of the text (A4: hyphenated line breaks, text blocks out of reading order).
+      const readings = textReadings(d, false);
+      if (readings.some((reading) => containsText(reading, value))) return passed("Present", "The required disclaimer appears in full.");
+      // A same-language near-match (a typo, or another date / number) is reported as before — an approved
+      // equivalent in the other language never hides it, it is only mentioned (review fix).
       const fix = `Add the disclaimer exactly as approved: "${value}".`;
       const close = findName(text, value);
-      if (close.status === "different") return failed(close.found, "The required disclaimer appears with different numbers or details — it must appear word for word.", fix);
-      if (close.status === "misspelt") return failed(close.found, "The required disclaimer appears, but not word for word.", fix);
+      const note = close.status === "different" || close.status === "misspelt" ? equivalentNote(value, readings) : "";
+      if (close.status === "different") return failed(close.found, `The required disclaimer appears with different numbers or details — it must appear word for word.${note}`, fix);
+      if (close.status === "misspelt") return failed(close.found, `The required disclaimer appears, but not word for word.${note}`, fix);
+      // A5, only when nothing in the approved language was found: an approved English <-> Arabic equivalent
+      // (reviewed phrase list). Mandatory legal wording translated needs a person, unless an approved version
+      // in the language shown is saved too.
+      const cross = matchEquivalent(value, readings);
+      if (cross?.kind === "value_differs") {
+        return failed(cross.shown, `The disclaimer is shown in ${languageName(cross.shownLanguage)}, but with a different date or amount — it must appear word for word.`, `Add the disclaimer exactly as approved: "${value}".`);
+      }
+      if (cross) {
+        const shownIn = languageName(cross.shownLanguage);
+        const decision = equivalentDecision(cross, rule.mandatory, approvedWordings);
+        if (decision === "human_check") {
+          return make({
+            severity,
+            status: "unverified",
+            expected: value,
+            detected: cross.shown,
+            explanation: `${severity === "critical" ? HUMAN_CHECK_CRITICAL : HUMAN_CHECK}: ${humanCheckReason(cross, rule.mandatory)}`,
+          });
+        }
+        return passed(
+          cross.shown,
+          decision === "pass_reference"
+            ? `Present in ${shownIn} ("${cross.shown}"). The approved ${shownIn} version is checked as its own rule or requirement.`
+            : `Present in ${shownIn} ("${cross.shown}") — an approved equivalent of the approved wording.`
+        );
+      }
       return failed("Not found", "The required disclaimer doesn't appear.", fix);
     }
     case "approved_product_name": {
@@ -56,8 +87,29 @@ function checkOne(rule: GoldenRule, d: ContentDetections | null): Finding {
     case "approved_cta": {
       if (!d?.texts) return unverified(NEEDS_ANALYSIS);
       const ctas = d.texts.filter((t) => t.role === "cta");
-      if (ctas.some((t) => ctaMatches(value, t.text)) || (ctas.length === 0 && containsText(allText(d) ?? "", value))) {
+      if (ctas.some((t) => ctaMatches(value, t.text)) || (ctas.length === 0 && textReadings(d).some((reading) => containsText(reading, value)))) {
         return passed(value, "The call to action is the approved one.");
+      }
+      // Another CTA in the approved wording's language: not the approved one, as before — an approved equivalent
+      // in the other language never hides it, it is only mentioned (review fix).
+      const ownLanguage = ctas.filter((t) => textLanguage(t.text) === textLanguage(value));
+      if (ownLanguage.length) {
+        const all = textReadings(d);
+        return failed(ownLanguage.map((t) => t.text).join(", "), `The call to action isn't the approved wording.${equivalentNote(value, all)}`, `Use "${value}".`, roleBasedConfidence(ownLanguage));
+      }
+      // A5, only when no CTA in that language: the approved CTA's approved Arabic / English equivalent.
+      const cross = matchEquivalent(value, ctas.length ? ctas.map((t) => t.text) : textReadings(d));
+      if (cross?.kind === "present") {
+        return passed(cross.shown, `Present in ${languageName(cross.shownLanguage)} ("${cross.shown}") — an approved equivalent of the approved call to action.`);
+      }
+      if (cross?.kind === "needs_check") {
+        return make({
+          severity,
+          status: "unverified",
+          expected: value,
+          detected: cross.shown,
+          explanation: `${severity === "critical" ? HUMAN_CHECK_CRITICAL : HUMAN_CHECK}: ${humanCheckReason(cross, rule.mandatory)}`,
+        });
       }
       if (ctas.length === 0) return notApplicable(`${RULE_ID}.${rule.category}`, CATEGORY, title, "No call to action was found in the content.");
       return failed(ctas.map((t) => t.text).join(", "), "The call to action isn't the approved wording.", `Use "${value}".`, roleBasedConfidence(ctas));
@@ -95,7 +147,8 @@ const goldenRule: Rule<QcContext> = {
   run(context) {
     const active = context.company.goldenRules.filter((r) => r.active);
     if (active.length === 0) return [notApplicable(RULE_ID, CATEGORY, "Golden Rules", "This company has no active Golden Rules.")];
-    return active.map((rule) => ({ ...checkOne(rule, context.detections), mandatory: rule.mandatory }));
+    const approved = approvedWordingsOf(context);
+    return active.map((rule) => ({ ...checkOne(rule, context.detections, approved), mandatory: rule.mandatory }));
   },
 };
 

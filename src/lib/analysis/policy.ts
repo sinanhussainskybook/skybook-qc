@@ -1,4 +1,4 @@
-import { normalizeWords } from "@/lib/qc/compare";
+import { datesWrittenOneWay, normalizeWords } from "@/lib/qc/compare";
 import type { ContentDetections } from "@/lib/qc/detections";
 import type { Finding } from "@/lib/qc/findings";
 import { NEEDS_ANALYSIS, notAnalysedExplanation, type AnalysisState } from "@/lib/qc/rules/context";
@@ -168,9 +168,13 @@ export function evidenceOf(ruleId: string): "text" | "measured" | "ai" | "none" 
 function textEvidence(finding: Finding, d: ContentDetections, isAbsence: boolean): { source: "ocr" | "speech" | "absent"; confidence: number } {
   const detected = finding.detected ?? "";
   if (detected === NOT_FOUND || finding.detected === undefined) return { source: "absent", confidence: d.textCoverage ?? 0 };
-  const needle = normalizeWords(detected);
+  // Dates written one way on both sides: the rules compare worded text with dates written one way and report
+  // their near match in that form ("offer valid until 30 12 2026" for "Offer valid until 30 Dec 2026"), so the
+  // line must be read the same way to be recognised as where those words came from — otherwise a WRONG value
+  // would be taken for a missing one.
+  const needle = normalizeWords(datesWrittenOneWay(detected));
   const matches = (text: string) => {
-    const t = normalizeWords(text);
+    const t = normalizeWords(datesWrittenOneWay(text));
     return needle.length > 0 && (t.includes(needle) || needle.includes(t));
   };
   const ocr = (d.texts ?? []).filter((t) => matches(t.text));

@@ -363,6 +363,15 @@ const DATE_LIKE = /^(\d{4}[-/.]\d{1,2}[-/.]\d{1,2}|\d{1,2}[-/.]\d{1,2}[-/.]\d{2,
 const YEAR_RANGE = /^(19|20)\d{2}\s*[-/]\s*(19|20)\d{2}$/;
 
 /**
+ * The spaces that \s stands for, without the line breaks (\n \r \v \f U+2028 U+2029): a phone number
+ * never runs on to the next line - in a numbered brief, "+971 4 123 4567" followed by "2. Event date" is
+ * not "+971 4 123 4567 2".
+ */
+const SAME_LINE_SPACE = String.raw`\t \u00A0\u1680\u2000-\u200A\u202F\u205F\u3000\uFEFF`;
+/** A phone-number-like run on one line (findPhones): digits, spaces, dashes, dots, brackets, direction marks. */
+const PHONE_RUN = new RegExp(String.raw`(?:\+|00)?\(?\d[\d${SAME_LINE_SPACE}().\u200E\u200F\u061C-]{5,}\d`, "g");
+
+/**
  * Phone-number-like runs of 7–15 digits (spaces, dashes, dots, brackets allowed) — in Western, Arabic-Indic
  * (٠–٩) or Eastern Arabic (۰–۹) digits, with the invisible direction marks Arabic text can carry inside a
  * number (U+200E, U+200F, U+061C). Each is returned exactly as written in the text.
@@ -371,7 +380,7 @@ export function findPhones(text: string): string[] {
   const found = rtlInternationalPhones(text);
   const inRtl = (at: number) => found.some((p) => at >= p.start && at < p.end);
   // asciiNumbers swaps one character for one, so a match's position is the same in the original text.
-  for (const match of asciiNumbers(text).matchAll(/(?:\+|00)?\(?\d[\d\s().\u200E\u200F\u061C-]{5,}\d/g)) {
+  for (const match of asciiNumbers(text).matchAll(PHONE_RUN)) {
     if (inRtl(match.index)) continue; // already part of a right-to-left international number
     const ascii = match[0].trim().replace(/[\u200E\u200F\u061C]/g, "");
     const digits = ascii.replace(/\D/g, "").length;

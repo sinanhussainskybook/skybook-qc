@@ -1,5 +1,5 @@
 import { capitalizationDifference, containsText, datesWrittenOneWay, findName } from "@/lib/qc/compare";
-import { allText, textReadings } from "@/lib/qc/detections";
+import { allText, presenceReadings, textReadings } from "@/lib/qc/detections";
 import { HUMAN_CHECK, HUMAN_CHECK_CRITICAL } from "@/lib/analysis/policy";
 import { approvedWordingsOf, equivalentDecision, equivalentNote, humanCheckReason, languageName, matchEquivalent } from "@/lib/qc/phrase-equivalents";
 import type { Finding, Rule } from "@/lib/qc/findings";
@@ -37,6 +37,8 @@ const disclaimerRule: Rule<QcContext> = {
     // On-screen text only: a disclaimer must be readable, not just spoken.
     const text = allText(context.detections, false);
     const readings = textReadings(context.detections, false);
+    // Only for "is the disclaimer there?" - A5 equivalents and notes use `readings`.
+    const presence = presenceReadings(context.detections, false);
     const approved = approvedWordingsOf(context);
     const checkDisclaimer = (r: (typeof disclaimers)[number]): Finding => {
       const title = r.label ? `Disclaimer: ${r.label}` : "Disclaimer";
@@ -46,7 +48,7 @@ const disclaimerRule: Rule<QcContext> = {
       // Dates compared as dates, however written ("31 Dec 2026" = "31/12/2026"); capitals still from the text as shown.
       // In any reading of the text (A4: hyphenated line breaks, text blocks out of reading order); the capitals
       // are checked in the reading where it was found.
-      const found = readings.find((reading) => containsText(datesWrittenOneWay(reading), datesWrittenOneWay(r.expectedValue)));
+      const found = presence.find((reading) => containsText(datesWrittenOneWay(reading), datesWrittenOneWay(r.expectedValue)));
       if (found !== undefined) {
         const capitals = r.mandatory ? capitalizationDifference(found, r.expectedValue) : null;
         if (capitals) {

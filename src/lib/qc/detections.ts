@@ -160,6 +160,17 @@ export function textReadings(d: ContentDetections | null, withSpeech = true): st
 }
 
 /**
+ * The readings of textReadings (first, unchanged), then each of them with "Book- ing" on one line joined too
+ * (joinHyphenatedLines sameLine; A4 live follow-up: a line break the reading lost). ONLY for checking that
+ * required wording is PRESENT - never for A5 equivalents or their notes, or anything that can report a wrong
+ * value - so it can turn a "missing" into "present", and nothing else.
+ */
+export function presenceReadings(d: ContentDetections | null, withSpeech = true): string[] {
+  const readings = textReadings(d, withSpeech);
+  return [...new Set([...readings, ...readings.map((reading) => joinHyphenatedLines(reading, { sameLine: true }))])];
+}
+
+/**
  * How sure a finding based on texts' ROLES can be ("this is the CTA"): the least sure of those texts and
  * of their roles. A wrong CTA or headline is only as certain as the AI's reading of which text it is.
  */

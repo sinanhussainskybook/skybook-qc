@@ -103,9 +103,17 @@ export function textMatches(expected: string, detected: string): boolean {
  * after the break ("Dubai-" / "Abu Dhabi") is a real hyphenated pair and is left as it is. Only used as an
  * extra reading of the text — the text as written is always checked too, so "state-of-the-" / "art" still
  * reads "state of the art".
+ *
+ * With `sameLine` (A4 live follow-up), ALSO a word broken at a line break that the reading put on ONE line:
+ * "Book- ing" (a letter, a hyphen, spaces, a lower-case letter) - an AI reading can give both lines as one
+ * text, and spaces in a reading are made single, so the line break is gone. Never a suspended hyphen
+ * ("pre- and post-", "short- or long-term", "5- to 7-day", "x- nor y-", "x- & y-"), never a capital after
+ * it ("Dubai- Abu Dhabi"), and never a hyphen without a space ("re-sign" stays as it is). textReadings adds
+ * it as an EXTRA reading only, for checking that required wording is present.
  */
-export function joinHyphenatedLines(text: string): string {
-  return text.replace(/(\p{L})[-\u2010\u2011\u00AD][ \t]*\r?\n[ \t]*(?=\p{Ll})/gu, "$1").replace(/\u00AD/g, "");
+export function joinHyphenatedLines(text: string, options: { sameLine?: boolean } = {}): string {
+  const joined = text.replace(/(\p{L})[-\u2010\u2011\u00AD][ \t]*\r?\n[ \t]*(?=\p{Ll})/gu, "$1").replace(/\u00AD/g, "");
+  return options.sameLine ? joined.replace(/(\p{L})[-\u2010\u2011][ \t]+(?!(?:and|or|to|nor)(?!\p{L}))(?=\p{Ll})/gu, "$1") : joined;
 }
 
 /** Is `needle` present in `haystack` as whole words (case, punctuation, spacing and UK / US spelling ignored)? */

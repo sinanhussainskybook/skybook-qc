@@ -1,6 +1,6 @@
 import type { GoldenRule } from "@/lib/company/types";
 import { colorDifference, containsText, ctaMatches, findName, sameFontFamily } from "@/lib/qc/compare";
-import { allText, roleBasedConfidence, textReadings, type ContentDetections } from "@/lib/qc/detections";
+import { allText, presenceReadings, roleBasedConfidence, textReadings, type ContentDetections } from "@/lib/qc/detections";
 import { HUMAN_CHECK, HUMAN_CHECK_CRITICAL } from "@/lib/analysis/policy";
 import { approvedWordingsOf, equivalentDecision, equivalentNote, humanCheckReason, languageName, matchEquivalent, textLanguage } from "@/lib/qc/phrase-equivalents";
 import type { Finding, Rule } from "@/lib/qc/findings";
@@ -39,7 +39,8 @@ function checkOne(rule: GoldenRule, d: ContentDetections | null, approvedWording
       if (text === null) return unverified(NEEDS_ANALYSIS);
       // In any reading of the text (A4: hyphenated line breaks, text blocks out of reading order).
       const readings = textReadings(d, false);
-      if (readings.some((reading) => containsText(reading, value))) return passed("Present", "The required disclaimer appears in full.");
+      // (Presence only: plus "Book- ing" joined on one line. A5 equivalents and notes below use `readings`.)
+      if (presenceReadings(d, false).some((reading) => containsText(reading, value))) return passed("Present", "The required disclaimer appears in full.");
       // A same-language near-match (a typo, or another date / number) is reported as before — an approved
       // equivalent in the other language never hides it, it is only mentioned (review fix).
       const fix = `Add the disclaimer exactly as approved: "${value}".`;
@@ -87,7 +88,7 @@ function checkOne(rule: GoldenRule, d: ContentDetections | null, approvedWording
     case "approved_cta": {
       if (!d?.texts) return unverified(NEEDS_ANALYSIS);
       const ctas = d.texts.filter((t) => t.role === "cta");
-      if (ctas.some((t) => ctaMatches(value, t.text)) || (ctas.length === 0 && textReadings(d).some((reading) => containsText(reading, value)))) {
+      if (ctas.some((t) => ctaMatches(value, t.text)) || (ctas.length === 0 && presenceReadings(d).some((reading) => containsText(reading, value)))) {
         return passed(value, "The call to action is the approved one.");
       }
       // Another CTA in the approved wording's language: not the approved one, as before — an approved equivalent

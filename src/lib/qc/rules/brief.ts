@@ -24,7 +24,7 @@ import {
   type Price,
   websitesMatch,
 } from "@/lib/qc/compare";
-import { allText, roleBasedConfidence, textReadings, type ContentDetections } from "@/lib/qc/detections";
+import { allText, presenceReadings, roleBasedConfidence, textReadings, type ContentDetections } from "@/lib/qc/detections";
 import { HUMAN_CHECK, HUMAN_CHECK_CRITICAL } from "@/lib/analysis/policy";
 import { approvedWordingsOf, equivalentDecision, equivalentNote, humanCheckReason, languageName, matchEquivalent, textLanguage } from "@/lib/qc/phrase-equivalents";
 import type { Finding, Rule, Severity } from "@/lib/qc/findings";
@@ -106,14 +106,15 @@ function equivalentOutcome(expected: string, readings: readonly string[], check:
  * Free-text requirement: whole words present, else a close misspelling, else — the same words with other
  * numbers ("iPhone 15" for "iPhone 16") — a wrong value, else missing.
  */
-function textOutcome(expected: string, raw: string, readings: readonly string[] = [raw], equivalent?: EquivalentCheck): Outcome {
+function textOutcome(expected: string, raw: string, readings: readonly string[] = [raw], equivalent?: EquivalentCheck, presence: readonly string[] = readings): Outcome {
   // Dates in the brief's wording and on the design are compared as dates, however they're written
   // ("31 Dec 2026" = "31 December 2026" = "31/12/2026"); another date is then the same words with
   // another number — a wrong value — never "missing" plus an unexpected date.
   const text = datesWrittenOneWay(raw);
   // Present when the whole wording appears in any reading of the text (A4: words broken by a hyphen at a line
   // break, or split over text blocks listed out of reading order); otherwise judged on the text as listed.
-  if (readings.some((reading) => containsText(datesWrittenOneWay(reading), datesWrittenOneWay(expected)))) return { kind: "present", detected: expected };
+  // (presence: those readings plus "Book- ing" joined on one line - for this check only.)
+  if (presence.some((reading) => containsText(datesWrittenOneWay(reading), datesWrittenOneWay(expected)))) return { kind: "present", detected: expected };
   // A same-language near-match (a typo, or a wrong date / number) is reported as before — an approved
   // equivalent in the other language never hides it; it is only mentioned (review fix).
   const name = findName(text, datesWrittenOneWay(expected));
@@ -145,8 +146,10 @@ function valueOutcome<T>(found: T[], same: (value: T) => boolean, show: (value: 
 function check(r: QcInputRequirement, d: ContentDetections, approvedWordings: readonly string[] = []): Outcome | "unchecked" {
   const text = allText(d) ?? "";
   const readings = textReadings(d);
+  // Only for "is the required wording there?" - A5 equivalents and notes use `readings`.
+  const presence = presenceReadings(d);
   const equivalent: EquivalentCheck = { mandatory: r.mandatory, approvedWordings };
-  const worded = (expected: string) => textOutcome(expected, text, readings, equivalent);
+  const worded = (expected: string) => textOutcome(expected, text, readings, equivalent, presence);
   const value = r.expectedValue;
   switch (r.type) {
     case "phone":
@@ -199,7 +202,7 @@ function check(r: QcInputRequirement, d: ContentDetections, approvedWordings: re
       const ctas = (d.texts ?? []).filter((t) => t.role === "cta");
       const hit = ctas.find((t) => ctaMatches(value, t.text));
       if (hit) return { kind: "present", detected: hit.text, confidence: hit.confidence };
-      if (readings.some((reading) => containsText(reading, value))) return { kind: "present", detected: value };
+      if (presence.some((reading) => containsText(reading, value))) return { kind: "present", detected: value };
       // The same words, misspelt ("Book Nwo"): a typo to correct, never a different or missing CTA — even when an
       // approved equivalent is right in the other language (then only mentioned; review fix).
       const near = findName(text, value);

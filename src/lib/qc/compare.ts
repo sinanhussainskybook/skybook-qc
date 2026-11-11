@@ -108,7 +108,7 @@ export function textMatches(expected: string, detected: string): boolean {
  * "Book- ing" (a letter, a hyphen, spaces, a lower-case letter) - an AI reading can give both lines as one
  * text, and spaces in a reading are made single, so the line break is gone. Never a suspended hyphen
  * ("pre- and post-", "short- or long-term", "5- to 7-day", "x- nor y-", "x- & y-"), never a capital after
- * it ("Dubai- Abu Dhabi"), and never a hyphen without a space ("re-sign" stays as it is). textReadings adds
+ * it ("Dubai- Abu Dhabi"), and never a hyphen without a space ("re-sign" stays as it is). presenceReadings adds
  * it as an EXTRA reading only, for checking that required wording is present.
  */
 export function joinHyphenatedLines(text: string, options: { sameLine?: boolean } = {}): string {

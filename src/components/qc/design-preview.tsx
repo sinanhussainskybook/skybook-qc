@@ -24,7 +24,9 @@ const MARKER_STYLE: Record<Severity, { ring: string; badge: string }> = {
 export function DesignPreviews({ previews, markers = [] }: { previews: DesignPreview[]; markers?: IssueMarker[] }) {
   if (previews.length === 0) return null;
   return (
-    <ul aria-label="Checked design" className="grid gap-3">
+    // grid-cols-1 = one column that may SHRINK (minmax(0, 1fr)): a long file name, which can't wrap, would otherwise
+    // widen the column past the design's side of the page and push the image over the result.
+    <ul aria-label="Checked design" className="grid grid-cols-1 gap-3">
       {previews.map((preview) => (
         <li key={preview.id}>
           <DesignImage preview={preview} markers={markers.filter((m) => m.fileId === preview.id)} />

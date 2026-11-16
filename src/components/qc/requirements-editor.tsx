@@ -116,10 +116,10 @@ function RequirementCard({
         {requirement.source === "extracted" && <Badge variant="outline">From the brief</Badge>}
       </div>
 
-      {requirement.label && <p className="mt-2 text-xs font-medium text-muted-foreground">{title}</p>}
-      <p className="mt-1.5 text-[15px] font-medium break-words whitespace-pre-line">{requirement.expected_value}</p>
+      {requirement.label && <p dir="auto" className="mt-2 text-xs font-medium text-muted-foreground">{title}</p>}
+      <p dir="auto" className="mt-1.5 text-[15px] font-medium break-words whitespace-pre-line">{requirement.expected_value}</p>
       {requirement.notes && (
-        <p className="mt-1.5 text-sm break-words whitespace-pre-line text-muted-foreground">{requirement.notes}</p>
+        <p dir="auto" className="mt-1.5 text-sm break-words whitespace-pre-line text-muted-foreground">{requirement.notes}</p>
       )}
 
       <div className="mt-3 flex flex-wrap items-center gap-1">
@@ -232,6 +232,7 @@ function RequirementForm({
             Expected value <span className="text-muted-foreground">(required)</span>
           </label>
           <textarea
+            dir="auto"
             id={`${prefix}-value`}
             name="expected_value"
             rows={2}
@@ -249,6 +250,7 @@ function RequirementForm({
             Notes <span className="text-muted-foreground">(optional)</span>
           </label>
           <textarea
+            dir="auto"
             id={`${prefix}-notes`}
             name="notes"
             rows={2}

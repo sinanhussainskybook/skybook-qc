@@ -5,6 +5,9 @@ import { cn } from "@/lib/utils"
 function Input({ className, type, ...props }: React.ComponentProps<"input">) {
   return (
     <InputPrimitive
+      // Direction from the first letter typed, so Arabic (or mixed) text, its punctuation and its
+      // numbers show the right way round. A caller's own dir still wins (it comes after).
+      dir="auto"
       type={type}
       data-slot="input"
       className={cn(

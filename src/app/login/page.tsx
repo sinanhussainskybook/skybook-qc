@@ -22,7 +22,7 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
       <SkybookLogo sub="AI QC" className="text-white [&_.text-muted-foreground]:text-white/60" />
 
       <div className="mx-auto grid w-full max-w-5xl flex-1 items-center gap-12 py-12 lg:grid-cols-[1.15fr_1fr] lg:gap-20">
-        <div className="animate-in fade-in slide-in-from-bottom-2 duration-500">
+        <div className="animate-in fade-in slide-in-from-bottom-2 duration-500 motion-reduce:animate-none">
           <h1 className="display text-5xl sm:text-6xl lg:text-7xl">
             Check it before <span className="text-[#9fd6e0]">the client does.</span>
           </h1>

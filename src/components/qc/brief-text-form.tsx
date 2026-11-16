@@ -108,6 +108,7 @@ export function BriefTextForm({
         Brief text
       </label>
       <textarea
+        dir="auto"
         id={`${id}-text`}
         name="briefText"
         value={text}

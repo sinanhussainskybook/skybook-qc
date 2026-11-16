@@ -89,8 +89,8 @@ function CategoryRow({ label, note, findings }: { label: string; note: string; f
                 </span>
                 {f.status === "failed" && <Badge variant="outline">{severityLabel(f.severity)}</Badge>}
               </div>
-              {f.expected && <p className="mt-1 text-muted-foreground">Expected: {f.expected}</p>}
-              {(f.status === "failed" || isHumanCheck(f)) && f.detected && <p className="mt-1 text-muted-foreground">Detected: {f.detected}</p>}
+              {f.expected && <p className="mt-1 text-muted-foreground">Expected: <bdi>{f.expected}</bdi></p>}
+              {(f.status === "failed" || isHumanCheck(f)) && f.detected && <p className="mt-1 text-muted-foreground">Detected: <bdi>{f.detected}</bdi></p>}
               {f.explanation !== note && <p className="mt-1">{f.explanation}</p>}
               {f.suggestedFix && <p className="mt-1">Suggested fix: {f.suggestedFix}</p>}
             </li>

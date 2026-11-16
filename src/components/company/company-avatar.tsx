@@ -11,13 +11,11 @@ import Image from "next/image";
  */
 export function CompanyAvatar({ name, logoUrl, small = false }: { name: string; logoUrl?: string; small?: boolean }) {
   const [failed, setFailed] = useState(false);
-  const showLogo = Boolean(logoUrl) && !failed;
-
-  if (showLogo) {
+  if (logoUrl && !failed) {
     return (
       <span className="relative block size-full">
         <Image
-          src={logoUrl!}
+          src={logoUrl}
           alt="" // decorative: the company name is right beside it, in the same link
           fill
           unoptimized

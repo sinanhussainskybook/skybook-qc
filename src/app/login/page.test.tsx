@@ -52,3 +52,19 @@ describe("sign-in page", () => {
     await expect(render()).rejects.toThrow("NEXT_REDIRECT /");
   });
 });
+
+describe("sign-in page — accessibility", () => {
+  beforeEach(() => getCurrentUser.mockReset().mockResolvedValue(null));
+
+  it("skips the entrance animation for people who turn motion down", async () => {
+    expect(await render()).toContain("motion-reduce:animate-none");
+  });
+
+  it("text fields take their direction from what is typed (dir=auto)", async () => {
+    const html = await render();
+    expect(html).toMatch(/<input[^>]*type="email"[^>]*>/);
+    const typed = (html.match(/<input[^>]*>/g) ?? []).filter((input) => /type="(email|password)"/.test(input));
+    expect(typed).toHaveLength(2);
+    for (const input of typed) expect(input).toContain('dir="auto"');
+  });
+});

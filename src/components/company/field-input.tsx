@@ -45,6 +45,7 @@ export function FieldInput({
     case "textarea":
       control = (
         <textarea
+          dir="auto"
           {...common}
           rows={3}
           maxLength={spec.maxLength}

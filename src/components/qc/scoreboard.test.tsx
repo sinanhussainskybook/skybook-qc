@@ -266,3 +266,19 @@ describe("Results page — score by category under the design", () => {
     expect(renderToStaticMarkup(<CategoryScoreCard board={board} />)).toBe("");
   });
 });
+
+describe("Results page — Arabic and reduced motion", () => {
+  const ar = "عرض الصيف";
+  const findings = () => [f("brief", "failed", "major", { title: "Headline", expected: ar, detected: "Summer offer" })];
+  const html = () => renderToStaticMarkup(<Scoreboard board={scoreFindings(findings())} findings={findings()} />);
+
+  it("keeps the brief's and the design's own words the right way round (<bdi>), Arabic included", () => {
+    expect(html()).toContain(`<bdi>${ar}</bdi>`);
+    expect(html()).toContain("<bdi>Summer offer</bdi>");
+    expect(html()).toMatch(new RegExp(`<bdi class="font-medium">Make it: ${ar}</bdi>`));
+  });
+
+  it("skips the result's entrance animation for people who turn motion down", () => {
+    expect(html()).toContain("motion-reduce:animate-none");
+  });
+});

@@ -92,7 +92,7 @@ export function EditableField({
   return (
     <div className="grid gap-1 py-3 sm:grid-cols-[13rem_1fr_auto] sm:items-start sm:gap-4">
       <div className="text-sm font-medium text-muted-foreground">{spec.label}</div>
-      <div className="min-w-0 text-sm break-words whitespace-pre-line">
+      <div dir="auto" className="min-w-0 text-sm break-words whitespace-pre-line">
         {value ?? <span className="text-muted-foreground italic">Not set</span>}
         {justSaved && (
           <span className="ml-2 inline-flex items-center gap-1 text-xs font-medium text-pass">

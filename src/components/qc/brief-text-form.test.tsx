@@ -107,3 +107,11 @@ describe("BriefTextForm", () => {
     expect((screen.getByRole("button", { name: "Enter brief text" }) as HTMLButtonElement).disabled).toBe(true);
   });
 });
+
+describe("BriefTextForm — Arabic", () => {
+  it("the brief text box takes its direction from what is typed (dir=auto)", () => {
+    render(<BriefTextForm sessionId={SESSION} disabled={false} full={false} />);
+    open();
+    expect(box().getAttribute("dir")).toBe("auto");
+  });
+});

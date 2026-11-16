@@ -91,7 +91,7 @@ export function ResultSummary({
   const passed = findings.filter((f) => f.status === "passed");
 
   return (
-    <div className="space-y-3 animate-in fade-in slide-in-from-bottom-2 duration-500" role="status" aria-label={`QC result: ${RESULT_DISPLAY_LABEL[shown]}`}>
+    <div className="space-y-3 animate-in fade-in slide-in-from-bottom-2 duration-500 motion-reduce:animate-none" role="status" aria-label={`QC result: ${RESULT_DISPLAY_LABEL[shown]}`}>
       <div className="grid items-center gap-6 rounded-3xl bg-[linear-gradient(135deg,#0a3644,#0e6377)] p-5 text-white shadow-[0_20px_50px_-30px_rgb(6_28_35/0.9)] sm:p-6 lg:grid-cols-[minmax(0,1fr)_auto_auto]">
         <div className="flex min-w-0 items-center gap-5">
           {board.score !== null && (
@@ -195,7 +195,7 @@ export function ResultChecks({
                     {(f.suggestedFix || f.expected) && (
                       <p className="mt-1.5">
                         <span className="font-semibold text-primary">Fix </span>
-                        <span className="font-medium">{short(f.suggestedFix ?? `Make it: ${f.expected}`)}</span>
+                        <bdi className="font-medium">{short(f.suggestedFix ?? `Make it: ${f.expected}`)}</bdi>
                       </p>
                     )}
                     <AlsoNote f={f} />
@@ -343,11 +343,12 @@ function Row({
       <div className="min-w-0">{check}</div>
       <div className="min-w-0 break-words">
         <span className="text-xs text-muted-foreground md:hidden">Brief / rule says </span>
-        {expected || <span className="text-muted-foreground">—</span>}
+        {/* <bdi>: the brief's or design's own words (often Arabic), kept the right way round. */}
+        {expected ? <bdi>{expected}</bdi> : <span className="text-muted-foreground">—</span>}
       </div>
       <div className="min-w-0 break-words">
         <span className="text-xs text-muted-foreground md:hidden">Design shows </span>
-        {shows || <span className="text-muted-foreground">—</span>}
+        {shows ? <bdi>{shows}</bdi> : <span className="text-muted-foreground">—</span>}
         {extra}
       </div>
       <div>{status}</div>

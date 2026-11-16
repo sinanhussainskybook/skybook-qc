@@ -48,7 +48,9 @@ export async function checkLocalHealth(config: LocalConfig, client: OllamaClient
   } catch {
     ff = "";
   }
-  add("FFmpeg", !!ff && existsSync(ff), ff && existsSync(ff) ? "present" : "missing");
+  // turbopackIgnore: FFmpeg's path is found at run time; it isn't part of the build output.
+  const ffPresent = !!ff && existsSync(/*turbopackIgnore: true*/ ff);
+  add("FFmpeg", ffPresent, ffPresent ? "present" : "missing");
 
   try {
     const models = await client.tags(signal);

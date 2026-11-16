@@ -37,7 +37,8 @@ export function readGoogleConfig(env: Record<string, string | undefined> = proce
   const model = env.QC_GEMINI_MODEL?.trim() || "gemini-3.8-flash";
   if (!/^gemini-[a-z0-9.-]{1,60}$/.test(model)) return { ok: false, error: "QC_GEMINI_MODEL isn't a Gemini model id." };
   const credentialsFile = env.GOOGLE_APPLICATION_CREDENTIALS?.trim() ?? "";
-  if (!credentialsFile || !existsSync(credentialsFile)) return { ok: false, error: "GOOGLE_APPLICATION_CREDENTIALS doesn't point to a key file." };
+  // turbopackIgnore: a path from the environment, read at run time; it isn't part of the build output.
+  if (!credentialsFile || !existsSync(/*turbopackIgnore: true*/ credentialsFile)) return { ok: false, error: "GOOGLE_APPLICATION_CREDENTIALS doesn't point to a key file." };
   const endpoints = GOOGLE_ENDPOINTS[region];
   return {
     ok: true,

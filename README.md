@@ -5,7 +5,7 @@ Internal quality control for Skybook's design team. A designer uploads content b
 > **Standalone application.** Skybook AI QC has no dependency on, and no integration with, Skybook Audit or any other Skybook project — no shared code, database, data or APIs. Requirements come only from the Skybook AI QC specification.
 
 - Plan: [docs/IMPLEMENTATION-PLAN.md](docs/IMPLEMENTATION-PLAN.md)
-- Progress: [docs/TRACKER.html](docs/TRACKER.html) — open it in a browser, or at its [tracker link](https://claude.ai/artifact/PTpeAi5WUfZamiovD4JAvd) (private)
+- Progress: [docs/TRACKER.html](docs/TRACKER.html) — open it in a browser
 - How it is organised: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 - Content analysis (Phase 6 — provider, region, worker, FFmpeg, limits, cost): [docs/PHASE-6.md](docs/PHASE-6.md)
 - Local AI provider (OCR, vision and speech on this server; no API calls): [docs/LOCAL-AI.md](docs/LOCAL-AI.md)
@@ -26,7 +26,7 @@ npm run qc:worker            # second terminal: the content-analysis worker (Pha
 ### Where secrets live
 
 The project folder is synced by OneDrive, so **secrets are kept outside it**, in
-`<home>/.skybook-qc/.env.local` (on this PC: `C:\Users\user\.skybook-qc\.env.local`), which is not synced.
+`<home>/.skybook-qc/.env.local` (on Windows: `%USERPROFILE%\.skybook-qc\.env.local`), which is not synced.
 Use the same `NAME=value` lines as `.env.example`.
 
 - `next dev`, `next build`, `next start` (via `next.config.ts`) and every `npm run` script (via `scripts/lib/env.ts`) load that file with Node's built-in reader — `src/lib/external-env.ts`.

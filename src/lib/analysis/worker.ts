@@ -5,6 +5,8 @@ import { claimNextRun, recoverStaleRuns } from "@/lib/db/analysis-runs";
 import { limitsOf, processRun, type RunDeps } from "@/lib/analysis/pipeline";
 import type { ExpiredCursor } from "@/lib/db/qc-sessions";
 import { purgeExpiredBatch, type CleanupBatch } from "@/lib/qc/session";
+import { pruneAnalysisUsage } from "@/lib/db/analysis-usage";
+import { pruneLoginThrottle } from "@/lib/db/login-throttle";
 
 /**
  * The analysis worker (D10): a separate process from the same codebase
@@ -132,7 +134,13 @@ export async function runWorker(
   };
 
   const cleanup = runCleanupLoop(
-    options.purgeExpired ?? ((now, after) => purgeExpiredBatch(deps.db, deps.storage, now, after)),
+    options.purgeExpired ??
+      (async (now, after) => {
+        // Counters that no longer count go too: sign-in attempts over a day old, AI analyses over 24 hours.
+        await pruneLoginThrottle(deps.db, now);
+        await pruneAnalysisUsage(deps.db, now);
+        return purgeExpiredBatch(deps.db, deps.storage, now, after);
+      }),
     { signal: options.signal, everyMs: options.cleanupEveryMs, now: deps.now, log }
   );
 

@@ -79,7 +79,7 @@ describe("analysis actions", () => {
     state.storage = fake.bucket;
     state.user = dee;
     await state.db.query("delete from qc_sessions");
-    await state.db.query("delete from login_throttle"); // the per-user AI counts
+    await state.db.query("delete from analysis_usage"); // the per-user AI counts
     vi.spyOn(console, "error").mockImplementation(() => {});
     await actions.startSessionAction({}, form({ companyId: acme, contentType: "social_post" }));
     sessionId = (await findCurrentSession(state.db, acme, dee.id, new Date()))!.id;
@@ -232,12 +232,12 @@ describe("analysis actions", () => {
   });
 
   describe("per-user AI limits: 30 analyses a day (design checks and brief readings together), 2 at once", () => {
-    const usageRows = () => state.db.query<{ key: string }>("select key from login_throttle where key like 'ai:' || $1 || ':%'", [dee.id]);
+    const usageRows = () => state.db.query<{ id: string }>("select id from analysis_usage where user_id = $1", [dee.id]);
     /** `count` analyses already used by Dee, `hoursAgo` hours ago (not tied to any session). */
     const used = (count: number, hoursAgo = 1) =>
       state.db.query(
-        `insert into login_throttle (key, attempts, window_started_at)
-         select 'ai:' || $1 || ':' || gen_random_uuid(), 1, now() - ($3::int * interval '1 hour') from generate_series(1, $2::int)`,
+        `insert into analysis_usage (id, user_id, reserved_at, queuing)
+         select gen_random_uuid(), $1, now() - ($3::int * interval '1 hour'), false from generate_series(1, $2::int)`,
         [dee.id, count, hoursAgo]
       );
     const done = () => state.db.query("update qc_analysis_runs set status = 'done' where requested_by = $1", [dee.id]);
@@ -335,7 +335,7 @@ describe("analysis actions", () => {
         const check = await readyCheck(acme);
         await used(30);
         expect(await actions.startAnalysisAction({}, form({ sessionId: check }))).toMatchObject({ error: expect.stringMatching(/used your 30 AI checks/) });
-        await state.db.query("delete from login_throttle");
+        await state.db.query("delete from analysis_usage");
         const busy = [await readyCheck(beta), await readyCheck(gamma)];
         for (const id of busy) expect(await actions.startAnalysisAction({}, form({ sessionId: id }))).toEqual({ ok: true });
         expect(await actions.startAnalysisAction({}, form({ sessionId: check }))).toMatchObject({ error: expect.stringMatching(/2 AI checks waiting or running/) });
@@ -352,16 +352,17 @@ describe("analysis actions", () => {
       expect(await actions.startAnalysisAction({}, form({ sessionId: first }))).toEqual({ ok: true });
       // Another request of Dee's has reserved its place and not yet queued its run.
       const slot = (minutesAgo: number) =>
-        state.db.query("insert into login_throttle (key, attempts, window_started_at) values ('ai-slot:' || $1 || ':' || gen_random_uuid(), 1, now() - ($2::int * interval '1 minute'))", [dee.id, minutesAgo]);
+        state.db.query("insert into analysis_usage (id, user_id, reserved_at, queuing) values (gen_random_uuid(), $1, now() - ($2::int * interval '1 minute'), true)", [dee.id, minutesAgo]);
       await slot(0);
       expect(await actions.startAnalysisAction({}, form({ sessionId: second }))).toMatchObject({ error: expect.stringMatching(/2 AI checks waiting or running/) });
       // A reservation left behind 3 minutes ago (a crash) no longer counts.
-      await state.db.query("delete from login_throttle where key like 'ai-slot:%'");
+      await state.db.query("delete from analysis_usage where queuing");
       await slot(3);
       expect(await actions.startAnalysisAction({}, form({ sessionId: second }))).toEqual({ ok: true });
-      // Each accepted run keeps its place in the 24 hours, but holds no reservation once queued.
-      expect(await usageRows()).toHaveLength(2);
-      expect(await state.db.query("select key from login_throttle where key like 'ai-slot:%' and window_started_at > now() - interval '2 minutes'")).toHaveLength(0);
+      // Each accepted run keeps its place in the 24 hours, but holds no reservation once queued. The crashed
+      // reservation still counts for the day (as it did before, when a reservation was two counter rows).
+      expect(await usageRows()).toHaveLength(3);
+      expect(await state.db.query("select id from analysis_usage where queuing and reserved_at > now() - interval '2 minutes'")).toHaveLength(0);
     });
 
     it("a brief uploaded while a reading is still waiting joins that reading — not refused, not counted again", async () => {

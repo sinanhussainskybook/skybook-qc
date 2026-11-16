@@ -23,6 +23,7 @@ describe("migrations", () => {
       "0009_user_must_change_password.sql",
       "0010_company_additional_phone.sql",
       "0011_revoke_public_role_privileges.sql",
+      "0012_analysis_usage.sql",
     ]);
   });
 
@@ -33,6 +34,7 @@ describe("migrations", () => {
       "select tablename from pg_tables where schemaname = 'public' order by tablename"
     );
     expect(tables.map((t) => t.tablename)).toEqual([
+      "analysis_usage",
       "app_sessions",
       "app_users",
       "brand_colors",

@@ -87,7 +87,7 @@ describe("brief too long for Local AI: Check Design and Try again", () => {
     state.storage = fake.bucket;
     state.user = dee;
     await state.db.query("delete from qc_sessions");
-    await state.db.query("delete from login_throttle"); // the per-user AI counts
+    await state.db.query("delete from analysis_usage"); // the per-user AI counts
     vi.spyOn(console, "error").mockImplementation(() => {});
     await actions.startSessionAction({}, form({ companyId: acme, contentType: "social_post" }));
     sessionId = (await findCurrentSession(state.db, acme, dee.id, new Date()))!.id;

@@ -44,3 +44,19 @@ export async function recordAttempt(
 export async function clearAttempts(db: Database, key: string): Promise<void> {
   await db.query("delete from login_throttle where key = $1", [key]);
 }
+
+/** Every counter here lasts 15 minutes at most; rows idle for a day are only leftovers. */
+const STALE_AFTER_SECONDS = 24 * 60 * 60;
+
+/**
+ * Hourly clean-up: counters whose window started more than a day ago (failed sign-ins that were never
+ * followed by a successful one, per-IP counts, and the old `ai:` / `ai-slot:` rows from before
+ * migration 0012). Returns how many were deleted.
+ */
+export async function pruneLoginThrottle(db: Database, now: Date): Promise<number> {
+  const rows = await db.query(
+    "delete from login_throttle where window_started_at <= $1::timestamptz - ($2::int * interval '1 second') returning 1",
+    [now, STALE_AFTER_SECONDS]
+  );
+  return rows.length;
+}

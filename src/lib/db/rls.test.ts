@@ -118,7 +118,8 @@ describe("Supabase Data API roles can't touch QC data (RLS on, no policies) — 
         ["brand_colors", "insert into brand_colors (company_id, name, hex) values ($1, 'x', '#000000')", [globex]],
         ["app_users", "insert into app_users (name, email, role, password_hash) values ('x', 'x@x.com', 'admin', 'x')", []],
         ["app_sessions", "insert into app_sessions (id, user_id, expires_at) values ($1, gen_random_uuid(), now())", ["b".repeat(64)]],
-        ["login_throttle", "insert into login_throttle (key, attempts, window_started_at) values ('ai:x:y', 1, now())", []],
+        ["login_throttle", "insert into login_throttle (key, attempts, window_started_at) values ('email:x@y.com', 1, now())", []],
+        ["analysis_usage", "insert into analysis_usage (id, user_id, reserved_at) values (gen_random_uuid(), gen_random_uuid(), now())", []],
       ];
       for (const [table, sql, params] of attempts) {
         await expect(as(role, () => db.query(sql, params)), table).rejects.toThrow(/row-level security/);
@@ -197,7 +198,7 @@ describe("migration 0011: the Data API roles have no table privileges at all", (
 
     const migrations = await loadMigrations(MIGRATIONS_DIR);
     const before = migrations.filter((m) => m.name < "0011");
-    expect(before.length).toBe(migrations.length - 1);
+    expect(before.length).toBe(migrations.length - 2);
     await applyMigrations(db, before);
     tables = (
       await db.query<{ relname: string }>(
@@ -212,7 +213,7 @@ describe("migration 0011: the Data API roles have no table privileges at all", (
     const acme = await insertCompany(db, { name: "Acme", createdBy: dee.id });
     await db.query("insert into golden_rules (company_id, rule, category) values ($1, 'Always show the logo', 'logo_rule')", [acme.id]);
 
-    expect(await applyMigrations(db, migrations)).toEqual(["0011_revoke_public_role_privileges.sql"]);
+    expect(await applyMigrations(db, migrations)).toEqual(["0011_revoke_public_role_privileges.sql", "0012_analysis_usage.sql"]);
   });
   afterAll(() => close());
 
@@ -220,6 +221,10 @@ describe("migration 0011: the Data API roles have no table privileges at all", (
     expect(tables.length).toBeGreaterThanOrEqual(17);
     expect(tables).toContain("schema_migrations");
     for (const role of PUBLIC_ROLES) for (const table of tables) expect([role, table, await privilegesOf(role, table)]).toEqual([role, table, []]);
+  });
+
+  it("0012's analysis_usage, created after 0011 even with default grants set up, gets no privilege either", async () => {
+    for (const role of PUBLIC_ROLES) expect([role, await privilegesOf(role, "analysis_usage")]).toEqual([role, []]);
   });
 
   for (const role of PUBLIC_ROLES) {
@@ -273,9 +278,11 @@ describe("migration 0011: the Data API roles have no table privileges at all", (
     const sql = (await loadMigrations(MIGRATIONS_DIR)).find((m) => m.name.startsWith("0011"))!.sql;
     await db.exec(sql);
     expect(await privilegesOf("anon", "companies")).toEqual([]);
-    const plain = await createTestDatabase(); // no anon / authenticated roles: every migration, 0011 included
+    const plain = await createTestDatabase(); // no anon / authenticated roles: every migration, 0011 and 0012 included
     try {
-      expect((await plain.db.query<{ name: string }>("select name from schema_migrations order by name")).at(-1)?.name).toBe("0011_revoke_public_role_privileges.sql");
+      const applied = (await plain.db.query<{ name: string }>("select name from schema_migrations order by name")).map((r) => r.name);
+      expect(applied).toContain("0011_revoke_public_role_privileges.sql");
+      expect(applied.at(-1)).toBe("0012_analysis_usage.sql");
     } finally {
       await plain.close();
     }
@@ -362,7 +369,7 @@ describe("migration 0011 as on production (non-superuser owner; other roles' and
     PRIVILEGES = await tablePrivilegesOf(prod.db);
     for (const role of PUBLIC_ROLES) for (const t of QC_TABLES) expect([role, t, await privilegesOf(prod.db, role, `public.${t}`)]).toEqual([role, t, PRIVILEGES]);
     before = await snapshot(prod.db);
-    expect(await applyAs(prod)).toEqual(["0011_revoke_public_role_privileges.sql"]);
+    expect(await applyAs(prod)).toEqual(["0011_revoke_public_role_privileges.sql", "0012_analysis_usage.sql"]);
   });
   afterAll(() => prod.close());
 
@@ -384,6 +391,12 @@ describe("migration 0011 as on production (non-superuser owner; other roles' and
     expect(await prod.db.query("select 1 from information_schema.role_table_grants where table_name = 'golden_rules' and grantee = 'PUBLIC'")).toEqual([]);
   });
 
+  it("0012's analysis_usage (created by the owner after 0011) gets nothing either, and has row-level security", async () => {
+    for (const role of PUBLIC_ROLES) expect([role, await privilegesOf(prod.db, role, "public.analysis_usage")]).toEqual([role, []]);
+    const [{ rls }] = await prod.db.query<{ rls: boolean }>("select relrowsecurity as rls from pg_class where oid = 'public.analysis_usage'::regclass");
+    expect(rls).toBe(true);
+  });
+
   it("QC's future tables (created by the owner in public) get nothing", async () => {
     await asRole(prod.db, OWNER, () => prod.db.query("create table later_qc_table (id integer primary key)"));
     try {
@@ -396,7 +409,8 @@ describe("migration 0011 as on production (non-superuser owner; other roles' and
   it("changes nothing outside its scope: other tables in public, other roles' defaults, other schemas' defaults", async () => {
     const after = await snapshot(prod.db);
     // Grants on tables that aren't QC's: exactly as before.
-    const notQc = (rows: unknown[]) => (rows as { relname: string }[]).filter((r) => !QC_TABLES.includes(r.relname));
+    // analysis_usage is QC's too (made by 0012, right after 0011).
+    const notQc = (rows: unknown[]) => (rows as { relname: string }[]).filter((r) => !QC_TABLES.includes(r.relname) && r.relname !== "analysis_usage");
     expect(notQc(after.grants)).toEqual(notQc(before.grants));
     expect(await privilegesOf(prod.db, "anon", "public.owner_extra")).toEqual(PRIVILEGES);
     // Defaults: only the owner's for public changed; other_admin's and the storage-like schema's are untouched.

@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { decideRouteAccess, LOGIN_PATH } from "@/lib/auth/route-access";
 import { isProductionEnvironment, sessionCookieName } from "@/lib/auth/session-cookie";
+import { contentSecurityPolicy, createNonce, supabaseOriginFromEnv } from "@/lib/security-headers";
 
 /**
  * Runs before every request. A visitor without a sign-in cookie is sent to
@@ -8,14 +9,28 @@ import { isProductionEnvironment, sessionCookieName } from "@/lib/auth/session-c
  *
  * This only looks at whether the cookie exists — it does not touch the
  * database. The real check is requireUser() on the server.
+ *
+ * Pages also get their Content-Security-Policy here, with a fresh nonce each time: Next.js reads it
+ * from the request and puts the nonce on its own scripts; layout.tsx reads `x-nonce` for the theme
+ * script. API routes (JSON, the PDF report) don't need one.
  */
 export function proxy(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
-  const hasCookie = request.cookies.has(sessionCookieName(isProductionEnvironment()));
+  const isProduction = isProductionEnvironment();
+  const hasCookie = request.cookies.has(sessionCookieName(isProduction));
 
   switch (decideRouteAccess(pathname, hasCookie)) {
-    case "allow":
-      return NextResponse.next();
+    case "allow": {
+      if (pathname === "/api" || pathname.startsWith("/api/")) return NextResponse.next();
+      const nonce = createNonce();
+      const policy = contentSecurityPolicy({ nonce, isProduction, supabaseOrigin: supabaseOriginFromEnv() });
+      const requestHeaders = new Headers(request.headers);
+      requestHeaders.set("x-nonce", nonce);
+      requestHeaders.set("Content-Security-Policy", policy);
+      const response = NextResponse.next({ request: { headers: requestHeaders } });
+      response.headers.set("Content-Security-Policy", policy);
+      return response;
+    }
     case "unauthorized":
       return NextResponse.json({ error: "Sign in required." }, { status: 401 });
     case "redirect-to-login": {

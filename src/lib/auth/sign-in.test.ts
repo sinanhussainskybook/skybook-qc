@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createTestDatabase, TEST_COST } from "../../../test/db";
 import type { Database } from "@/lib/db/database";
 import { createUser } from "@/lib/auth/create-user";
-import { getSessionUser, SIGN_IN_LIMIT, signIn, signOut } from "@/lib/auth/sign-in";
+import { getSessionUser, SIGN_IN_IP_LIMIT, SIGN_IN_LIMIT, signIn, signOut } from "@/lib/auth/sign-in";
 import { hashSessionToken, SESSION_DURATION_MS } from "@/lib/auth/session-token";
 
 const PASSWORD = "a-very-long-passphrase";
@@ -174,6 +174,80 @@ describe("sign-in, sessions and sign-out", () => {
       );
       const throttled = results.filter((r) => !r.ok && r.reason === "throttled");
       expect(throttled).toHaveLength(3);
+    });
+  });
+
+  describe("per-IP limit", () => {
+    const ipCount = async (key: string) =>
+      (await db.query<{ attempts: number }>("select attempts from login_throttle where key = $1", [key]))[0]?.attempts ?? 0;
+
+    it(`allows ${SIGN_IN_IP_LIMIT.maxAttempts} attempts per 15 minutes from one address, across many emails`, async () => {
+      const clientIp = "203.0.113.10";
+      for (let i = 0; i < SIGN_IN_IP_LIMIT.maxAttempts; i++) {
+        // A different email each time, so the per-email limit never triggers.
+        const result = await signIn(db, { email: `guess-${i}@skybook.com`, password: PASSWORD, clientIp }, minutes(500));
+        expect(result).toEqual({ ok: false, reason: "invalid" });
+      }
+      const blocked = await signIn(db, { email: "guess-next@skybook.com", password: PASSWORD, clientIp }, minutes(501));
+      expect(blocked).toEqual({ ok: false, reason: "throttled", retryAfterSeconds: 14 * 60 });
+    });
+
+    it("blocks even the right password from that address, without touching the person's own email count", async () => {
+      const clientIp = "203.0.113.10";
+      expect(await signIn(db, { email: "ada@skybook.com", password: PASSWORD, clientIp }, minutes(502))).toMatchObject({
+        reason: "throttled",
+      });
+      expect(await ipCount("email:ada@skybook.com")).toBe(0);
+    });
+
+    it("doesn't affect anyone signing in from another address", async () => {
+      const result = await signIn(db, { email: "ada@skybook.com", password: PASSWORD, clientIp: "198.51.100.20" }, minutes(502));
+      expect(result.ok).toBe(true);
+    });
+
+    it("opens again once the window has passed", async () => {
+      const result = await signIn(db, { email: "ada@skybook.com", password: PASSWORD, clientIp: "203.0.113.10" }, minutes(516));
+      expect(result.ok).toBe(true);
+    });
+
+    it("keeps counting after a successful sign-in (only the email count is cleared)", async () => {
+      const clientIp = "203.0.113.11";
+      await signIn(db, { email: "dee@skybook.com", password: "wrong-password-y", clientIp }, minutes(600));
+      await signIn(db, { email: "dee@skybook.com", password: PASSWORD, clientIp }, minutes(600));
+      expect(await ipCount("ip:203.0.113.11")).toBe(2);
+      expect(await ipCount("email:dee@skybook.com")).toBe(0);
+    });
+
+    it("still applies the per-email limit to attempts from different addresses", async () => {
+      const email = "spread@skybook.com";
+      for (let i = 0; i < SIGN_IN_LIMIT.maxAttempts; i++) {
+        await signIn(db, { email, password: PASSWORD, clientIp: `192.0.2.${i + 1}` }, minutes(700));
+      }
+      expect(await signIn(db, { email, password: PASSWORD, clientIp: "192.0.2.99" }, minutes(700))).toMatchObject({
+        reason: "throttled",
+      });
+    });
+
+    it("counts IPv6 addresses in one /64 together", async () => {
+      await signIn(db, { email: "v6-a@skybook.com", password: PASSWORD, clientIp: "2001:db8:5:6::1" }, minutes(800));
+      await signIn(db, { email: "v6-b@skybook.com", password: PASSWORD, clientIp: "2001:db8:5:6::abcd" }, minutes(800));
+      expect(await ipCount("ip:2001:db8:5:6::/64")).toBe(2);
+    });
+
+    it("counts attempts sent at the same moment", async () => {
+      const clientIp = "203.0.113.12";
+      const results = await Promise.all(
+        Array.from({ length: SIGN_IN_IP_LIMIT.maxAttempts + 4 }, (_, i) =>
+          signIn(db, { email: `burst-ip-${i}@skybook.com`, password: "whatever-password", clientIp }, minutes(900))
+        )
+      );
+      expect(results.filter((r) => !r.ok && r.reason === "throttled")).toHaveLength(4);
+    });
+
+    it("is skipped when the address is unknown (no counter row)", async () => {
+      await signIn(db, { email: "no-ip@skybook.com", password: PASSWORD, clientIp: null }, minutes(1000));
+      const rows = await db.query("select key from login_throttle where key like 'ip:%' and window_started_at = $1", [minutes(1000)]);
+      expect(rows).toEqual([]);
     });
   });
 });

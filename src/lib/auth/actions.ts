@@ -1,6 +1,6 @@
 "use server";
 
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { getDatabase, isDatabaseConfigured } from "@/lib/db/client";
 import { signIn, signOut } from "@/lib/auth/sign-in";
@@ -13,6 +13,7 @@ import {
   sessionCookieOptions,
 } from "@/lib/auth/session-cookie";
 import { LOGIN_PATH, safeRedirectPath } from "@/lib/auth/route-access";
+import { clientIpFromHeaders } from "@/lib/auth/client-ip";
 
 /**
  * Server actions for the sign-in form, the sign-out button and Change password.
@@ -49,7 +50,8 @@ export async function signInAction(
 
   let result;
   try {
-    result = await signIn(getDatabase(), { email, password });
+    const clientIp = clientIpFromHeaders(await headers());
+    result = await signIn(getDatabase(), { email, password, clientIp });
   } catch (error) {
     // Details go to the server log only, never to the page.
     console.error("Sign-in failed:", error);

@@ -21,6 +21,7 @@ import {
   normalizeEmail,
   PASSWORD_MAX_LENGTH,
 } from "@/lib/auth/user-input";
+import { ipThrottleKey } from "@/lib/auth/client-ip";
 
 /**
  * Signing in and out, and turning a cookie back into a user.
@@ -30,6 +31,13 @@ import {
 /** At most 5 attempts per email in 15 minutes. */
 export const SIGN_IN_LIMIT = { maxAttempts: 5, windowSeconds: 15 * 60 };
 
+/**
+ * At most 30 attempts per client IP in 15 minutes, across all emails — so one address can't try
+ * many accounts, and once it is blocked its attempts no longer count against anyone's email.
+ * Higher than the email limit because a team in one office shares an address.
+ */
+export const SIGN_IN_IP_LIMIT = { maxAttempts: 30, windowSeconds: 15 * 60 };
+
 export type SignInResult =
   | { ok: true; user: User; token: string; expiresAt: Date }
   | { ok: false; reason: "invalid" }
@@ -37,7 +45,7 @@ export type SignInResult =
 
 export async function signIn(
   db: Database,
-  credentials: { email: string; password: string },
+  credentials: { email: string; password: string; clientIp?: string | null },
   now: Date = new Date()
 ): Promise<SignInResult> {
   const email = normalizeEmail(credentials.email);
@@ -47,17 +55,18 @@ export async function signIn(
     return { ok: false, reason: "invalid" };
   }
 
-  // Count the attempt first, keyed by the email typed (real or not).
+  // Count the attempt against the client's address first (when known). A blocked address stops
+  // here, before its attempt is counted against the email, so it can't lock a colleague out.
+  // A successful sign-in doesn't clear this counter (only the email one).
+  if (credentials.clientIp) {
+    const ipWindow = await recordAttempt(db, ipThrottleKey(credentials.clientIp), now, SIGN_IN_IP_LIMIT.windowSeconds);
+    if (ipWindow.attempts > SIGN_IN_IP_LIMIT.maxAttempts) return throttled(ipWindow, SIGN_IN_IP_LIMIT.windowSeconds, now);
+  }
+
+  // Then keyed by the email typed (real or not).
   const throttleKey = `email:${email}`;
   const window = await recordAttempt(db, throttleKey, now, SIGN_IN_LIMIT.windowSeconds);
-  if (window.attempts > SIGN_IN_LIMIT.maxAttempts) {
-    const reopensAt = window.windowStartedAt.getTime() + SIGN_IN_LIMIT.windowSeconds * 1000;
-    return {
-      ok: false,
-      reason: "throttled",
-      retryAfterSeconds: Math.max(1, Math.ceil((reopensAt - now.getTime()) / 1000)),
-    };
-  }
+  if (window.attempts > SIGN_IN_LIMIT.maxAttempts) return throttled(window, SIGN_IN_LIMIT.windowSeconds, now);
 
   const account = await findUserForSignIn(db, email);
   // Always run one full password check, even with no account, so timing
@@ -86,6 +95,19 @@ export async function signIn(
     active: account.active,
   };
   return { ok: true, user, token, expiresAt };
+}
+
+function throttled(
+  window: { windowStartedAt: Date },
+  windowSeconds: number,
+  now: Date
+): Extract<SignInResult, { reason: "throttled" }> {
+  const reopensAt = window.windowStartedAt.getTime() + windowSeconds * 1000;
+  return {
+    ok: false,
+    reason: "throttled",
+    retryAfterSeconds: Math.max(1, Math.ceil((reopensAt - now.getTime()) / 1000)),
+  };
 }
 
 /** The user a cookie token belongs to, or null if it isn't a live session. */
